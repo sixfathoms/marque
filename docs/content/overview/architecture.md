@@ -7,7 +7,7 @@ This page is a synthesis of the [decision records](/edrs/). Where the two disagr
 
 ## The shape
 
-Marque is four components with sharply different trust, deliberately split so that no single one can
+Marque is five components with sharply different trust, deliberately split so that no single one can
 both permit an action and perform it.
 
 ```mermaid

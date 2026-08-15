@@ -19,14 +19,18 @@ statement naming a target and a role; the system **analyses** it; a human with a
 target **approves** it by signing a **marque** — a scoped, time-bounded, revocable grant; the
 submitter **executes** under that marque; everything lands in an append-only **logbook**.
 
-The system is four components with sharply different trust:
+The system is a small cast of components with sharply different trust:
 
 | Component | Plane | Holds | Never does |
 |---|---|---|---|
 | **Harbourmaster** | control | requests, policy, delegations, the logbook | touch a target database, or hold a target credential |
 | **Pilot** | data | target credentials (by reference), the connection | decide whether something may run |
 | **Leadsman** | advisory | nothing durable | approve, deny, or execute anything |
+| **Surveyor** | conformance | nothing durable | widen a bound, deny anything, or resolve doubt toward yes |
 | **Tender** | transport | nothing | interpret, or terminate, what it relays |
+
+*(The Surveyor was added by [EDR-0017](./0017-conformance-matching-may-route-never-widen.md); the
+original four are otherwise unchanged.)*
 
 Three properties are the point of the design, and every later record defends one of them:
 
@@ -115,7 +119,15 @@ flowchart TB
 - **Standing order** — a parameterised statement approved once and invoked without queueing, with
   per-parameter constraints ([EDR-0008](./0008-standing-orders.md)).
 - **Delegation** — a grant of *approval* authority over a scope, so authority can be pushed down
-  without pushing credentials down ([EDR-0007](./0007-delegation-by-containment-proof.md)).
+  without pushing credentials down ([EDR-0007](./0007-delegation-by-containment-proof.md)). It may be
+  written in plain language and compiled for signature
+  ([EDR-0016](./0016-natural-language-delegations-are-compiled.md)).
+- **Task** — an agent's declaration of the narrowest scope it needs for one piece of work. An agent
+  is a submitter, never an approver, and its effective scope is the intersection of operator policy,
+  its human's delegation, and this declaration
+  ([EDR-0018](./0018-agents-are-submitters-under-intersected-scope.md)).
+- **Escalation chain** — the ordered sequence of humans asked when a request falls outside its
+  submitter's scope ([EDR-0019](./0019-escalation-is-a-chain.md)).
 - **Logbook entry** — the append-only record ([EDR-0012](./0012-the-logbook-is-append-only.md)).
 
 **The plane split** follows
@@ -175,3 +187,9 @@ those are separate records.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended for the agent surface added by
+  [EDR-0016](./0016-natural-language-delegations-are-compiled.md) through
+  [EDR-0019](./0019-escalation-is-a-chain.md): the component table gains the Surveyor, and agents
+  are named as submitters in the object model. The decision is unchanged — the same plane split, the
+  same two invariants, and the same rule that no component holds both the authority to permit and
+  the ability to act.

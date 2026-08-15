@@ -106,7 +106,7 @@ being asked to exercise judgment it was specifically not given.
 
 ## Vocabulary
 
-Archetypes are for the four long-lived components with real agency. Everything else is named plainly,
+Archetypes are for the long-lived components with real agency — five of them. Everything else is named plainly,
 because mythologising everything devalues the names that matter. Three domain terms earn their
 keep — the rest of the vocabulary is deliberately boring.
 
