@@ -1,0 +1,166 @@
+---
+id: 4
+title: "A marque is a doubly-signed lease, verified by computation"
+summary: "A marque is a JWS carrying both the approver's signature and the control plane's, binding one statement digest to a role, a window and an execution budget. The Pilot verifies it locally; only revocations are looked up."
+status: accepted
+date: 2026-08-15
+authors:
+  - "Theo Zourzouvillys <theo@sixfathoms.dev>"
+tags: [security, execution, foundational]
+supersedes: null
+superseded_by: null
+aliases: []
+---
+
+## TL;DR
+
+A marque is not a row that says "approved". It is a signed artefact carrying **two** signatures:
+
+- the **approver's**, made with their own device key — *this human agreed to this exact statement*;
+- the **Harbourmaster's** — *that human was permitted to agree to it, under policy, at that moment*.
+
+The Pilot requires both. Neither party can manufacture a valid marque alone: a compromised control
+plane can attest to an approval nobody made but cannot forge the human's signature, and a stolen
+device key can approve things its holder was never entitled to approve but cannot get the
+countersignature.
+
+The marque binds a **statement digest**, a target, a role, a submitter, a `not_before`, an `expires`
+and an **execution budget**. The Pilot verifies all of it by computation, offline. The only thing it
+looks *up* is whether the marque has been revoked — and revocations are the rare case, so
+revocations are what gets stored.
+
+## Context
+
+The obvious design is a table: `requests` with an `approved_by` column, and the executor asks "may I
+run request 4172?". It is simple, and it puts the control plane on the critical path of every
+execution, in a system that exists to be used when things are broken
+([ZFN-4](https://zrz.io/zfn/4-incident-tooling-independence/)). It also means the control plane's
+database *is* the authority: anyone who can write that row — an SQL injection, a compromised admin,
+a bug in the policy code, a careless migration — has approved everything.
+
+[ZFN-49](https://zrz.io/zfn/49-verify-by-computation-not-lookup/) says the opposite: make
+verification a computation, pass the claims by value, and where revocation is rarer than issuance,
+store the revocations rather than a row per grant. That fits exactly. Marque will issue thousands of
+grants and revoke a handful; the revocation list stays small precisely because every marque expires
+on its own.
+
+[ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/) supplies the rest of the shape: a grant that
+can outlive its holder is a standing credential scheduled for later. Every marque has a TTL, a named
+owner, and server-side expiry, and its side effects are fenced so a stale holder cannot re-apply
+them.
+
+The two-signature requirement is not from a Field Note; it comes from asking what a control-plane
+compromise buys an attacker. With one signature — the server's — it buys everything, because the
+server is what decides. With the approver's signature required as well, it buys the ability to
+*ask*, and nothing else.
+
+## Decision
+
+**Representation.** A marque is a JWS in general JSON serialisation (RFC 7515), which carries
+multiple signatures over one payload natively. The payload:
+
+```jsonc
+{
+  "mrq": "mrq_01JB2Q9F3K8Z",           // identifier, used for revocation
+  "deployment": "acme-production",
+  "target": "prod-primary",
+  "role": "settings_writer",
+  "sub": "operator@acme.example",       // who may execute; nobody else
+  "req": "sha256:9f2c…",                // digest of the canonical statement set
+  "stmt_count": 1,
+  "nbf": 1786953600,
+  "exp": 1786957200,
+  "budget": { "executions": 1, "max_rows": 250 },
+  "fence": ["tier = 'sandbox'"],        // EDR-0007, applied by the Pilot
+  "revocation": { "policy": "required", "grace_seconds": 0 },
+  "act": [ … ],                          // delegation chain, if any
+  "analysis": "sha256:1a7e…"            // what the approver was shown
+}
+```
+
+Two signatures are required, and the Pilot rejects a marque carrying fewer:
+
+| Signature | Key | Asserts |
+|---|---|---|
+| `approver` | the approver's device key, the same hardware-backed key used for DPoP | a named human read this payload and agreed to it |
+| `authority` | the Harbourmaster's signing key, from the deployment's KMS or key store | policy permitted that approver, for that target, at that time |
+
+**`req` is the identity of the request.** It is a digest over the canonicalised statement text — not
+the request id. An approver who edits the statement produces a different digest and therefore a
+different marque, and the logbook shows both what was submitted and what was signed. A marque cannot
+be moved to a different statement, because the statement is what it names.
+
+**`analysis` binds the advice.** The digest of the analysis the approver was shown is inside the
+signed payload, so "the approver saw a report that said this was 3 rows" is provable after the fact,
+and a later re-analysis cannot quietly replace what they read.
+
+**Verification is local.** Given the deployment's JWKS and the current time, the Pilot checks both
+signatures, the window, the subject against the authenticated caller, and the statement it was handed
+against `req`. It does not ask the Harbourmaster anything.
+
+**Revocation is a pull, not a question.** The Harbourmaster publishes a signed revocation list of
+marque identifiers, bounded by the maximum marque lifetime — nothing needs to stay on it longer than
+the thing it revokes. Pilots refresh it on a short interval. `revocation.policy` is per-marque:
+
+- `required` (the default) — the Pilot refuses if its list is older than the refresh interval.
+  Security over availability, per [ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/).
+- `grace` — the Pilot may execute with a list up to `grace_seconds` stale. Reserved for marques an
+  approver has deliberately marked as break-glass, and every such execution is flagged in the
+  logbook as having run without a fresh revocation check.
+
+**Expiry is server-side and automatic.** `exp` is enforced by the Pilot from its own clock, and the
+Harbourmaster reaps expired marques into a terminal state without anyone acting. A marque is never
+extended; a longer window means a new approval.
+
+**The budget is a fence, not a hint.** `budget.executions` is decremented by the fencing mechanism in
+[EDR-0011](./0011-execution-is-idempotent-and-fenced.md); `budget.max_rows` aborts the transaction if
+the statement affects more rows than were approved.
+
+## Consequences
+
+**Easier.**
+
+- An approved marque works while the control plane is down. This is the single most valuable property
+  the design has: the tool stays usable during exactly the incidents it exists for.
+- A control-plane compromise does not become a data-plane compromise. The attacker can list requests
+  and see analyses; they cannot cause anything to run.
+- Non-repudiation is real. "I did not approve that" is answerable with a signature over the exact
+  payload, including the advice that was on screen.
+- Revocation state is small and stays small, because expiry does most of the work.
+
+**Harder.**
+
+- **Approvers now have keys, and keys can be lost.** A new laptop means re-enrolling, and until then
+  that person cannot approve. This is genuine friction and there is no version of the property that
+  avoids it.
+- **Clock skew becomes a correctness concern.** A Pilot with a wrong clock either honours expired
+  marques or refuses valid ones. Pilots must run NTP and report their skew, and the deployment should
+  alarm on it.
+- **Revoking is slower than deleting a row.** There is a bounded window, the refresh interval, in
+  which a revoked marque may still execute. Shortening it costs traffic; `required` policy plus a
+  short marque lifetime is the mitigation.
+- Key rotation has to preserve verifiability of past marques for as long as the logbook is expected
+  to be checkable, which means retaining public keys long after the private half is retired.
+
+**New obligations.**
+
+- The canonicalisation of statements is part of the security boundary and needs its own test vectors.
+  Two statements that differ only in whitespace must produce the same digest, and two that differ in
+  any other way must not.
+- Device-key enrolment and recovery is a documented ceremony, not an afterthought — losing every
+  approver's key at once must not be an unrecoverable state.
+
+## References
+
+- [RFC 7515](https://www.rfc-editor.org/rfc/rfc7515) — JWS, general JSON serialisation with multiple
+  signatures.
+- [ZFN-49](https://zrz.io/zfn/49-verify-by-computation-not-lookup/) — verify by computation; store
+  revocations, not issuances.
+- [ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/) — every lock is a lease.
+- [ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/) — security over availability, when
+  they conflict.
+- [EDR-0011](./0011-execution-is-idempotent-and-fenced.md) — how the budget is enforced.
+
+## Changelog
+
+- **2026-08-15**: Accepted.

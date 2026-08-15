@@ -1,0 +1,18 @@
+<section class="intro">
+  <h1>Decision records</h1>
+  <p>
+    {{count}} engineering decision records for <strong>Marque</strong>. An EDR records a decision
+    that has already been made — the context that forced it, the choice, and the consequences we
+    accepted. Discussion happens in pull requests; this is the outcome.
+  </p>
+  <p>
+    The <a href="{{base}}/overview/architecture/">architecture page</a> is a synthesis of these
+    records. Where the two disagree, the records win. Marque's design also cites
+    <a href="https://zrz.io/zfn/">Field Notes</a> (<code>ZFN-N</code>) — the standing engineering
+    positions these decisions are derived from.
+  </p>
+</section>
+
+<ul class="edr-list">
+  {{rows}}
+</ul>

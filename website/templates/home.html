@@ -1,0 +1,120 @@
+<section class="hero">
+  <p class="hero-kicker">Six Fathoms</p>
+  <h1>mar<span class="mark">que</span></h1>
+  <p class="hero-tag">A commission to act — scoped, time-bounded, and on the record.</p>
+  <hr class="rule-brass" />
+  <p class="hero-lede">
+    Someone needs to run a statement against production. Today that is a Slack thread, a screen
+    share, and a psql prompt with the whole schema behind it. Marque turns it into a
+    <b>reviewed, signed, expiring grant</b>: you submit the statement, a machine reads it and
+    reports what it would touch, a human with the authority to say yes signs it — and only then,
+    only that statement, only as that role, only inside that window, does it run.
+  </p>
+  <p class="hero-lede">
+    Everything that runs is in an append-only log naming <b>who asked, who approved, and what
+    changed</b>. Routine work never reaches the queue at all: standing orders are approved once,
+    parameterised, and constrained.
+  </p>
+  <div class="hero-cta">
+    <a class="btn-primary" href="{{base}}/overview/introduction/">Read the introduction</a>
+    <a class="btn-ghost" href="{{base}}/overview/architecture/">Architecture</a>
+    <a class="btn-ghost" href="{{repo_url}}">GitHub</a>
+  </div>
+  <p class="hero-status">
+    <b>Status: design.</b> {{edr_count}} decision records are published; the implementation has not
+    started. Nothing here is running in production anywhere yet.
+  </p>
+</section>
+
+<section class="explainer">
+  <h2>What a request looks like</h2>
+  <div class="flow-strip">
+    <span class="flow-step"><b>1</b> submit</span><i>→</i>
+    <span class="flow-step"><b>2</b> sound</span><i>→</i>
+    <span class="flow-step"><b>3</b> review</span><i>→</i>
+    <span class="flow-step"><b>4</b> sign</span><i>→</i>
+    <span class="flow-step"><b>5</b> run</span><i>→</i>
+    <span class="flow-step"><b>6</b> log</span>
+  </div>
+  <p class="band-note">
+    An operator submits one or more statements against a named target and a named role, with a
+    reason. The <b>Leadsman</b> reads them and reports what they touch, how many rows a rehearsal
+    changed, and which past requests looked like this — advice, never a decision. An approver with
+    authority over that target reviews, edits if they want to, and <b>signs</b> a marque with a
+    validity window. The submitter runs it, once or up to a budget, within that window. The
+    <b>logbook</b> keeps the statement, the analysis, the signature, and the result.
+  </p>
+</section>
+
+<section class="band">
+  <h2>What it is for</h2>
+  <div class="feature-grid">
+    <div class="feature">
+      <h3>Approval that expires</h3>
+      <p>A marque carries a not-before, an expiry, and an execution budget. Standing access is a
+      lease that has to be renewed, not a door left open.</p>
+      <a href="{{base}}/edrs/0004-marques-are-signed-leases/">EDR-0004 →</a>
+    </div>
+    <div class="feature">
+      <h3>The approver signs, not the server</h3>
+      <p>The signature on a marque is the approver's own key. A compromised control plane cannot
+      manufacture authority it was never given.</p>
+      <a href="{{base}}/edrs/0005-control-plane-holds-no-credentials/">EDR-0005 →</a>
+    </div>
+    <div class="feature">
+      <h3>Delegation with a scope you can read</h3>
+      <p>"Update <code>settings</code> on <code>accounts</code>, where <code>tier =
+      'sandbox'</code>." Scopes are checked by containment proof, and anything unprovable escalates
+      to a human.</p>
+      <a href="{{base}}/edrs/0007-delegation-by-containment-proof/">EDR-0007 →</a>
+    </div>
+    <div class="feature">
+      <h3>Routine work never queues</h3>
+      <p>Standing orders are parameterised statements approved once, with per-parameter constraints.
+      Support runs them all day without waking anybody.</p>
+      <a href="{{base}}/edrs/0008-standing-orders/">EDR-0008 →</a>
+    </div>
+    <div class="feature">
+      <h3>A machine reads it first</h3>
+      <p>Static analysis plus a rehearsed, rolled-back run supply the facts; a model writes the
+      summary. It is advisory input to a human, and it can never approve.</p>
+      <a href="{{base}}/edrs/0009-the-leadsman-is-advisory/">EDR-0009 →</a>
+    </div>
+    <div class="feature">
+      <h3>One URL to configure a client</h3>
+      <p>Point the CLI at a deployment and it discovers the issuers, audiences, targets and relays
+      it needs. There is nothing else to set up.</p>
+      <a href="{{base}}/edrs/0002-bootstrap-discovery-document/">EDR-0002 →</a>
+    </div>
+  </div>
+</section>
+
+<section class="explore">
+  <h2>Start here</h2>
+  <div class="card-grid">
+    <a class="card" href="{{base}}/overview/introduction/">
+      <span class="card-t">Introduction</span>
+      <span class="card-d">What Marque is, the problem it solves, and what it deliberately is not.</span>
+    </a>
+    <a class="card" href="{{base}}/overview/architecture/">
+      <span class="card-t">Architecture</span>
+      <span class="card-d">The control and data planes, the object model, and how a request flows.</span>
+    </a>
+    <a class="card" href="{{base}}/overview/scope/">
+      <span class="card-t">Scope</span>
+      <span class="card-d">What is in, what is out, the phases, and the prior art we looked at.</span>
+    </a>
+    <a class="card" href="{{base}}/concepts/cast/">
+      <span class="card-t">The cast</span>
+      <span class="card-d">Harbourmaster, Pilot, Leadsman, Tender — what each is, and what it never does.</span>
+    </a>
+    <a class="card" href="{{base}}/edrs/">
+      <span class="card-t">Decision records</span>
+      <span class="card-d">Every load-bearing decision, with the context and the trade-off accepted.</span>
+    </a>
+    <a class="card" href="{{base}}/changelog/">
+      <span class="card-t">Changelog</span>
+      <span class="card-d">What changed, when, and which decision record it came from.</span>
+    </a>
+  </div>
+</section>

@@ -1,0 +1,118 @@
+---
+id: 11
+title: "Execution is idempotent, fenced, and budgeted"
+summary: "Every execution carries a caller-supplied nonce recorded before the statement runs. A repeat returns the first outcome instead of applying the change twice, and the marque's budget is consumed by the nonce, not by success."
+status: accepted
+date: 2026-08-15
+authors:
+  - "Theo Zourzouvillys <theo@sixfathoms.dev>"
+tags: [execution, security]
+supersedes: null
+superseded_by: null
+aliases: []
+---
+
+## TL;DR
+
+`Execute` takes an **execution nonce** chosen by the caller. The Pilot records the nonce *before* it
+runs anything and refuses to run the same nonce twice. A retry — from a dropped connection, an
+impatient operator, a CLI that reconnects — returns the recorded outcome of the first attempt rather
+than applying the statement again.
+
+The marque's `budget.executions` is consumed by **claiming a nonce**, not by succeeding. An execution
+that times out or whose result is never delivered has still spent its budget, because from the
+Pilot's side an indeterminate attempt and a successful one are indistinguishable, and the safe
+reading of "I do not know whether that applied" is *assume it did*.
+
+`budget.max_rows` is asserted inside the transaction. Exceeding it rolls back.
+
+## Context
+
+Marque runs statements that are frequently not idempotent. `UPDATE accounts SET balance = balance -
+10` applied twice is a different bug from applied once, and a retried gRPC call is the ordinary way
+that happens. [ZFN-19](https://zrz.io/zfn/19-annotate-readonly-idempotent-endpoints/) is blunt about
+it: a non-idempotent retry double-applies, so every mutation gets an idempotency key.
+
+The subtlety specific to this system is **what a budget of one should mean**. The naive reading is
+"one successful execution", which sounds right and is wrong: if the connection drops after the commit
+but before the response, the operator sees a failure, retries, and a budget counting successes lets
+the second attempt through. The approver said "you may do this once" and it happened twice.
+
+So the budget counts *attempts that may have applied*, and the recovery path for a genuinely failed
+attempt is to ask for another marque — a human decision, which is the correct place for it.
+
+## Decision
+
+**Nonce first, statement second.** The Pilot's execution path is:
+
+1. Verify the marque ([EDR-0004](./0004-marques-are-signed-leases.md)) and the caller against `sub`.
+2. Insert `(marque_id, nonce)` into its local execution ledger. A unique-violation means this nonce
+   is already claimed — return the recorded outcome, or `in_progress` if there is not one yet.
+3. Check and decrement the budget in the same transaction as the claim.
+4. Open the target transaction, apply the fence pre-check, run the statements, assert the fence and
+   `max_rows`, commit or roll back ([EDR-0007](./0007-delegation-by-containment-proof.md)).
+5. Record the outcome against the nonce.
+
+Step 2 precedes step 4, so a crash between them leaves the nonce claimed and the statement unrun —
+budget spent, nothing applied. That is the correct direction to fail: the alternative loses the
+count.
+
+**The ledger is local to the Pilot** and durable. It is the one piece of state the Pilot keeps, and
+it must survive a restart or the fence is not a fence. It is small — bounded by the number of live
+marques — and entries are reaped once the marque expires.
+
+**Indeterminate outcomes are recorded as such.** If the Pilot cannot establish whether a transaction
+committed, the outcome is `indeterminate`, not `failed`. A retry with the same nonce returns
+`indeterminate`; a retry with a new nonce is refused if the budget is exhausted. The operator's path
+forward is a new marque, and the logbook shows an execution whose effect is unknown — which is the
+truth, and is what a human needs in order to check.
+
+**`max_rows` is an assertion, not a limit clause.** Marque does not append `LIMIT` to a write. A
+statement that would affect more rows than approved is *wrong*, and truncating it to the approved
+count would apply a change nobody designed.
+
+**Every execution is streamed as it happens.** The CLI shows the claim, the fence pre-check, the
+statement, the assertions, and the commit as separate events. An operator watching a slow statement
+needs to know it is running, and a silent client is one an operator interrupts.
+
+**Reads are still fenced.** A `SELECT` under a marque consumes budget the same way. It is the cheapest
+thing to make an exception for and the exception would mean a read marque never expires in practice.
+
+## Consequences
+
+**Easier.**
+
+- Retries are safe by construction, so the CLI and the console can retry aggressively on transport
+  errors without anyone thinking hard about it.
+- "Did that apply?" is answerable from the ledger, including the honest answer.
+- The budget means what an approver thinks it means.
+
+**Harder.**
+
+- **A failed attempt spends budget**, and operators will find that surprising and occasionally
+  infuriating — a network blip costing a re-approval at 3am is a bad experience. Budgets on
+  `routine` roles should default above one for exactly this reason.
+- The Pilot now has durable state, which it would otherwise not need: something to back up, restore
+  and reason about during a failover.
+- Two Pilots serving the same target must not share a marque, or the ledger is not authoritative. A
+  marque is pinned to a Pilot identity at issue time, and a Pilot that has permanently lost its
+  ledger cannot honour outstanding marques.
+
+**New obligations.**
+
+- Ledger durability is tested by killing a Pilot mid-execution and asserting the nonce is still
+  claimed on restart.
+- Reaping is bounded by marque lifetime, and the ledger's size is monitored — unbounded growth means
+  reaping has stopped, and the first symptom would otherwise be a slow execution path.
+
+## References
+
+- [ZFN-19](https://zrz.io/zfn/19-annotate-readonly-idempotent-endpoints/) — make every mutation
+  idempotent.
+- [ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/) — fence the side effects so a stale holder
+  cannot re-apply them.
+- [EDR-0004](./0004-marques-are-signed-leases.md) — where the budget comes from.
+
+## Changelog
+
+- **2026-08-15**: Accepted.
