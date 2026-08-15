@@ -30,7 +30,7 @@ Named explicitly, because each is a plausible thing to ask for and each would ch
 
 | Not doing | Why |
 |---|---|
-| **An interactive SQL client** | Exploration is a different product with a different security model. Marque takes a statement you already decided to run. Read-only exploration belongs behind a read-only role, and probably behind a different tool. |
+| **A pass-through database tunnel** | Marque provides an SQL shell and a loopback proxy that speaks the PostgreSQL wire protocol, so existing tools work unchanged — but it **parses and brokers every statement and forwards no bytes**. The interface is familiar; the control is not relaxed ([EDR-0022](../../edrs/0022-local-proxy-brokers-every-statement.md)). Explicit client transactions (`BEGIN`) are refused in the first release. |
 | **Schema migrations** | Migrations need review, ordering, rollback and a deploy pipeline. Marque is for the one-off a pipeline cannot express. |
 | **Managing database privileges** | Marque never issues `GRANT`. The role's existing privileges are the outer bound on everything it can authorise ([EDR-0006](../../edrs/0006-every-statement-names-a-role.md)). |
 | **A general network tunnel** | A relayed Pilot speaks one narrow API. Adding port-forwarding would make it a bastion, and bastions cannot be deployed where this needs to go ([EDR-0014](../../edrs/0014-relay-for-targets-with-no-inbound-route.md)). |
@@ -63,14 +63,25 @@ requirements on approval and on critical execution; RFC 8693 `act` chains for de
 **Deployment.** Control plane plus one or more Pilots; direct and relayed connectivity; AWS and GCP;
 a local development mode needing nothing but PostgreSQL.
 
-**Surfaces.** CLI (primary), web console (review, approve, agent supervision), Slack notifications,
-operator playbook, docs, decision records, changelog.
+**Surfaces.** CLI (primary); `marque psql`, a psql-compatible client that can be aliased in place
+([EDR-0027](../../edrs/0027-be-psql-then-be-better-than-psql.md)); a loopback PostgreSQL-wire proxy
+for the tools that cannot be replaced
+([EDR-0022](../../edrs/0022-local-proxy-brokers-every-statement.md)); web console (review,
+approve, agent supervision), Slack notifications, operator playbook, docs, decision records,
+changelog.
+
+**Connections.** Pooled, dynamically-credentialled connections; RDS/Aurora and Cloud SQL IAM
+authentication; **per-operator database identity** where the engine allows, so the target's own audit
+names the human independently; failover-aware driver wrappers with transparent retry disabled on
+writes; reads routed to replicas under a freshness bound
+([EDR-0021](../../edrs/0021-connections-identity-and-read-routing.md)).
 
 ## Deferred, deliberately
 
 | Deferred | Until |
 |---|---|
-| MySQL, then others | PostgreSQL has met real traffic and the parser boundary has settled |
+| MySQL, then others | PostgreSQL has met real traffic and the parser boundary has settled. Not a driver swap: MySQL has no `RETURNING` for the fence post-assert, no statement timeout for writes, and non-transactional DDL — so it ships with a published capability matrix or not at all ([EDR-0026](../../edrs/0026-a-second-engine-is-a-capability-matrix.md)) |
+| Explicit client transactions over the proxy (`BEGIN`) | A marque authorises a statement set decided in advance; an open transaction is a client deciding what to do next from what it just saw ([EDR-0022](../../edrs/0022-local-proxy-brokers-every-statement.md)) |
 | **Tier-B surveyed delegations** | Tier-A compilation has met real sentences, so the residual is known rather than assumed. It ships **off by default** and stays off until the sampled-audit loop and its suspension threshold are proven ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)) |
 | **Non-SQL operations** (agent tool calls, cloud APIs) | The SQL engine's scope grammar, fence and rehearsal have settled. Each engine is a parser, a fence mechanism and a rehearsal story — not a configuration flag |
 | Multiple approvals per marque (`min_approvals > 1`) | The signature format already supports it; the review UX does not |
@@ -88,8 +99,9 @@ with a design review.
 federated identity with DPoP, signed marques. No analyser, no console, no delegation, no relay. The
 goal is one statement, correctly brokered, end to end.
 
-**Phase 2 — usable.** Rehearsal, the analyser, Slack, the console, standing orders. This is the
-point at which a team could adopt it.
+**Phase 2 — usable.** Rehearsal, the analyser, Slack, the console, standing orders, and the SQL shell
+and loopback proxy — the interface most people will actually use. This is the point at which a team
+could adopt it.
 
 **Phase 3 — scale of authority.** Delegation with fences, compiled plain-language delegations,
 policy-as-configuration with authority diffs, role introspection findings, the relay and cross-cloud

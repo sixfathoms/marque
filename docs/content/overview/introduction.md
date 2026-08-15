@@ -93,15 +93,17 @@ See [Agents](../concepts/agents.md).
 
 ## What Marque is not
 
-- **Not a SQL client.** There is no browsing, no autocomplete-driven exploration, no ad-hoc session.
-  You bring a statement you have already decided to run.
+- **Not a pass-through tunnel.** There *is* an SQL shell, and a loopback proxy that speaks the
+  PostgreSQL wire protocol so psql and your existing tools work unchanged — but every statement
+  crossing it is parsed, scoped, fenced and logged. It forwards no bytes
+  ([EDR-0022](../../edrs/0022-local-proxy-brokers-every-statement.md)).
 - **Not a migration tool.** Schema changes belong in a migration pipeline with a review, a rollback
   and a deploy. Marque is for the one-off that a pipeline cannot express.
 - **Not a privilege manager.** It never grants privileges on your database. The role's existing
   grants are the outer bound on everything it can authorise
   ([EDR-0006](../../edrs/0006-every-statement-names-a-role.md)).
-- **Not a tunnel.** A Pilot inside your network speaks one narrow API. There is no port forwarding
-  and no shell ([EDR-0014](../../edrs/0014-relay-for-targets-with-no-inbound-route.md)).
+- **Not a network bastion.** A Pilot inside your network speaks one narrow API. There is no port
+  forwarding and no shell ([EDR-0014](../../edrs/0014-relay-for-targets-with-no-inbound-route.md)).
 - **Not a place where a model creates authority.** The analyser holds none at all
   ([EDR-0009](../../edrs/0009-the-leadsman-is-advisory.md)). A model may *compile* a written
   delegation, which a human then signs, and it may *route* a request as conforming or referred —
@@ -130,10 +132,27 @@ Six properties the design gives other things up to keep:
 in production anywhere yet. See [Scope](./scope.md) for what is in the first release and what is
 deliberately deferred.
 
+## Using it
+
+```sh
+marque submit --target prod-primary --role settings_writer -f fix.sql --reason "ACME-4471"
+marque sql    --target prod-primary --role settings_writer          # an interactive shell
+marque proxy  --target prod-primary --role settings_writer --port 15432
+psql "host=127.0.0.1 port=15432 dbname=app"                          # your tools, unchanged
+
+alias psql='marque psql'                                             # or replace psql outright
+```
+
+The proxy emulates the PostgreSQL wire protocol on loopback and brokers every statement that crosses
+it. Anything outside your scope does not hang — it returns immediately with the request id and who is
+being waited on, so you can approve it elsewhere and re-run.
+
 ## Where next
 
 - [Architecture](./architecture.md) — the components, the object model, and the trust boundaries.
 - [Scope](./scope.md) — what is in, what is out, the phases, and the prior art.
-- [The cast](../concepts/cast.md) — Harbourmaster, Pilot, Leadsman, Tender: what each is *for*, and
-  what each would never do.
+- [Agents](../concepts/agents.md) — three intersected scopes, escalation, and what an agent never gets.
+- [The cast](../concepts/cast.md) — Harbourmaster, Pilot, Leadsman, Surveyor, Tender: what each is
+  *for*, and what each would never do.
+- [Operator playbook](../operations/playbook.md) — the duties, the signals, and the procedures.
 - [Decision records](/edrs/) — every load-bearing decision, with the trade-off named.
