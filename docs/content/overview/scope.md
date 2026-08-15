@@ -70,6 +70,11 @@ for the tools that cannot be replaced
 approve, agent supervision), Slack notifications, operator playbook, docs, decision records,
 changelog.
 
+**Extensibility.** A staged statement pipeline with an out-of-process provider SPI: `transform`
+providers may rewrite a statement (constraint injection, name mapping, value synthesis, casts) and
+`verify` providers may veto asynchronously. Providers may narrow or veto and can never widen or
+disable a check ([EDR-0028](../../edrs/0028-statement-pipeline-and-provider-spi.md)).
+
 **Connections.** Pooled, dynamically-credentialled connections; RDS/Aurora and Cloud SQL IAM
 authentication; **per-operator database identity** where the engine allows, so the target's own audit
 names the human independently; failover-aware driver wrappers with transparent retry disabled on

@@ -143,6 +143,29 @@ and decrements the budget *before* anything runs, so a crash loses the attempt r
 Then, in one transaction: fence pre-check, the operator's unmodified statements, fence post-assert,
 row-count assert, commit.
 
+### The statement pipeline
+
+Every statement, from every surface, moves through one named pipeline
+([EDR-0028](../../edrs/0028-statement-pipeline-and-provider-spi.md)). Configured, out-of-process
+**providers** may join two of its stages: `transform` (rewrite — inject a constraint, map a name,
+synthesise a value, add a cast) and `verify` (inspect and veto, possibly asynchronously).
+
+```
+parse → transform* → normalise+digest → scope → verify* → rehearse → analyse
+      → approve → pre_execute* → execute+fence → observe*        (* = providers)
+```
+
+One rule governs the whole extension point: **a provider may narrow or veto, never widen, permit or
+replace a check.** Three things enforce it rather than requesting it — the digest is taken *after*
+transformation so a human signs what will actually run; scope and fence re-run on the transformed
+statement, so a rogue transform is bounded by the submitter's own authority; and there is no stage at
+which a provider can disable the fence, the magnitude assertion, marque verification or the role.
+
+The line for deciding what may become a provider: **if disabling it would let something run that
+otherwise could not, it is not a provider.** The analyser and the Surveyor sit on the SPI — both are
+already authority-free or veto-only. The containment check, the fence, signature verification, the
+nonce and the logbook never will.
+
 ### The fence, concretely
 
 The delegated row predicate is never conjoined into the operator's `WHERE`. Silently narrowing a
