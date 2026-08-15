@@ -4,16 +4,18 @@
   <p class="hero-tag">A commission to act — scoped, time-bounded, and on the record.</p>
   <hr class="rule-brass" />
   <p class="hero-lede">
-    Someone needs to run a statement against production. Today that is a Slack thread, a screen
-    share, and a psql prompt with the whole schema behind it. Marque turns it into a
-    <b>reviewed, signed, expiring grant</b>: you submit the statement, a machine reads it and
-    reports what it would touch, a human with the authority to say yes signs it — and only then,
-    only that statement, only as that role, only inside that window, does it run.
+    Someone — or something — needs to run a statement against production. Today that is a Slack
+    thread, a screen share, and a psql prompt with the whole schema behind it. Marque turns it into a
+    <b>reviewed, signed, expiring grant</b>: you submit the statement, it is rehearsed in a
+    transaction that never commits so the row count is measured rather than guessed, a human with the
+    authority to say yes signs it — and only then, only that statement, only as that role, only
+    inside that window, does it run.
   </p>
   <p class="hero-lede">
-    Everything that runs is in an append-only log naming <b>who asked, who approved, and what
-    changed</b>. Routine work never reaches the queue at all: standing orders are approved once,
-    parameterised, and constrained.
+    <b>That is also how you give an agent production access.</b> An LLM acting for a person submits
+    as itself, runs what is inside a scope it partly declares for its own task, and escalates
+    everything else to its human — who approves in seconds, with the analysis in front of them.
+    Never a credential. Never an approval. Never a shortcut through any check.
   </p>
   <div class="hero-cta">
     <a class="btn-primary" href="{{base}}/overview/introduction/">Read the introduction</a>
@@ -46,6 +48,37 @@
   </p>
 </section>
 
+<section class="explainer">
+  <h2>Agents, supervised rather than trusted</h2>
+  <p class="band-note">
+    The usual way to give an agent production access is to hand it a credential and hope. Marque's
+    answer is that an agent never holds one. It authenticates as itself, acts on behalf of a named
+    human, and what it may do without asking anybody is an <b>intersection of three scopes</b>:
+  </p>
+  <div class="flow-strip">
+    <span class="flow-step"><b>∩</b> operator policy</span>
+    <span class="flow-step"><b>∩</b> its human's delegation</span>
+    <span class="flow-step"><b>∩</b> the scope it declared for this task</span>
+  </div>
+  <p class="band-note">
+    That third term exists nowhere else, and it is nearly free: an agent knows that <i>this</i> run
+    only needs order 88213, so it says so and is held to it. An agent declaring a wide scope for a
+    narrow task becomes visible <b>before anything runs</b>.
+  </p>
+  <p class="band-note">
+    Anything outside is not refused — it is <b>escalated</b>. To that human first, always, and then
+    to whoever policy additionally requires. The agent parks; a person answers; the work resumes.
+    When it finally runs, the record is one sentence: <i>the agent executed it, on Sam's behalf,
+    authorised by Sam and the data on-call, affecting one row.</i>
+  </p>
+  <p class="lede-note">
+    <b>A model never creates authority here.</b> It can compile a delegation you write in English —
+    which you then read and sign — and it can route a request as conforming or referred, always
+    inside a bound a human already signed, always referring on doubt. The worst a model error can do
+    is fail to escalate something that was already in scope.
+  </p>
+</section>
+
 <section class="band">
   <h2>What it is for</h2>
   <div class="feature-grid">
@@ -63,10 +96,21 @@
     </div>
     <div class="feature">
       <h3>Delegation with a scope you can read</h3>
-      <p>"Update <code>settings</code> on <code>accounts</code>, where <code>tier =
-      'sandbox'</code>." Scopes are checked by containment proof, and anything unprovable escalates
-      to a human.</p>
+      <p>Object scope is proved statically; row scope is a transactional fence that <em>aborts and
+      tells you how many rows</em> rather than silently narrowing your statement.</p>
       <a href="{{base}}/edrs/0007-delegation-by-containment-proof/">EDR-0007 →</a>
+    </div>
+    <div class="feature">
+      <h3>Write the delegation in English</h3>
+      <p>"Sam can update <code>settings</code> on sandbox accounts, up to 100 rows." A model compiles
+      it; you read and sign <em>the compilation</em>; enforcement is deterministic from then on.</p>
+      <a href="{{base}}/edrs/0016-natural-language-delegations-are-compiled/">EDR-0016 →</a>
+    </div>
+    <div class="feature">
+      <h3>Escalation, not refusal</h3>
+      <p>Out-of-scope work routes to a chain of named humans — an agent's own principal first. Each
+      stage adds only the authority it holds, and a timeout never approves.</p>
+      <a href="{{base}}/edrs/0019-escalation-is-a-chain/">EDR-0019 →</a>
     </div>
     <div class="feature">
       <h3>Routine work never queues</h3>
@@ -79,6 +123,12 @@
       <p>Static analysis plus a rehearsed, rolled-back run supply the facts; a model writes the
       summary. It is advisory input to a human, and it can never approve.</p>
       <a href="{{base}}/edrs/0009-the-leadsman-is-advisory/">EDR-0009 →</a>
+    </div>
+    <div class="feature">
+      <h3>Agents get scope, not credentials</h3>
+      <p>An agent submits as itself for a named human, inside a scope it partly declares per task,
+      and escalates the rest. It never holds a credential and can never approve.</p>
+      <a href="{{base}}/edrs/0018-agents-are-submitters-under-intersected-scope/">EDR-0018 →</a>
     </div>
     <div class="feature">
       <h3>One URL to configure a client</h3>
@@ -104,9 +154,17 @@
       <span class="card-t">Scope</span>
       <span class="card-d">What is in, what is out, the phases, and the prior art we looked at.</span>
     </a>
+    <a class="card" href="{{base}}/concepts/agents/">
+      <span class="card-t">Agents</span>
+      <span class="card-d">Three intersected scopes, escalation to a named human, and what an agent never gets.</span>
+    </a>
     <a class="card" href="{{base}}/concepts/cast/">
       <span class="card-t">The cast</span>
-      <span class="card-d">Harbourmaster, Pilot, Leadsman, Tender — what each is, and what it never does.</span>
+      <span class="card-d">Harbourmaster, Pilot, Leadsman, Surveyor, Tender — and what each never does.</span>
+    </a>
+    <a class="card" href="{{base}}/operations/playbook/">
+      <span class="card-t">Operator playbook</span>
+      <span class="card-d">The duties, the signals that matter, and the procedures — including a compromise.</span>
     </a>
     <a class="card" href="{{base}}/edrs/">
       <span class="card-t">Decision records</span>

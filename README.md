@@ -14,6 +14,12 @@ authority over that database signs a grant naming that exact statement, that rol
 window. Then it runs — once, inside the window, as that role — and everything lands in an
 append-only journal naming who asked, who approved, what they were shown, and what changed.
 
+**This is also how you give an agent production access.** An LLM acting for a person submits as
+itself, runs what is inside an intersected scope it partly declares for its own task, and escalates
+everything else to its human — who approves in seconds with the analysis in front of them. The agent
+never holds a credential, can never approve anything, and gets no shortcut through any check. See
+[Agents](https://sixfathoms.github.io/marque/concepts/agents/).
+
 > [!NOTE]
 > **Status: design.** The decision records are published; the implementation has not started.
 > Nothing here runs in production anywhere yet.
@@ -29,8 +35,10 @@ Four properties the design gives other things up to keep:
   offline. The tool stays usable during exactly the incidents it exists for.
 - **Nothing is silently narrowed.** A statement that would touch rows outside your delegated scope
   aborts and tells you how many. A partially-applied change nobody reviewed is worse than a refusal.
-- **No model approves anything.** The analyser writes prose beside deterministic facts and holds no
-  authority a configuration could widen.
+- **No model creates authority.** A model may compile a delegation you then read and sign, and may
+  route a request as conforming or referred — always inside a bound a human already signed, always
+  referring on doubt. The worst a model error can do is fail to escalate something that was already
+  in scope.
 
 ## Repository layout
 
@@ -59,7 +67,12 @@ entry with an unknown tag or a malformed filename all fail it.
 1. [Introduction](https://sixfathoms.github.io/marque/overview/introduction/) — the problem and the flow.
 2. [Architecture](https://sixfathoms.github.io/marque/overview/architecture/) — components, object model, trust boundaries.
 3. [Scope](https://sixfathoms.github.io/marque/overview/scope/) — what is in, what is out, prior art.
-4. [Decision records](https://sixfathoms.github.io/marque/edrs/) — start at EDR-0001, then 0004, 0005 and 0007.
+4. [Agents](https://sixfathoms.github.io/marque/concepts/agents/) — the second use case, in full.
+5. [Decision records](https://sixfathoms.github.io/marque/edrs/) — start at EDR-0001, then 0004,
+   0005 and 0007 for the security argument; 0018 and 0019 for agents; 0017 is where a model comes
+   closest to authority and is the one to attack hardest.
+6. [Operator playbook](https://sixfathoms.github.io/marque/operations/playbook/) — what running it
+   involves, written at design stage on purpose.
 
 Design references cite [Field Notes](https://zrz.io/zfn/) as `ZFN-N` — standing engineering
 positions this system applies.

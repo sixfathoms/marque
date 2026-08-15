@@ -27,6 +27,10 @@ issue, not a documentation issue:
 | A statement cannot affect rows outside a delegation's fence without the transaction aborting | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | A standing order's parameters cannot alter the shape of its statement | [EDR-0008](docs/edrs/0008-standing-orders.md) |
 | No configuration gives the analyser authority to approve, deny or alter anything | [EDR-0009](docs/edrs/0009-the-leadsman-is-advisory.md) |
+| No model can create authority a human did not sign — a compiled delegation is signed by its grantor, and a conformance judgment can only choose between two paths that both end in a human-granted scope | [EDR-0016](docs/edrs/0016-natural-language-delegations-are-compiled.md), [EDR-0017](docs/edrs/0017-conformance-matching-may-route-never-widen.md) |
+| A conformance judgment cannot widen a scope, deny a request, or resolve uncertainty toward `conforms` | [EDR-0017](docs/edrs/0017-conformance-matching-may-route-never-widen.md) |
+| An agent cannot approve anything under any configuration, and cannot exceed the intersection of operator policy, its human's delegation, and its own task declaration | [EDR-0018](docs/edrs/0018-agents-are-submitters-under-intersected-scope.md) |
+| No escalation stage is satisfied by a timeout, and every stage is a human | [EDR-0019](docs/edrs/0019-escalation-is-a-chain.md) |
 | A rehearsal cannot commit | [EDR-0010](docs/edrs/0010-rehearse-before-you-sign.md) |
 | A retried execution cannot apply a statement twice | [EDR-0011](docs/edrs/0011-execution-is-idempotent-and-fenced.md) |
 | Marque's own role cannot rewrite the logbook | [EDR-0012](docs/edrs/0012-the-logbook-is-append-only.md) |
@@ -45,7 +49,15 @@ discussion, but they are not surprises:
 - **A rehearsal executes an unapproved statement** inside a rolled-back transaction. It can still
   fire triggers, consume sequence values and write WAL
   ([EDR-0010](docs/edrs/0010-rehearse-before-you-sign.md)).
-- **An approver can approve something they did not read.** Nothing in the design prevents this, and
-  the record says so ([EDR-0009](docs/edrs/0009-the-leadsman-is-advisory.md)).
+- **An approver can approve something they did not read**, and a grantor can sign a compilation they
+  did not read. Nothing in the design prevents either, and the records say so
+  ([EDR-0009](docs/edrs/0009-the-leadsman-is-advisory.md),
+  [EDR-0016](docs/edrs/0016-natural-language-delegations-are-compiled.md)).
+- **A conformance judgment can be wrong inside a signed scope.** Tier-B surveying bounds a model
+  error to "failed to escalate something already within a human-signed scope" — it does not eliminate
+  it. This is why Tier B ships **off by default** and why the sampled audit is mandatory rather than
+  advisory ([EDR-0017](docs/edrs/0017-conformance-matching-may-route-never-widen.md)).
+- **Prompt injection in statement text is an ongoing arms race.** The structural mitigation is the
+  deterministic outer bound, which holds when the prompt defence does not.
 - **Statement text may contain personal data and the logbook is immutable**
   ([EDR-0012](docs/edrs/0012-the-logbook-is-append-only.md)).

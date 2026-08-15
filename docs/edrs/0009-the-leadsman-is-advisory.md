@@ -92,6 +92,14 @@ and a later re-analysis cannot replace it.
 **No model is a supported configuration.** A deployment with no model configured runs everything
 except the summary row. That is a legitimate deployment, not a degraded one, and the tests cover it.
 
+**Scope of this record.** It governs the **Leadsman** — the analyst that reads a request and writes a
+summary. It is not a blanket statement that no model may appear anywhere in Marque. A separate
+principal, the Surveyor, judges whether a request conforms to a scope a human already signed
+([EDR-0017](./0017-conformance-matching-may-route-never-widen.md)); it has two possible outcomes, can
+only choose a route, and can never widen a bound. The invariant both share, and the one that actually
+matters, is that **no model can create authority a human did not sign** — the Leadsman by holding
+none at all, the Surveyor by choosing only between two paths that both end in a human-granted scope.
+
 ## Consequences
 
 **Easier.**
@@ -132,7 +140,13 @@ except the summary row. That is a legitimate deployment, not a degraded one, and
   isolated egress path.
 - [ZFN-4](https://zrz.io/zfn/4-incident-tooling-independence/) — the analyser must never be able to
   block an incident.
+- [EDR-0017](./0017-conformance-matching-may-route-never-widen.md) — the separate, bounded principal
+  that does gate, and the constraints that bound it.
 
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Added "Scope of this record" to say explicitly that this governs the Leadsman
+  rather than every model in the system, and to point at
+  [EDR-0017](./0017-conformance-matching-may-route-never-widen.md). The decision is unchanged: the
+  analyst still holds no authority, produces no verdict, and is read by nothing in the approval path.

@@ -61,7 +61,35 @@ flowchart TB
 
 Routine work never reaches step 3. **Standing orders** are statements approved once and invoked with
 constrained parameters; **delegation** lets an approver hand a narrow slice of their authority to
-someone else, with an expiry.
+someone else, with an expiry. A delegation can be written as a sentence — *"Sam can update `settings`
+on sandbox accounts, up to 100 rows"* — which a model compiles into a structured scope that Sam's
+grantor reads and signs. After that the enforcement is entirely deterministic
+([EDR-0016](../../edrs/0016-natural-language-delegations-are-compiled.md)).
+
+## Agents
+
+The same machinery is what lets an **agent** touch production safely, and it is the use case Marque
+is aimed squarely at.
+
+An agent — a language model with tools, a script, a scheduled job — is a **submitter, never an
+approver**. It authenticates as itself, acts on behalf of a named human, and runs what is in scope
+without asking anyone. What it may do without asking is the intersection of three grants:
+
+```
+operator policy  ∩  its human's delegation  ∩  the scope the agent declared for this task
+```
+
+That third term is the one nothing else has. An agent knows what *this run* actually needs — order
+88213 and nothing else — so it declares that at the start of the task and is held to it. An agent
+declaring a wide scope for a narrow task is visible before anything runs.
+
+Anything outside is not refused, it is **escalated**: to that human first, always, and then to whoever
+policy additionally requires. The agent parks, a person is asked with the full analysis in front of
+them, and the work resumes. When it runs, the record says exactly what happened — *the agent executed
+it, on Sam's behalf, authorised by Sam and the data on-call.*
+
+An agent never holds a credential, never approves anything, and gets no shortcut through any check.
+See [Agents](../concepts/agents.md).
 
 ## What Marque is not
 
@@ -74,9 +102,12 @@ someone else, with an expiry.
   ([EDR-0006](../../edrs/0006-every-statement-names-a-role.md)).
 - **Not a tunnel.** A Pilot inside your network speaks one narrow API. There is no port forwarding
   and no shell ([EDR-0014](../../edrs/0014-relay-for-targets-with-no-inbound-route.md)).
-- **Not a place where a model approves anything.** The analyser writes prose beside deterministic
-  facts and holds no authority whatsoever
-  ([EDR-0009](../../edrs/0009-the-leadsman-is-advisory.md)).
+- **Not a place where a model creates authority.** The analyser holds none at all
+  ([EDR-0009](../../edrs/0009-the-leadsman-is-advisory.md)). A model may *compile* a written
+  delegation, which a human then signs, and it may *route* a request as conforming or referred —
+  always inside a deterministic bound a human already signed, and always referring on doubt
+  ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)). The worst a model
+  error can do is fail to escalate something already within a signed scope.
 
 ## Design commitments
 
@@ -90,6 +121,8 @@ Six properties the design gives other things up to keep:
 | No anonymous actor | Every principal is federated, including the machine ones ([EDR-0003](../../edrs/0003-federated-identity-and-sender-constrained-tokens.md)) |
 | Nothing is silently narrowed | A statement outside your delegated scope aborts and says by how much ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md)) |
 | A retry never double-applies | Executions are fenced by a nonce claimed before the statement runs ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)) |
+| No model can create authority | A model compiles or routes; a human signs the bound, and the fence still runs ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)) |
+| An agent is supervised, not blocked | Out-of-scope work escalates to its human rather than failing ([EDR-0019](../../edrs/0019-escalation-is-a-chain.md)) |
 
 ## Status
 

@@ -86,13 +86,28 @@ a commit message.
   column, not a fragment of a predicate (EDR-0008).
 - **The relay is a dumb pipe.** It never parses the Pilot API. Every feature request aimed at it
   ("could it cache…", "could it retry…") should be refused on principle (EDR-0014).
+- **A model can never create authority a human did not sign.** This is the invariant that spans
+  EDR-0009, EDR-0016 and EDR-0017 and it is the one to defend hardest. Concretely: a written
+  delegation is compiled and **the human signs the compilation, not the sentence** (EDR-0016); the
+  Surveyor has exactly two outcomes, `conforms` and `refer`, runs only *inside* a compiled bound a
+  human signed, requires a unanimous panel, and resolves every error, timeout and ambiguity to
+  `refer` (EDR-0017). Adding a third outcome, dropping unanimity, defaulting to `conforms`, or
+  letting a Tier-B delegation exist without a compiled outer bound each changes the risk *category*.
+  Tier B ships off and its sampled audit is what makes it correctable — an audit queue nobody reads
+  silently removes the mitigation.
+- **An agent's effective scope is the intersection of three grants**, including one the agent
+  declares for its own task, and the declaration attenuates only and cannot be widened mid-task
+  (EDR-0018). An agent can never approve: approval needs a fresh interactive authentication no
+  workload principal can satisfy, and that mechanical impossibility is asserted by a test.
+- **Escalation stage 1 for an agent is always its own principal**, every stage is a human, and **a
+  timeout never satisfies a stage** (EDR-0019).
 
 ## Naming
 
 Components are archetypes in one register — Harbourmaster (control), Pilot (data plane), Leadsman
-(advisory), Tender (relay) — per [ZFN-43](https://zrz.io/zfn/43-name-systems-as-archetypes/). The
+(advisory), Surveyor (conformance), Tender (relay) — per [ZFN-43](https://zrz.io/zfn/43-name-systems-as-archetypes/). The
 cast list at `docs/content/concepts/cast.md` is the authority and is part of the architecture. Do
-not add a fifth archetype for plumbing; plumbing gets plain descriptive names.
+not add an archetype for plumbing; plumbing gets plain descriptive names.
 
 If a proposed feature feels wrong for a character, treat that as an architectural signal: either it
 belongs elsewhere, or the component is becoming two components.

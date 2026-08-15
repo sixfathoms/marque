@@ -65,6 +65,18 @@ risk score, or holds any authority a configuration could widen.</p>
 </div>
 
 <div class="cast-member">
+<h4>Surveyor</h4>
+<p class="role">Conformance</p>
+<p>The marine surveyor who inspects against a standard and certifies conformance — or declines to,
+and refers you onward. Given a scope a human already signed and a statement in hand, it answers one
+closed question: does this conform? Pedantic, literal, unimaginative, and conservative by
+construction — it never has a view on whether something is a <i>good idea</i>.</p>
+<p class="never"><b>Never:</b> widens a scope, denies anything, alters a statement, produces a
+score, or resolves an uncertainty toward yes. Its only two answers are <i>conforms</i> and
+<i>refer to a human</i>.</p>
+</div>
+
+<div class="cast-member">
 <h4>Tender</h4>
 <p class="role">Transport</p>
 <p>The small boat that ferries between shore and a vessel that cannot come alongside. It carries
@@ -74,6 +86,23 @@ no inbound route can still be served.</p>
 retries, or grows a feature.</p>
 </div>
 </div>
+
+## Two models, two temperaments
+
+The Leadsman and the Surveyor are both language models and they are deliberately different
+characters, because they do different jobs and the difference is what keeps them safe.
+
+The **Leadsman** is discursive and helpful. It explains, summarises, and asks the question the
+approver had not thought of. It holds no authority at all, which is exactly why it is allowed to be
+expansive ([EDR-0009](../../edrs/0009-the-leadsman-is-advisory.md)).
+
+The **Surveyor** is the opposite: narrow, literal, and deeply boring. It answers one question with
+one of two words, inside a bound a human signed, and refers on any doubt
+([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)).
+
+If either starts sounding like the other, something has gone wrong. A Leadsman that begins
+recommending is drifting toward authority it must not have; a Surveyor that begins explaining is
+being asked to exercise judgment it was specifically not given.
 
 ## Vocabulary
 
@@ -86,7 +115,7 @@ keep — the rest of the vocabulary is deliberately boring.
 | **marque** | The signed grant. The central object ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)). |
 | **standing order** | A statement approved once and invoked with constrained parameters. Naval standing orders are persistent instructions that need no fresh authorisation ([EDR-0008](../../edrs/0008-standing-orders.md)). |
 | **logbook** | The append-only journal. A ship's log is contemporaneous, signed, and not rewritten ([EDR-0012](../../edrs/0012-the-logbook-is-append-only.md)). |
-| request, analysis, execution, delegation, target, role, fence, budget | Exactly what they sound like. No metaphor. |
+| request, analysis, execution, delegation, target, role, fence, budget, task, escalation chain | Exactly what they sound like. No metaphor. |
 
 ## When a name stops telling the truth
 
@@ -99,6 +128,9 @@ tripwires:
 - **If the Leadsman's output is ever consulted by the approval path**, it is no longer advisory, and
   the answer is not to rename it — it is
   [EDR-0009](../../edrs/0009-the-leadsman-is-advisory.md).
+- **If the Surveyor ever gains a third possible answer**, it has stopped being a router and started
+  being a judge. Two outcomes is not a simplification of the design; it *is* the design
+  ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)).
 
 Renaming has a migration cost and you pay it anyway. Splitting is usually the better answer:
 a character that grew a second unrelated job was always two characters.

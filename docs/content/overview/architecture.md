@@ -34,6 +34,7 @@ flowchart TB
 | **Harbourmaster** | control | requests, policy, delegations, the logbook, its own signing key | connects to a target, or holds a target credential |
 | **Pilot** | data | target credentials by reference, the connection, the execution ledger | decides whether something may run |
 | **Leadsman** | advisory | nothing durable | approves, denies, alters, or executes anything |
+| **Surveyor** | conformance | nothing durable | widens a bound, denies, or resolves doubt toward yes |
 | **Tender** | transport | nothing | interprets or terminates what it relays |
 
 The split is not just about scaling ([ZFN-16](https://zrz.io/zfn/16-separate-data-plane-control-plane/)),
@@ -49,6 +50,7 @@ This table is the design's actual argument, and every record defends a row of it
 | Harbourmaster | read of request text, analyses, approval history; ability to refuse service | any database access; ability to mint a valid marque (no approver key) |
 | Pilot | ability to execute marques that already exist and are unexpired; target credentials for its own targets | authority to create new marques; access to targets served by other Pilots |
 | Leadsman | ability to write misleading prose into an analysis | any authority; any credential; any other request |
+| Surveyor | ability to route a request onto the fast path **within a scope a human already signed** | the ability to widen that scope, deny anything, or reach a request outside a Tier-B delegation |
 | Tender | traffic analysis and denial of service | statement or result contents (it is not a party to the session) |
 | One approver's device key | ability to sign payloads | validity — a marque also needs the Harbourmaster's countersignature under policy |
 
@@ -163,6 +165,64 @@ COMMIT;
 Check **(c)** is the one that is easy to miss: an `UPDATE` can satisfy the fence before and violate
 it after.
 
+## Agents and escalation
+
+An agent is a **submitter, never an approver**
+([EDR-0018](../../edrs/0018-agents-are-submitters-under-intersected-scope.md)). It authenticates as
+itself, acts on behalf of a named human, and what it may run without asking is:
+
+```
+operator policy  ∩  its human's delegation to it  ∩  the scope it declared for this task
+```
+
+The third term is the novel one. An agent opens a task declaring the least it needs — *"orders,
+`status` and `updated_at`, where `id = '88213'`, at most 1 row, 30 minutes"* — and is held to it. It
+attenuates only, cannot be widened mid-task, and expires. A declared scope much wider than what the
+task used is an anomaly signal that exists in no other design.
+
+Anything outside escalates rather than failing
+([EDR-0019](../../edrs/0019-escalation-is-a-chain.md)). The chain is computed at submission and shown
+immediately:
+
+```mermaid
+flowchart TB
+  AG[Agent submits] --> IN{In scope}
+  IN -->|yes| RUN[Execute]
+  IN -->|no| S1[Stage 1: its human]
+  S1 --> S2[Stage 2: data owner if policy requires]
+  S2 --> RUN
+```
+
+Stage 1 for an agent is **always its principal**, whether or not policy would otherwise require them.
+Each stage contributes only the authority it holds, every stage is a person, and **a timeout never
+approves**. The resulting marque names the agent as executor with an RFC 8693 `act` chain naming the
+humans, so the record reads: *the agent ran it, on Sam's behalf, authorised by Sam and the data
+on-call.*
+
+### Where models sit, and what bounds them
+
+Two model principals, deliberately different characters:
+
+| | Leadsman | Surveyor |
+|---|---|---|
+| Job | writes the summary an approver reads | answers whether a request conforms to a signed scope |
+| Outputs | prose, questions | exactly two values: `conforms`, `refer` |
+| Authority | none at all | chooses a route inside a human-signed bound |
+| On doubt | irrelevant — it decides nothing | refer |
+
+A written delegation is **compiled once** by a model into a structured scope, and the grantor signs
+**the compilation, not the sentence**
+([EDR-0016](../../edrs/0016-natural-language-delegations-are-compiled.md)). Where the whole sentence
+compiles — Tier A, the preferred case — no model runs at request time at all and enforcement is
+100% deterministic. Only a clause with no structured equivalent needs the Surveyor, and even then it
+sits *inside* the compiled bound, with a unanimous three-way panel, default-refer, ingress quotas, a
+sampled after-the-fact human audit that can automatically suspend the fast path, and a polled kill
+switch that defaults off ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)).
+
+The invariant across all of it: **a model can never create authority a human did not sign.** The
+worst a model error achieves is failing to escalate something that was already inside a signed scope,
+where the fence and the magnitude assertions still run.
+
 ## Identity
 
 Every principal is federated; there are no local accounts, no passwords and no API keys
@@ -238,6 +298,7 @@ cloud is special, and no cloud-specific connectivity primitive is required.
 | Harbourmaster | No new submissions or approvals. **Existing marques still execute** — the Pilot verifies locally. Revocation lists go stale, so `required`-policy marques stop after the refresh interval. |
 | Pilot | Its targets are unreachable, and requests for them fail fast with that reason. Other Pilots are unaffected. |
 | Leadsman | Requests queue normally with deterministic facts attached and a visible "no summary produced" note. Never blocks. |
+| Surveyor | Tier-B delegations fall back to referring everything to a human. Tier-A delegations are unaffected, because no model was in their path. |
 | Tender | Its Pilots become unreachable. A direct-mode Pilot is unaffected. |
 | Identity provider | Nobody can submit or approve. Already-signed marques still execute. |
 | WAL listener | Notifications and projections stall. **The replication slot retains WAL and can fill the primary's disk** — this is the alert that matters most. |
@@ -266,7 +327,15 @@ Three surfaces, all over the same schema:
 Honest gaps at design time, listed so they are not discovered as surprises:
 
 - **Approver fatigue.** Nothing here stops a tired human reading the summary and skipping the SQL.
-  Provenance markers help; they do not solve it.
+  Provenance markers help; they do not solve it. Escalation chains and agent volume both push in the
+  wrong direction here, which is why standing orders and Tier-A compiled delegations matter more than
+  they look.
+- **A grantor may sign a compilation they did not read.** The same problem as approver fatigue,
+  moved to the moment of delegation, where it has a longer half-life
+  ([EDR-0016](../../edrs/0016-natural-language-delegations-are-compiled.md)).
+- **Tier B is the most dangerous thing in the system.** Every constraint on it is load-bearing, and
+  the sampled audit is the only mechanism that makes it *correctable* rather than merely bounded —
+  so an audit queue nobody reads silently removes the mitigation.
 - **Erasure versus an immutable journal.** Statement text may contain personal data, and the logbook
   cannot be edited. Redacting samples by default reduces the surface without closing the question
   ([EDR-0012](../../edrs/0012-the-logbook-is-append-only.md)).
@@ -282,3 +351,10 @@ Start with [EDR-0001](../../edrs/0001-marque-platform-architecture.md) for the w
 [EDR-0005](../../edrs/0005-control-plane-holds-no-credentials.md) — between them they are the entire
 security argument. [EDR-0007](../../edrs/0007-delegation-by-containment-proof.md) is the hardest and
 most interesting one.
+
+For the agent surface, read
+[EDR-0018](../../edrs/0018-agents-are-submitters-under-intersected-scope.md) and
+[EDR-0019](../../edrs/0019-escalation-is-a-chain.md), then
+[EDR-0016](../../edrs/0016-natural-language-delegations-are-compiled.md) and
+[EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md) — 0017 is where a model
+comes closest to authority, and it is the one to attack hardest.
