@@ -36,9 +36,14 @@ the escalation chain, so you can approve it elsewhere and re-run:
 
 ```
 ERROR:  outside your delegated scope; submitted for approval
-DETAIL:  req_01JB2Q9F3K8Z — waiting on sam@acme.example, then group:data-oncall
-HINT:  re-run this statement once approved, or watch: marque watch req_01JB2Q9F3K8Z
+DETAIL:  req_01JB2Q9F3K8Z · 412 rows rehearsed, 0 outside fence
+HINT:   waiting on sam@acme.example (stage 1 of 2), then group:data-oncall
+        share:  https://marque.acme.example/r/01JB2Q9F3K8Z
+        watch:  marque watch req_01JB2Q9F3K8Z
 ```
+
+The full contents of that block, and the reference's non-capability property, are
+[EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md).
 
 ## Context
 
@@ -206,3 +211,4 @@ case, and because it needs no local port at all.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: added the multi-statement `Query` refusal, separated out-of-grammar (which escalates) from unsupported (which refuses), enumerated the `SET` allowlist criterion, and specified `SSLRequest`, `GSSENCRequest` and `CancelRequest` behaviour.
+- **2026-08-16**: Amended for the emergency paths and operator surfaces: the out-of-scope error now carries the full status block ([EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)).

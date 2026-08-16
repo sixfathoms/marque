@@ -79,6 +79,9 @@ multiple signatures over one payload natively. The payload:
   "objects": [ … ],                      // write-set reference set (EDR-0033)
   "machinery": "sha256:…",               // relation fingerprint, re-checked at execution (EDR-0033)
   "roster_epoch": 47,                    // which epoch signatures resolve against (EDR-0030)
+  "justification": "…",                  // required when auth.kind = break_glass (EDR-0037);
+                                         //   bound here so it cannot be added or edited after
+  "urgent": false, "stages_collapsed": false,   // EDR-0037, recorded on the artefact
   "require_execution_presence": false    // EDR-0035; monotone — the Pilot requires it if EITHER
                                          //   this or the anchored policy says so
 }
@@ -244,3 +247,4 @@ the statement affects more rows than were approved.
 - **2026-08-16**: Amended after a second expert panel: the payload gains `display`, a canonical rendering covered by every signature ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: widened the revocation list's `revoked` array to a typed set — the fast path verifies *artefacts*, and a list of marque ids cannot revoke the standing order that keeps minting them — and stated plainly who signs the list and what a compromised signer can and cannot do with it.
 - **2026-08-16**: Amended after the second panel's synthesis: corrected "Verification is local", which was verbatim the construction [EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md) exists to close, and added the payload fields five later records had claimed it carried.
+- **2026-08-16**: Amended for the emergency paths and operator surfaces: added `justification`, `urgent` and `stages_collapsed` to the payload — a break-glass justification is bound into what every signature covers, so it cannot be added or edited afterwards ([EDR-0037](./0037-emergency-paths.md)).

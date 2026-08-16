@@ -39,6 +39,9 @@ Tier B — the three that will actually bite are the **replication slot**, **Pil
 | **Audit queue age** (Tier B) | under a day | The sampled audit is the *only* mechanism that makes a model's routing correctable. An unread queue silently removes it while everything still looks fine ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)). |
 | **Pilot reachability** | all registered | A relayed Pilot that silently deregistered looks healthy until the first request fails — during an incident ([EDR-0014](../../edrs/0014-relay-for-targets-with-no-inbound-route.md)). |
 | Time-in-stage, per approver group | minutes | A group with a median of hours has a rota problem, and people will route around the queue |
+| **Break-glass rate per principal** | rare, and falling | A grant used routinely is a delegation somebody should have written properly; this is the drift signal, and drift is the real risk rather than abuse ([EDR-0037](../../edrs/0037-emergency-paths.md)) |
+| **Break-glass review queue age** | under its deadline | An unreviewed break-glass removes the only mechanism that makes the capability correctable |
+| **Approved marques expiring unused** | near zero | Someone got approval and never noticed; an approval latency problem its operators have already worked around ([EDR-0038](../../edrs/0038-a-request-is-a-shareable-watchable-object.md)) |
 | Escalation rate per agent | stable | Rising means the agent's delegation no longer matches its job |
 | Declared-versus-used scope gap per agent | small | A wide declaration for a narrow task is a badly built or compromised agent |
 | Panel disagreement rate (Tier B) | low and stable | A delegation whose panel keeps disagreeing needs rewriting |
@@ -63,7 +66,9 @@ flagged `indeterminate` in the logbook — those are executions whose effect Mar
 know, and only a human can resolve them
 ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)).
 
-**Weekly.** Review new and modified delegations, particularly Tier-B ones and any whose compilation
+**Weekly.** Review every break-glass use against its justification, and every break-glass **grant**
+with its scope and usage count side by side — no uses in a quarter means remove it, many uses means
+turn it into a delegation. Review new and modified delegations, particularly Tier-B ones and any whose compilation
 carried `inferred` clauses. Review role-introspection findings — a role that has *widened* is the
 important one ([EDR-0006](../../edrs/0006-every-statement-names-a-role.md)). Review standing-order
 invocation counts and retire the unused.
@@ -132,6 +137,20 @@ holds are separately revoked with `marque revoke`, and take effect within the Pi
 refresh interval.
 
 For "stop every agent on this target", suspend at the target level rather than one at a time.
+
+### Respond to a break-glass
+
+You will hear about it before you look — that is the design
+([EDR-0037](../../edrs/0037-emergency-paths.md)).
+
+1. **Read the justification.** It is bound into the signed marque, so it is what the person actually
+   typed, not a reconstruction.
+2. **Do not treat it as an incident by itself.** A break-glass during an outage is the system working.
+   The finding is a break-glass that is *routine*.
+3. **Review it before the deadline.** An unreviewed break-glass is a reported finding and, above a
+   configured count, suspends the grant.
+4. **If the same grant keeps being used, rewrite it as a delegation.** A capability used weekly is not
+   an emergency capability, and leaving it as one means the loud path is the normal path.
 
 ### Turn off Tier-B surveying
 

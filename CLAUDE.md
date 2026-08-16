@@ -157,6 +157,18 @@ a commit message.
 - **Every Pilot method verifies a submitter signature.** The control plane relays, it does not
   authorise (EDR-0034).
 
+- **Break-glass is a pre-granted dormant scope, never a mode the software can enter.** It mints an
+  ordinary fast-path marque against a signed grant (EDR-0037), so there is **no code path that skips a
+  check** — what changed is that a human signed the shape earlier. It requires an explicit act, a
+  justification bound into the signed payload, and a user-verification assertion; no configuration
+  suppresses its notification; and an agent can never use it.
+- **Urgency reroutes, it does not widen.** It changes who is asked and how loudly. It may reduce a
+  chain to one stage only where a target explicitly enables `urgency_may_collapse_stages`, default
+  off — otherwise `--urgent` becomes the universal bypass within a month (EDR-0037).
+- **A request reference is an identifier, not a capability.** People paste them into shared channels;
+  resolving one must still require entitlement, and must 404 rather than 403 so the reference does not
+  confirm its own existence (EDR-0038).
+
 ## Naming
 
 Components are archetypes in one register — Harbourmaster (control), Pilot (data plane), Leadsman

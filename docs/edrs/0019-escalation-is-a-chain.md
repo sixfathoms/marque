@@ -110,6 +110,13 @@ signatures recording every stage. So the record reads: *the agent ran it, on Sam
 by Sam and the data on-call.* That is exactly what happened, and it is the sentence
 [ZFN-38](https://zrz.io/zfn/38-agents-are-principals/) asks the audit log to be able to produce.
 
+**Urgency reroutes the chain without changing it.** A request marked `--urgent`
+([EDR-0037](./0037-emergency-paths.md)) notifies **every stage at once** rather than in sequence,
+pages rather than messages, and adds the target's `emergency_approvers` to each stage's eligible set.
+The stages, their thresholds and the scope are untouched — unless `urgency_may_collapse_stages` is on
+for that target, in which case the chain becomes one stage drawn from `emergency_approvers`, the
+marque records that it was collapsed, and the request joins the post-hoc review queue.
+
 **Notification per stage, where the approver already is.** Slack first, driven off the WAL stream
 ([EDR-0013](./0013-async-work-rides-the-wal.md)), with the request, the measured rehearsal numbers,
 who is asking, whether it is an agent, and a link. Reminders before timeout, not after.
@@ -163,3 +170,4 @@ the agent's own reply to its caller.
 - **2026-08-15**: Amended after review: the chain's freeze at submission is now load-bearing for [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md), which binds the required approval count, the eligible approvers and the chain digest into the signed payload. Loosening the freeze would break that record's verification.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: defined `refuse_if_unfilled` and stated that the self-approval and distinctness tests apply to every human party to a request, so an unfillable chain refuses cleanly instead of deadlocking.
 - **2026-08-16**: Amended in the second panel's should-fix pass: stated that the frozen chain is what EDR-0030's `approvals.stages` encodes and that its preimage travels in the marque bundle.
+- **2026-08-16**: Amended for the emergency paths and operator surfaces: stated how urgency reroutes the chain — every stage at once, paged, with `emergency_approvers` added — without changing stages, thresholds or scope unless a target enables collapse ([EDR-0037](./0037-emergency-paths.md)).

@@ -39,7 +39,10 @@ issue, not a documentation issue:
 | No configuration gives the analyser authority to approve, deny or alter anything | [EDR-0009](docs/edrs/0009-the-leadsman-is-advisory.md) |
 | No model can create authority a human did not sign — a compiled delegation is signed by its grantor, and a conformance judgment can only choose between two paths that both end in a human-granted scope | [EDR-0016](docs/edrs/0016-natural-language-delegations-are-compiled.md), [EDR-0017](docs/edrs/0017-conformance-matching-may-route-never-widen.md) |
 | A conformance judgment cannot widen a scope, deny a request, or resolve uncertainty toward `conforms` | [EDR-0017](docs/edrs/0017-conformance-matching-may-route-never-widen.md) |
-| An agent cannot approve anything under any configuration, and cannot exceed the intersection of operator policy, its human's delegation, and its own task declaration | [EDR-0018](docs/edrs/0018-agents-are-submitters-under-intersected-scope.md) |
+| Break-glass cannot be used without an explicit act, a bound justification and a user-verification assertion, and no configuration suppresses its notification | [EDR-0037](docs/edrs/0037-emergency-paths.md) |
+| Urgency never widens scope, and never reduces the approval requirement unless a target explicitly enables stage collapse | [EDR-0037](docs/edrs/0037-emergency-paths.md) |
+| A request reference is an identifier, not a capability — holding it grants nothing | [EDR-0038](docs/edrs/0038-a-request-is-a-shareable-watchable-object.md) |
+| An agent cannot approve anything **or break glass** under any configuration, and cannot exceed the intersection of operator policy, its human's delegation, and its own task declaration | [EDR-0018](docs/edrs/0018-agents-are-submitters-under-intersected-scope.md) |
 | No escalation stage is satisfied by a timeout, and every stage is a human | [EDR-0019](docs/edrs/0019-escalation-is-a-chain.md) |
 | A rehearsal cannot commit | [EDR-0010](docs/edrs/0010-rehearse-before-you-sign.md) |
 | A retried execution cannot apply a statement twice | [EDR-0011](docs/edrs/0011-execution-is-idempotent-and-fenced.md) |
@@ -86,6 +89,9 @@ discussion, but they are not surprises:
 - **A compromised control plane can withhold a roster update**, so a newly-enrolled approver may be
   unrecognised and a retired key may stay live until Pilots see a newer epoch. Roster age is a
   monitored signal.
+- **A break-glass grant of `scope: any` is unbounded within the role.** Nothing narrows it: it is
+  gated by a separate permission to grant, by loudness, and by post-hoc review — which is policy and
+  process, not enforcement ([EDR-0037](docs/edrs/0037-emergency-paths.md)).
 - **Fast-path volume is unbounded against a compromised control plane.** Rate limits are enforced at
   ingress, by the component that is compromised, and a budget bounds one marque rather than how many
   are minted ([EDR-0029](docs/edrs/0029-the-fast-path-authority-chain.md)).

@@ -68,7 +68,7 @@ standing-order catalogue and no delegation list, and looks up only revocations.
   "mrq": "mrq_01JB…", "target": "…", "role": "…", "sub": "…", "req": "sha256:…",
   "nbf": …, "exp": …, "budget": { … }, "fence": [ … ],
   "auth": {
-    "kind": "interactive" | "standing_order" | "delegation" | "surveyed",
+    "kind": "interactive" | "standing_order" | "delegation" | "surveyed" | "break_glass",
     "artefact": "sto_01JB…",              // absent when kind = interactive
     "artefact_digest": "sha256:…",         // binds the exact version signed
     "binding": { "account_id": "…" },      // parameters, for a standing order
@@ -146,6 +146,18 @@ applies to **producing a human approver signature**. It was satisfied when the s
 delegation was signed, interactively, by a present human. Minting a fast-path marque is not signing —
 it is assembling a reference to a signature that already exists. The contradiction was in the wording,
 and both records now say so.
+
+### The break-glass case
+
+`kind: break_glass` references a **break-glass grant**
+([EDR-0037](./0037-emergency-paths.md)) — a signed artefact of this same family, dormant until its
+holder explicitly breaks the glass. The Pilot verifies it exactly as it verifies a standing order:
+the grant's signatures against the roster, its digest, its `not_after`, the statement against its
+`scope`, `sub` against the named holder, and the marque's `exp` within `max_ttl`. It additionally
+requires the payload's bound `justification` to be present and non-empty.
+
+**No new verification case exists**, which is the point of expressing break-glass this way: a human
+signed the shape in advance, so the emergency path reuses the ordinary one.
 
 ### The Surveyor case
 
@@ -233,3 +245,4 @@ state that an offline Pilot cannot resolve. So:
 - **2026-08-16**: Amended after a second expert panel: corrected the claim that principal-named `invokers` are fully offline-verifiable; they were not until the principal roster existed ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: made "within" decidable for a fence (syntactic identity after canonicalisation, since predicate containment is undecidable and a semantic reading would approximate in the permissive direction), corrected the artefact signature count — only a standing order carries two — and struck rate limits and budgets from the compromised-control-plane residual, since both are enforced by the compromised component.
 - **2026-08-16**: Amended in the second panel's should-fix pass: said what check 7 compares per artefact kind, required a signed compilation to authorise a delegation-kind marque, and required a delegation **chain** to ship whole so attenuation is verifiable at every hop.
+- **2026-08-16**: Amended for the emergency paths and operator surfaces: added `auth.kind: break_glass`, which reuses this record's verification wholesale — a break-glass grant is a signed artefact of the same family, so the emergency path introduces no new verification case ([EDR-0037](./0037-emergency-paths.md)).

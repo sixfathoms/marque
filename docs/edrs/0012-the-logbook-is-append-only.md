@@ -81,7 +81,9 @@ list presented as complete goes stale the moment one does:
 `execution.rolled_back`, `execution.indeterminate`, `standing_order.approved`,
 `standing_order.invoked`, `delegation.granted`, `delegation.revoked`, `policy.changed`,
 `policy.reverted`, `surveyor.judged`, `audit.reviewed`, `key.enrolled`, `key.retired`,
-`roster.published`, `task.opened`, `task.closed`, `agent.suspended`, `introspection.summarised`.
+`roster.published`, `task.opened`, `task.closed`, `agent.suspended`, `introspection.summarised`,
+`request.urgent`, `chain.collapsed`, `break_glass.granted`, `break_glass.used`,
+`break_glass.reviewed`.
 
 The **registry** of kinds lives with the schema ([EDR-0020](./0020-one-schema-generates-every-client.md)),
 so adding one is a wire-contract change that a reviewer sees — which is the only way this stays
@@ -152,3 +154,4 @@ third attempt. Nothing about the old request changes.
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: the kind list was presented as complete and had gone stale against four later records; it is now explicitly illustrative, with the registry living with the schema.
 - **2026-08-16**: Amended after a second expert panel: Marque's role must not **own** the journal table: an owner can grant itself anything, which would make the withheld `DELETE` grant decorative.
+- **2026-08-16**: Amended for the emergency paths and operator surfaces: added the emergency-path kinds: `request.urgent`, `chain.collapsed`, `break_glass.granted`, `break_glass.used`, `break_glass.reviewed`.

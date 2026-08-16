@@ -36,8 +36,9 @@ Three properties follow, and they are the point:
   one name for a delegated action is rejected at write time
   ([ZFN-38](https://zrz.io/zfn/38-agents-are-principals/)).
 
-An agent can never approve anything, under any configuration. Approval requires a fresh interactive
-authentication, which no workload principal can satisfy
+An agent can never approve anything, **nor break glass** ([EDR-0037](./0037-emergency-paths.md)),
+under any configuration. Both require a fresh interactive authentication — a user-verification
+assertion — which no workload principal can satisfy
 ([EDR-0003](./0003-federated-identity-and-sender-constrained-tokens.md)) — the prohibition is
 mechanical rather than a rule someone has to remember.
 
@@ -188,3 +189,4 @@ inside that window.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: constrained `on_behalf_of` and notified the named human at task open, bounded task TTL and rate, stated that only the agent's own declaration is frozen, and made explicit that the declared-scope signal bounds accidental blast radius rather than detecting compromise.
+- **2026-08-16**: Amended for the emergency paths and operator surfaces: an agent can never break glass either, for the same mechanical reason it cannot approve ([EDR-0037](./0037-emergency-paths.md)).

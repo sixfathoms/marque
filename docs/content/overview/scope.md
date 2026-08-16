@@ -55,6 +55,15 @@ refusal with a reason, and resubmission.
 row limits; delegations written in plain language and compiled for signature (Tier A); standing
 orders with constrained parameters; marques with not-before, expiry and execution budget.
 
+**Emergency paths.** `--urgent` (reroute and page, never widen; optional per-target stage collapse,
+default off) and **break-glass grants** — per-principal dormant scopes activated only by an explicit
+break with a bound justification, very loud, mandatory post-hoc review
+([EDR-0037](../../edrs/0037-emergency-paths.md)).
+
+**Operator surfaces.** A shareable request reference and status block, `marque requests` as the work
+queue for pending and approved alike, `marque watch` / `run` / `output`
+([EDR-0038](../../edrs/0038-a-request-is-a-shareable-watchable-object.md)).
+
 **Agents.** Agent enrolment with owners; task declaration and the three-way scope intersection;
 escalation chains with the agent's principal always first; two-party records throughout; per-agent
 quotas and one-action revocation.
