@@ -88,9 +88,20 @@ the control plane serves; `signing_surface: local`
 ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)) is the setting that keeps the rendering
 out of the adversary's hands. A platform authenticator works from the CLI, so the two compose.
 
-For `webauthn`, `userVerification` is **required**, and the verifier checks the UV flag. An assertion
-without it is rejected: user presence alone is a tap, and approving a production change should cost a
-deliberate act.
+For `webauthn`, the verifier performs the **whole** of the W3C §7.2 procedure, not only the challenge
+binding — an assertion is otherwise replayable from another origin or another ceremony:
+
+| Check | Value |
+|---|---|
+| `clientDataJSON.challenge` | equals the digest of the JWS signing input, **domain-separated** by a ceremony label so an approval assertion cannot be replayed as an enrolment one |
+| `clientDataJSON.type` | `webauthn.get` |
+| `clientDataJSON.origin` | in the deployment's configured allowlist |
+| `authenticatorData` rpIdHash | equals SHA-256 of the configured RP ID |
+| UV flag | **set** — user presence alone is a tap, and approving a production change should cost a deliberate act |
+| signature counter | handled per the deployment's cloning policy |
+
+The RP ID and origin allowlist are **deployment configuration a Pilot holds**, alongside its genesis
+root — not values read from the assertion or from the control plane, which would defeat the point.
 
 ### Enrolment
 
@@ -195,3 +206,4 @@ executed is a hope, and this one will be reached for on the worst day
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated the WebAuthn challenge binding once rather than twice inconsistently, and added the `require_envelope` policy hook.
 - **2026-08-16**: Amended after a second expert panel: stated that `require_envelope` governs the key and `signing_surface` governs where signing happens; the two were conflated ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended after the second panel's should-fix pass: specified the **whole** WebAuthn verification set (challenge with ceremony domain separation, `type`, `origin` allowlist, rpIdHash, UV flag, counter policy) rather than only the challenge binding; an assertion checked on the challenge alone is replayable from another origin or another ceremony.

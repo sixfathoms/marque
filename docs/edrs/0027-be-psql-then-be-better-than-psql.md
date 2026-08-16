@@ -98,8 +98,17 @@ Introspection then:
   `information_schema` equivalent, Marque prefers it, since those views *are* privilege-filtered; and
   where it does not, Marque conjoins `has_table_privilege` / `has_column_privilege` into the query it
   composes, so the answer reflects what this role may actually see.
-- **The allowlist is column-aware.** `pg_proc.prosrc` is excluded — function bodies are source code
-  and frequently contain embedded credentials — as is anything else whose value is not metadata.
+- **The class discloses object definitions, and column exclusion cannot fix that.** Excluding
+  `pg_proc.prosrc` was the original answer and it is insufficient: function bodies, view definitions,
+  column defaults and check expressions are all reachable through definition-returning functions
+  (`pg_get_functiondef`, `pg_get_viewdef`, `pg_get_expr`) that a naive purity allowlist admits. So
+  those functions are **excluded from the purity allowlist for this class**, and the honest statement
+  stands in `SECURITY.md`: **introspection is a read channel over object definitions**, and a
+  deployment keeping secrets in a function body must treat it as one.
+- **The `information_schema` preference is a deviation from psql, and is stated as one.** Those views
+  are privilege-filtered, which is why they are preferred — and it means `\dt` shows *fewer* objects
+  than real psql, which lists tables the role cannot read. That is a compatibility difference the
+  suite must assert deliberately rather than discover.
 - **is logged in aggregate**: a per-session rollup naming the principal, the target, the role, the
   count and the distinct relations touched. One entry per `\d` would drown the logbook and make the
   entries that matter harder to find ([EDR-0012](./0012-the-logbook-is-append-only.md)).
@@ -171,3 +180,4 @@ surfacing what it already knows.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: corrected the reasoning behind catalog introspection — on PostgreSQL the role does not bound catalog reads, so the reviewed allowlist is the control — made the allowlist column-aware, and restated the shell-out refusal as a capability.
+- **2026-08-16**: Amended after the second panel's should-fix pass: excluding `pg_proc.prosrc` was insufficient — definition-returning functions reach view bodies, defaults and check expressions — so those are excluded from the purity allowlist for this class and the read channel is stated in SECURITY.md. Also recorded that preferring `information_schema` makes `\dt` show fewer objects than real psql, which is a deliberate compatibility deviation.

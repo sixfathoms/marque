@@ -90,3 +90,33 @@ protects rows *this* transaction writes, not a tenant row a concurrent transacti
 Marque's role must not **own** the logbook table — an owner can grant itself anything, which would
 have made the withheld `DELETE` grant decorative.
 
+### The rest of round two's survivors
+
+Fourteen more, all now closed. Three changed a security property rather than a specification:
+
+- **`approvals` collapsed a conjunction into a disjunction.** A flat `required: 2` over a flat
+  `eligible: [sam, group:data-oncall]` is not a stage-preserving encoding of
+  [EDR-0019](/edrs/0019-escalation-is-a-chain/)'s chain — it was satisfiable offline by **two members
+  of data-oncall with no signature from Sam at all**, on a chain whose first stage was Sam. The block
+  now mirrors the chain's stages, each threshold met by distinct principals from that stage's own set.
+- **Withholding a roster silently extended key validity.** With no `next_update` and no stated failure
+  action, a Pilot on a stale roster kept honouring keys retired in an epoch it never saw. It now
+  refuses past the bound, so withholding degrades to denial of service. The epoch high-water mark must
+  also be durable — a memory-only one resets on every deploy, which is the rollback defence gone.
+- **The WebAuthn envelope checked the challenge and nothing else.** No `type`, no `origin`, no
+  rpIdHash, and no ceremony domain separation — so an assertion was replayable from another origin, or
+  an enrolment assertion replayable as an approval. The whole W3C §7.2 set is now specified.
+
+And: `"within"` is decidable for a fence (syntactic identity — predicate containment is undecidable
+and a semantic reading would approximate in the permissive direction); the revocation list's `revoked`
+array is typed, because the fast path verifies *artefacts* and a list of marque ids cannot revoke the
+standing order that keeps minting them; `require_key_backing` splits from `require_envelope`, since
+`es256` covers both a Secure Enclave key and the file fallback; and a `40001` abort now has a state to
+land in (`aborted_not_applied`), which [EDR-0007](/edrs/0007-delegation-by-containment-proof/) had
+been claiming without one.
+
+Two corrections of overstatement, both ours: the compromised-control-plane residual **counted rate
+limits and budgets that the compromised component itself enforces** — fast-path volume is unbounded
+against it, and that is now said; and EDR-0033 claimed EDR-0026's capability table had gained
+`fence.write_set`, which it had not.
+

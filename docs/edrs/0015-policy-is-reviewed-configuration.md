@@ -86,10 +86,15 @@ being unsure whether it is current. With the repository as the source, the answe
   it, one approver could mint a marque whose `grace` covers its entire life, which is a standing
   credential wearing a lease. Raising it above zero requires the same explicit acknowledgement field
   `self_approval` needs ([EDR-0004](./0004-marques-are-signed-leases.md)).
-- **`require_envelope` names which approver-signature envelope is acceptable**
-  ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)) — it governs the **key**. A `critical`
-  target defaults to `webauthn`, so a file-backed platform key cannot approve the highest-consequence
-  changes.
+- **`require_key_backing`** is what actually expresses "not a file on a laptop": `hardware` or `any`,
+  checked against the backing recorded in the signer's roster entry
+  ([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)). `critical` targets
+  default to `hardware`. The envelope was the wrong proxy for this — `es256` covers both a Secure
+  Enclave key and the file fallback, so selecting on the envelope excluded a hardware CLI key while
+  admitting nothing it meant to.
+- **`require_envelope`** remains, for a deployment that genuinely wants to constrain the wire
+  envelope ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)). It is not the `critical`
+  default any more.
 - **`signing_surface` names where the payload is rendered and signed**, which is a *different*
   question and was originally conflated with the one above. `local` requires locally-installed code
   the control plane does not serve; `critical` targets **default to `local`**
@@ -115,8 +120,12 @@ rather than a diff of text — "adds 4 people to who can approve writes on prod-
 version's digest, its diff, and the applier's identity are appended to the logbook
 ([EDR-0012](./0012-the-logbook-is-append-only.md)).
 
-**Refusals are loud.** A policy that would leave a target with no eligible approver, or grant
-approval over a target to a group that does not resolve, is refused at apply time with the reason.
+**Refusals are loud.** A policy that would leave a target with no eligible approver, grant approval
+over a target to a group that does not resolve, or declare a `transform` provider on a target that
+also has standing orders, is refused at apply time with the reason. That last one is the composition
+[EDR-0028](./0028-statement-pipeline-and-provider-spi.md) forbids: a transform changes the statement,
+and a fast path exists precisely because a human signed the statement's shape in advance — so the
+combination is caught where it is configured rather than discovered at execution.
 An empty approver set must never silently mean "anyone" or "no one" — the first is a hole and the
 second is an outage.
 
@@ -175,3 +184,4 @@ reversion that did not happen is otherwise indistinguishable from one that did.
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: added `max_grace_seconds`, `require_envelope` (hardware on `critical` by default) and `surveyor.jurors`, and specified break-glass reversion as an apply that can refuse rather than a silent restore.
 - **2026-08-16**: Amended after a second expert panel: separated `signing_surface` from `require_envelope` — conflating them had pushed `critical` approvals into the browser, which is worse than the file-backed key it was guarding against — and made the applied policy version an anchored, co-signed artefact ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended after the second panel's should-fix pass: split `require_key_backing` from `require_envelope` — the envelope was the wrong proxy, since `es256` covers both a Secure Enclave key and the file fallback — and made a `transform` provider on a target carrying standing orders a loud refusal at apply time.

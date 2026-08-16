@@ -123,8 +123,26 @@ the estate is executable:
 
 ```jsonc
 { "tenant": "acme", "sequence": 9182, "issued_at": "…", "next_update": "…",
-  "revoked": ["mrq_…", …] }
+  "revoked": [ { "kind": "marque",        "id": "mrq_…" },
+               { "kind": "standing_order", "id": "sto_…", "digest": "sha256:…" },
+               { "kind": "delegation",    "id": "dlg_…" },
+               { "kind": "task",          "id": "tsk_…" },
+               { "kind": "roster_entry",  "jkt": "…" } ] }
 ```
+
+**The revoked set is typed, not a list of marque ids.** The fast path verifies *artefacts* —
+standing orders, compiled delegations ([EDR-0029](./0029-the-fast-path-authority-chain.md)) — and a
+Pilot that can only revoke individual marques cannot revoke the thing that keeps minting them. The
+Pilot already refuses on artefact expiry, so this is one more predicate in the same place.
+
+**Who signs it is a stated limitation.** The list is signed by the control plane, which means a
+compromised Harbourmaster can **suppress** a revocation (bounded by `next_update`, after which a
+`required`-policy Pilot refuses) and can **forge** one (a denial of service, and a visible one). It
+cannot use it to authorise anything. Co-signing it with k approvers like the roster
+([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)) would close the forgery
+half, and was **not** adopted: revocation must be fast, and a k-of-n ceremony in the path of an
+urgent revocation is the wrong trade. The asymmetry is deliberate — the roster grants authority and
+must be co-signed; the revocation list only ever removes it.
 
 - **Signed, sequenced and self-dating.** Staleness is measured against the **signed** `issued_at` and
   `next_update`, cross-checked against monotonic elapsed time since fetch — never against local wall
@@ -211,3 +229,4 @@ the statement affects more rows than were approved.
   ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)). A note above points at both.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: gave the revocation list a field-level definition (signed `issued_at`, monotonic `sequence`, `next_update`, no downgrade), named the signature algorithms, corrected the claim that the approver's device key is the DPoP key (it is not, in the console), and made the revocation list the independent check on Pilot clock skew.
 - **2026-08-16**: Amended after a second expert panel: the payload gains `display`, a canonical rendering covered by every signature ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended after the second panel's should-fix pass: widened the revocation list's `revoked` array to a typed set — the fast path verifies *artefacts*, and a list of marque ids cannot revoke the standing order that keeps minting them — and stated plainly who signs the list and what a compromised signer can and cannot do with it.

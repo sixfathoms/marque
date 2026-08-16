@@ -35,8 +35,17 @@ the same wrong number.
 **The fix is a fourth check, and it generalises.** PostgreSQL exposes per-relation write counts for
 the *current transaction* (`pg_stat_xact_all_tables`), readable before `COMMIT`. So:
 
-> Before committing, assert that **every relation with a non-zero write delta is inside the
-> delegation's declared object scope.** Anything else aborts the transaction.
+> Before committing, assert that **every relation with a non-zero write delta is inside the marque's
+> declared object scope.** Anything else aborts the transaction.
+
+**The object scope is a field of the marque, not of the delegation.** Only delegation-shaped
+artefacts carry `objects`, so anchoring the check there would leave the interactive and
+standing-order paths with no reference set at all — the check would have nothing to compare against
+on exactly the path a human reviewed. `objects` therefore joins the signed payload
+([EDR-0004](./0004-marques-are-signed-leases.md)), populated from the compiled scope on a delegated
+path, from the standing order's own `objects` on a fast path, and from the **rehearsal-measured write
+set the approver was shown** on an interactive one — which makes the cascade the approver saw the
+scope they authorised.
 
 That is strictly better than enumerating the machinery that could cause a surprise, because it
 measures the **effect** rather than predicting it — it catches cascades, triggers, rewrite rules, and
@@ -193,3 +202,4 @@ capability there.
 - **2026-08-15**: Accepted, following an expert-panel finding that all three fence checks are blind to
   writes outside the named relation.
 - **2026-08-16**: Amended after a second expert panel: the write set now calibrates against the statement's own `RETURNING` count, because a zero reads the same for "nothing written" and "not counted"; deferred constraint triggers are pulled forward before the check; and partitioned relations are named by leaf, since writes are counted against the partition rather than the parent.
+- **2026-08-16**: Amended after the second panel's should-fix pass: moved the object scope into the marque payload; anchoring it in the delegation left the interactive and standing-order paths with no reference set at all, so the check had nothing to compare against on exactly the path a human reviewed.

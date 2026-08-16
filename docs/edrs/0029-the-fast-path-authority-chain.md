@@ -94,8 +94,15 @@ the compilation).
 
 1. Both signatures on the **marque** verify, exactly as before — except that on a non-interactive
    kind the approver limb is satisfied by the artefact rather than by a signature over this payload.
-2. Both signatures on the **artefact** verify, against enrolled keys
-   ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)).
+2. The artefact's signatures verify against the roster
+   ([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)) — **and the count
+   differs by kind**, which an earlier draft got wrong by saying "both" throughout. A standing order
+   carries two (approver device key plus the `authority` countersignature,
+   [EDR-0008](./0008-standing-orders.md)); a compiled delegation and a Tier-B outer bound carry
+   **one**, the grantor's ([EDR-0016](./0016-natural-language-delegations-are-compiled.md),
+   [EDR-0017](./0017-conformance-matching-may-route-never-widen.md)). Grantors must themselves be
+   roster entries, so `may_delegate` narrows a set the Pilot can already resolve rather than naming a
+   disjoint one.
 3. `artefact_digest` matches the artefact presented, so a marque cannot be moved to a different or
    later version of the order.
 4. The artefact has not expired on its own terms (`expires`, `not_after`).
@@ -105,8 +112,13 @@ the compilation).
    the Harbourmaster did — the check is deterministic, so the Pilot repeating it costs little and
    removes a trust assumption.
 6. `sub` is permitted by the artefact — see the residual below.
-7. The marque's `exp`, `budget` and `fence` are **within** the artefact's limits. A marque may never
-   be more permissive than the artefact it claims authority from.
+7. The marque's `exp` and `budget` are **within** the artefact's limits — scalar comparisons. For
+   `fence`, "within" is **not** left to an implementer, because predicate containment is undecidable
+   and a semantic reading would be an approximation in the permissive direction (the exact error
+   [EDR-0007](./0007-delegation-by-containment-proof.md) exists to avoid). The rule is **syntactic
+   identity after canonicalisation**: `marque.fence == artefact.fence`. A correctly-minted fast-path
+   marque produces that anyway, since the fence is copied from the artefact. A marque may never be
+   more permissive than the artefact it claims authority from.
 
 Any failure is a refusal. The fence, the magnitude assertion and the nonce all still run afterwards
 ([EDR-0007](./0007-delegation-by-containment-proof.md),
@@ -143,8 +155,15 @@ state that an offline Pilot cannot resolve. So:
   plane could name a genuine principal and supply its own key.
 - A standing order whose `invokers` are **groups** is not: a compromised Harbourmaster could invoke a
   genuine standing order naming a principal of its choosing. It remains bounded to that order's
-  approved statement shape, its parameter constraints, its budget and its rate limits — it cannot
-  reach an arbitrary statement — but it is a real residual and it is not zero.
+  approved **statement shape** and **parameter constraints** — it cannot reach an arbitrary statement
+  — but it is a real residual and it is not zero.
+
+  **Rate limits and budgets do not bound it, and an earlier draft wrongly counted them.** Rate limits
+  are enforced at ingress ([EDR-0008](./0008-standing-orders.md)) — by the Harbourmaster, which *is*
+  the adversary here — and `budget.executions` bounds one marque, not how many marques a compromised
+  control plane mints. **Fast-path volume is unbounded against a compromised control plane.** A real
+  bound would have to live at the Pilot, as a per-`(artefact_digest, window)` counter in the
+  execution ledger ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md)); that is not built.
 - Therefore: standing orders on `critical` targets **must** name principals directly. Elsewhere the
   choice is the grantor's, and the console shows which form an order uses and what it implies.
 
@@ -197,3 +216,4 @@ state that an offline Pilot cannot resolve. So:
 - **2026-08-15**: Accepted, following an expert-panel finding that no record specified what fills the
   approver limb on a fast path.
 - **2026-08-16**: Amended after a second expert panel: corrected the claim that principal-named `invokers` are fully offline-verifiable; they were not until the principal roster existed ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended after the second panel's should-fix pass: made "within" decidable for a fence (syntactic identity after canonicalisation, since predicate containment is undecidable and a semantic reading would approximate in the permissive direction), corrected the artefact signature count — only a standing order carries two — and struck rate limits and budgets from the compromised-control-plane residual, since both are enforced by the compromised component.

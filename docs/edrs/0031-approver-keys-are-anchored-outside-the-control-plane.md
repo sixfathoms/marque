@@ -111,8 +111,16 @@ its epochs and its anchor.
    ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)) and on a fast-path artefact
    ([EDR-0029](./0029-the-fast-path-authority-chain.md)) — against the current roster, and maps key
    to principal from it.
-5. Offline, uses the last roster it verified. Staleness is bounded and reported: an operator must be
-   able to tell "this Pilot is working from a three-day-old roster" from "this Pilot is current".
+5. Offline, uses the last roster it verified — under the **same freshness contract as the revocation
+   list** ([EDR-0004](./0004-marques-are-signed-leases.md)). The roster carries signed `issued_at`
+   **and `next_update`**, checked against monotonic elapsed time since fetch, and a per-target policy
+   bound past which the Pilot **refuses approver signatures** rather than continuing on a stale set.
+   That matters because the failure it converts is real: without it, withholding a roster silently
+   *extends* the validity of keys that were retired in an epoch the Pilot never saw. With it,
+   withholding degrades to denial of service, which is visible.
+6. Holds its epoch high-water mark **durably**. The monotonicity rule in step 3 is the whole rollback
+   defence, and a high-water mark kept only in memory resets on every restart — so a compromised
+   control plane wins by waiting for a deploy.
 
 ### What the control plane may and may not do
 
@@ -214,3 +222,4 @@ doing it silently. So:
 - **2026-08-15**: Accepted, following the expert panel's most serious finding: the Pilot's trust
   anchor for approver public keys was the Harbourmaster itself.
 - **2026-08-16**: Amended after a second expert panel: extended to the **principal** roster — entries carry a capability, so operator and agent keys ride the same anchored artefact ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended after the second panel's should-fix pass: gave the roster the same freshness contract as the revocation list, with a bound past which a Pilot refuses approver signatures — without it, withholding a roster silently *extends* the validity of keys retired in an epoch the Pilot never saw — and required the epoch high-water mark to be durable, since a memory-only one resets on every deploy.

@@ -29,15 +29,31 @@ The fix is to put the requirement inside the thing every signature covers:
 
 ```jsonc
 "approvals": {
-  "required": 2,
-  "eligible": [ "sam@acme.example", "group:data-oncall" ],
-  "chain": "sha256:…"          // the escalation chain computed at submission
+  "stages": [
+    { "n": 1, "required": 1, "eligible": ["sam@acme.example"] },
+    { "n": 2, "required": 1, "eligible": ["group:data-oncall"] }
+  ],
+  "chain": "sha256:…",          // the escalation chain computed at submission
+  "roster_epoch": 47            // the epoch signatures are resolved against (EDR-0031)
 }
 ```
 
-The Pilot now requires **`required` distinct valid approver signatures**, each from a key enrolled to
-a principal the artefact permits. Removing one makes the marque invalid rather than weaker. The
-payload cannot be edited to lower the count, because every remaining signature covers it.
+**The structure mirrors the chain, and that is load-bearing.** A flat `required: 2` over a flat
+`eligible: [sam, group:data-oncall]` is *not* an order- or stage-preserving encoding of
+[EDR-0019](./0019-escalation-is-a-chain.md)'s chain: it is satisfied offline by **two members of
+data-oncall with no signature from Sam at all** — collapsing a conjunction of stages into a
+disjunction. So the Pilot requires **each stage's threshold to be met by distinct principals drawn
+from that stage's own eligible set**, and the chain preimage travels with the marque so `chain` can
+be checked rather than merely carried.
+
+Removing a signature makes the marque invalid rather than weaker, and the payload cannot be edited to
+lower a threshold, because every remaining signature covers it.
+
+**`roster_epoch` fixes the temporal rule.** A signature is resolved against the named epoch: the
+Pilot accepts it only if that epoch is one it has verified, and if the key was **live in that epoch**
+([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)). Without naming the
+epoch there is no stated answer to "may a key retired yesterday satisfy a marque signed the day
+before", and three consumers would each have picked one.
 
 ## Context
 
@@ -151,3 +167,4 @@ were required but which sequence of stages produced them. It is what makes an af
 - **2026-08-15**: Accepted, following an expert-panel finding that a marque's signature set is
   malleable and its approval requirement was not covered by any signature.
 - **2026-08-16**: Amended after a second expert panel: noted that binding the requirement is necessary and not sufficient, since the Harbourmaster authors it; the Pilot now recomputes it from anchored policy ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended after the second panel's should-fix pass: restructured `approvals` to mirror the escalation chain's stages. A flat `required: 2` over a flat `eligible` list collapsed a conjunction of stages into a disjunction — a chain requiring Sam then data-oncall was satisfiable by two members of data-oncall with no signature from Sam. Also added `roster_epoch` to fix the temporal acceptance rule.

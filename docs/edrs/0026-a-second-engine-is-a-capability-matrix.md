@@ -66,6 +66,7 @@ An engine implementation supplies, at minimum:
 | `fence.pre` | "would this touch rows outside the fence?" as a countable query |
 | `fence.post` | "did any affected row end up outside the fence?" |
 | `magnitude` | affected-row count, asserted inside the transaction |
+| `fence.write_set` | per-relation write counts for the current transaction, readable before commit ([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)). MySQL's `performance_schema` counters are session- and instance-cumulative rather than transaction-scoped, so a MySQL engine must establish this some other way or **decline it** |
 | `rehearse` | a transaction that structurally cannot commit, with statement and lock timeouts |
 | `identity` | `shared`, `per_operator`, `pooled_with_role` — which are available |
 | `read_routing` | replica endpoints and a comparable position for read-your-writes |
@@ -115,7 +116,7 @@ enforcement primitives, never policy.
 ### Adding an engine
 
 An engine ships when it has: a parser with a defined checkable subset, a purity allowlist reviewed
-against that engine's extension ecosystem, all three fence checks or a declared absence, a rehearsal
+against that engine's extension ecosystem, all **four** fence checks or a declared absence, a rehearsal
 whose rollback is structural, a timeout story for reads *and* writes, and a conformance suite
 including near-miss statements and fence-escape attempts. **A partially-implemented engine does not
 ship behind a flag**, because a flag is how a weaker control reaches production believing itself to
@@ -162,3 +163,4 @@ be the stronger one.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the second panel's should-fix pass: added `fence.write_set` to the capability table and corrected "three fence checks" to four; [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) had claimed this record already carried it, and it did not.

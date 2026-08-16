@@ -73,6 +73,15 @@ lease expiry it transitions to **`indeterminate`**, which is the truthful termin
 a human resolves. Without an owner and a lease there is no transition out of "claimed, no outcome",
 and the operator is left with a budget spent and a request that never resolves.
 
+**A clean abort is re-runnable; an indeterminate one is not.** A server-reported error received
+**before** `COMMIT` — a `40001` serialization failure, a fence assertion aborting, a statement
+timeout inside the transaction — is *provably not applied*. It is recorded as
+**`aborted_not_applied`** and may be re-run under the **same nonce without a second budget
+decrement**, bounded by an attempt count so a `budget.executions: 1` marque cannot be retried
+forever. The class is defined by the property — an error received before commit — not by a list of
+SQLSTATEs. Without this state, [EDR-0007](./0007-delegation-by-containment-proof.md)'s claim that a
+serialization failure is "retryable under the same nonce" had nothing in this record to land on.
+
 **Indeterminate outcomes are recorded as such.** If the Pilot cannot establish whether a transaction
 committed, the outcome is `indeterminate`, not `failed`. A retry with the same nonce returns
 `indeterminate`; a retry with a new nonce is refused if the budget is exhausted. The operator's path
@@ -137,3 +146,4 @@ thing to make an exception for and the exception would mean a read marque never 
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: added a ledger incarnation so its loss is detectable, an owner and lease so a claim can leave `in_progress` after a Pilot dies, and the path by which an outcome reaches the logbook.
+- **2026-08-16**: Amended after the second panel's should-fix pass: added `aborted_not_applied`, a terminal-but-clean outcome re-runnable under the same nonce without a second budget decrement, which [EDR-0007](./0007-delegation-by-containment-proof.md)'s "a 40001 is retryable" claim previously had nothing to land on.
