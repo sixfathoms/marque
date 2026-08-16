@@ -65,7 +65,10 @@ BEGIN READ WRITE;
 SET LOCAL statement_timeout   = '<rehearsal timeout>';
 SET LOCAL lock_timeout        = '<short>';
 SET LOCAL idle_in_transaction_session_timeout = '<short>';
+-- capture write-set baseline
 -- statements, with RETURNING, counts captured
+SET CONSTRAINTS ALL IMMEDIATE;   -- so deferred triggers are measured, not deferred past capture
+-- capture write-set delta
 ROLLBACK;
 ```
 
@@ -92,6 +95,7 @@ ROLLBACK;
 | `plan` | `EXPLAIN` output for context, clearly labelled as an estimate |
 | `fence_violations` | rows the delegation fence would have excluded, if a delegation applies |
 | `sample` | a bounded sample of affected rows, subject to redaction (below) |
+| `write_set` | **per-relation** rows inserted, updated and deleted for the whole rehearsal transaction, captured as a delta ([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)). This is where an approver sees `account_events −4,182,905` before signing |
 | `warnings` | unbounded write, no `WHERE`, sequential scan on a large table, unindexed fence |
 | `not_rehearsed` | with a reason, when it could not run |
 
@@ -100,9 +104,11 @@ useful and is also a data-disclosure surface: it puts customer data in front of 
 Columns are shown only if the target's configuration marks them displayable; everything else appears
 as a type and a null/not-null indicator. The default for an unclassified column is redacted.
 
-**Reconciliation.** The measured rehearsal counts are carried into the marque's analysis digest. At
-execution, the Pilot compares the actual affected rows to the rehearsed figure and records the
-delta. A large divergence is a logbook finding, and — for `critical` roles — a configurable reason to
+**Reconciliation compares write sets, not top-level counts.** The measured rehearsal figures are
+carried into the marque's analysis digest, and at execution the Pilot compares the **per-relation
+write set** to the rehearsed one and records the delta. Comparing only top-level affected rows cannot
+fire on the case that matters — a cascade measures identically on both sides
+([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)). A large divergence is a logbook finding, and — for `critical` roles — a configurable reason to
 abort rather than commit.
 
 **Not rehearsed is a first-class state**, rendered prominently. A request that could not be rehearsed
@@ -151,3 +157,4 @@ reads like a zero.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: removed the undefined "rehearsal identity" — a rehearsal runs under the request's own role, since a read-mostly grant could not measure a write — and bounded how long it *holds* a lock, not only how long it waits for one.
+- **2026-08-16**: Amended after the second panel's synthesis: added `write_set` to the report and made reconciliation a per-relation comparison — [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) had stated both obligations on this record and neither had landed.

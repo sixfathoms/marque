@@ -93,9 +93,14 @@ BEGIN ISOLATION LEVEL REPEATABLE READ;
 COMMIT;
 ```
 
-- The write set is read from the engine's transaction-scoped per-relation statistics. On PostgreSQL
-  that is `pg_stat_xact_all_tables`, whose counters cover the current transaction and are readable
-  before commit.
+- **The write set is a delta, captured twice.** On PostgreSQL the source is
+  `pg_stat_xact_all_tables`, and it must be read **immediately after `BEGIN` and again before
+  `COMMIT`**, asserting on the *difference*. Reading it once is wrong: those are the backend's
+  **pending, session-scoped** per-relation counters, flushed on a throttle rather than per
+  transaction, and connections are pooled per `(target, role, identity)`
+  ([EDR-0021](./0021-connections-identity-and-read-routing.md)) — so back-to-back executions on one
+  pooled connection can read the previous execution's relations as though they belonged to this
+  transaction. No flush occurs inside an open transaction, so the delta is exact regardless.
 - **Statistics collection is a prerequisite, not an optimisation.** If the engine cannot report a
   transaction's write set, the check cannot run and the execution is **refused** — it does not
   proceed unchecked ([ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/)).
@@ -116,6 +121,15 @@ COMMIT;
   fingerprint and invalidates the marque.
 - Relations written outside scope are reported by name and count, exactly as the fence reports its
   own violations. **Nothing is partially applied**, because the abort precedes the commit.
+- **The boundary is stated, because two things are outside it.** The assertion bounds writes the
+  engine performs *in this database, as tuple changes, in this transaction*. It does not see a
+  `TRUNCATE` — which zeroes the relation's counters rather than incrementing them, so a trigger that
+  truncates an out-of-scope relation reads as a clean zero — and it does not see writes made on a
+  **separate session** (dblink, an extension, a `SECURITY DEFINER` function opening its own
+  connection). For `TRUNCATE` the available detector is to snapshot `pg_relation_filenode()` for
+  in-scope relations at `BEGIN` and compare before `COMMIT`; a target whose attached machinery can
+  reach `TRUNCATE` and for which that is not done leaves the checkable subset. The separate-session
+  case is bounded only by the role, and `SECURITY.md`'s claim is qualified accordingly.
 
 `max_rows` continues to bound rows of the **named relation** only — that is now stated in
 [EDR-0007](./0007-delegation-by-containment-proof.md) rather than assumed — and the write-set
@@ -139,9 +153,16 @@ so it can actually fire.
 
 The write-set assertion is the enforcement. A **fingerprint** of the target relation's attached
 machinery — rewrite rules, row-level triggers, and referential actions on constraints referencing it
-— is introspected at analysis time and recorded in the analysis digest
-([EDR-0004](./0004-marques-are-signed-leases.md) binds that digest into the marque). At execution the
-Pilot re-introspects, and a changed fingerprint invalidates the marque.
+— is introspected at analysis time and carried as its **own signed payload field**, `machinery`
+([EDR-0004](./0004-marques-are-signed-leases.md)) — over a canonical description of the relation's
+rewrite rules, row-level triggers, referencing constraints (including their `DEFERRABLE` /
+`INITIALLY DEFERRED` state) and resolved partition set. At execution the Pilot re-introspects and
+compares.
+
+**It cannot live inside the `analysis` digest**, which is where an earlier draft put it: a digest is
+one-way, nothing delivers the analysis preimage to the Pilot, and a fast-path marque carries no
+`analysis` claim at all — so on the path that is meant to be most of the traffic there was nothing to
+compare against, even in principle.
 
 That closes the window in which machinery is attached between approval and execution — a cascade
 added after the approver looked. It is a cheap check and it does not require the fingerprint to be
@@ -203,3 +224,4 @@ capability there.
   writes outside the named relation.
 - **2026-08-16**: Amended after a second expert panel: the write set now calibrates against the statement's own `RETURNING` count, because a zero reads the same for "nothing written" and "not counted"; deferred constraint triggers are pulled forward before the check; and partitioned relations are named by leaf, since writes are counted against the partition rather than the parent.
 - **2026-08-16**: Amended after the second panel's should-fix pass: moved the object scope into the marque payload; anchoring it in the delegation left the interactive and standing-order paths with no reference set at all, so the check had nothing to compare against on exactly the path a human reviewed.
+- **2026-08-16**: Amended after the second panel's synthesis: made the write set a **delta** captured at BEGIN and before COMMIT (the counters are pending and session-scoped, and connections are pooled); promoted the machinery fingerprint to its own payload field, since a digest is one-way and a fast-path marque carries no analysis claim; and stated the TRUNCATE and separate-session blind spots.

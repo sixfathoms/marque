@@ -86,6 +86,8 @@ channel is part of the trust boundary, not plumbing around it.
   "entries": [
     { "principal": "sam@acme.example", "jkt": "…", "envelope": "webauthn",
       "capabilities": ["approver"],        // also "operator", "agent" — EDR-0036
+      "backing": "hardware",               // hardware | software — what require_key_backing checks
+      "backup_eligible": false,            // a provider-synced passkey is not a hardware-bound key
       "enrolled_at": "…", "retired_at": null },
     …
   ],
@@ -93,8 +95,15 @@ channel is part of the trust boundary, not plumbing around it.
 }
 ```
 
-Signed by **k currently-enrolled approver device keys**, where k is deployment configuration with a
-minimum of 2. The control plane's key does not appear on it and adds nothing if it does.
+`backing` is established **at enrolment** — from WebAuthn attestation, or the platform key store's
+own attestation — and is what [EDR-0015](./0015-policy-is-reviewed-configuration.md)'s
+`require_key_backing` checks; without it that setting, which replaced the `require_envelope` default
+on `critical` targets, would enforce nothing. `backup_eligible` is recorded because a provider-synced
+passkey is not a hardware-bound key however it was created, and a deployment that means "hardware"
+usually means "not synced to a cloud account".
+
+Signed by **k currently-enrolled approver device keys**, where **k is defined here and nowhere else**
+— deployment configuration with a minimum of 2. The control plane's key does not appear on it and adds nothing if it does.
 
 Per [EDR-0025](./0025-tenants-are-partitioned-from-day-one.md), **the roster is per tenant**, as are
 its epochs and its anchor.
@@ -107,10 +116,18 @@ its epochs and its anchor.
    k valid signatures from keys **live in that predecessor**.
 3. Refuses any roster whose `epoch` is not greater than the highest it has accepted. Rollback is the
    obvious attack once forward forgery is closed.
-4. Resolves every approver signature — on a marque
-   ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)) and on a fast-path artefact
-   ([EDR-0029](./0029-the-fast-path-authority-chain.md)) — against the current roster, and maps key
-   to principal from it.
+4. Resolves signatures against the **right epoch for the kind of check**, which is not always the
+   latest:
+   - **A marque's approver signatures, and a fast-path artefact's**, resolve against the epoch the
+     payload names (`roster_epoch`,
+     [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)) — accepted only if the Pilot
+     has verified that epoch, the key was **live in it**, and `nbf` falls inside its validity window.
+     That is what settles whether a key retired yesterday may satisfy a marque signed the day before:
+     it may, if it was live when signed.
+   - **Live authentication** — a submitter signature on a Pilot method
+     ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)), proof of possession of
+     `cnf.jkt` — resolves against the **latest verified epoch**, because there the question is "is
+     this principal live *now*".
 5. Offline, uses the last roster it verified — under the **same freshness contract as the revocation
    list** ([EDR-0004](./0004-marques-are-signed-leases.md)). The roster carries signed `issued_at`
    **and `next_update`**, checked against monotonic elapsed time since fetch, and a per-target policy
@@ -118,9 +135,14 @@ its epochs and its anchor.
    That matters because the failure it converts is real: without it, withholding a roster silently
    *extends* the validity of keys that were retired in an epoch the Pilot never saw. With it,
    withholding degrades to denial of service, which is visible.
-6. Holds its epoch high-water mark **durably**. The monotonicity rule in step 3 is the whole rollback
-   defence, and a high-water mark kept only in memory resets on every restart — so a compromised
-   control plane wins by waiting for a deploy.
+6. Holds its epoch high-water mark **durably, bound to its incarnation**
+   ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md)). Durability across a *restart* is not
+   enough: a fresh container, a replaced node or a restored volume starts at genesis, the genesis
+   roster chains validly to the pinned root, and a compromised control plane simply walks the rebuilt
+   Pilot forward from genesis — reinstating every retired key, which is exactly the rollback the
+   May-not table says is impossible. So a **`min_epoch` floor is pinned alongside the genesis root at
+   deployment**, a Pilot refuses any roster below it, and a Pilot presenting a new incarnation reports
+   that fact rather than starting quietly from scratch.
 
 ### What the control plane may and may not do
 
@@ -223,3 +245,4 @@ doing it silently. So:
   anchor for approver public keys was the Harbourmaster itself.
 - **2026-08-16**: Amended after a second expert panel: extended to the **principal** roster — entries carry a capability, so operator and agent keys ride the same anchored artefact ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: gave the roster the same freshness contract as the revocation list, with a bound past which a Pilot refuses approver signatures — without it, withholding a roster silently *extends* the validity of keys retired in an epoch the Pilot never saw — and required the epoch high-water mark to be durable, since a memory-only one resets on every deploy.
+- **2026-08-16**: Amended after the second panel's synthesis: resolved signatures against the epoch a payload names rather than "the current roster"; bound the high-water mark to the Pilot incarnation with a `min_epoch` floor, since a rebuilt Pilot starts at genesis and can be walked forward; and added the `backing` field `require_key_backing` checks.

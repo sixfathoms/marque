@@ -45,7 +45,9 @@ attempt is to ask for another marque — a human decision, which is the correct 
 
 **Nonce first, statement second.** The Pilot's execution path is:
 
-1. Verify the marque ([EDR-0004](./0004-marques-are-signed-leases.md)) and the caller against `sub`.
+1. Verify the marque ([EDR-0004](./0004-marques-are-signed-leases.md)) and **proof of possession of
+   `cnf.jkt`** ([EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md)). `sub` is recorded,
+   not checked as a credential — that dependency is what broke offline execution for the caller.
 2. Insert `(marque_id, nonce)` into its local execution ledger. A unique-violation means this nonce
    is already claimed — return the recorded outcome, or `in_progress` if there is not one yet.
 3. Check and decrement the budget in the same transaction as the claim.
@@ -147,3 +149,4 @@ thing to make an exception for and the exception would mean a read marque never 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: added a ledger incarnation so its loss is detectable, an owner and lease so a claim can leave `in_progress` after a Pilot dies, and the path by which an outcome reaches the logbook.
 - **2026-08-16**: Amended after the second panel's should-fix pass: added `aborted_not_applied`, a terminal-but-clean outcome re-runnable under the same nonce without a second budget decrement, which [EDR-0007](./0007-delegation-by-containment-proof.md)'s "a 40001 is retryable" claim previously had nothing to land on.
+- **2026-08-16**: Amended after the second panel's synthesis: step 1 verifies proof of possession of `cnf.jkt` rather than the caller against `sub`, which is what [EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md) replaced.

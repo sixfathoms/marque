@@ -94,7 +94,9 @@ the session's actual database user on the target — not the configuration's opi
 **Easier.**
 
 - The blast radius of a control-plane compromise is bounded to disclosure of request text and
-  approval history. Bad, and much better than access.
+  approval history, plus a quota'd, target-visible read channel
+  ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)) and the group-invoker standing-order
+  residual ([EDR-0029](./0029-the-fast-path-authority-chain.md)). Bad, and much better than access.
 - Credential rotation is invisible: the reference is stable, the value is fetched fresh.
 - Least privilege is enforceable per role, by the database, using primitives the database already
   has.
@@ -128,3 +130,8 @@ the session's actual database user on the target — not the configuration's opi
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after review — the TL;DR's "no database access" is corrected to "no
+  credential and no ability to commit a change", with the bounded read channel named
+  ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)). This line was missing when the
+  amendment was made, which is the corpus's own rule 1 broken in the one place it is most visible.
+- **2026-08-16**: Amended after the second panel's synthesis: extended the blast-radius bullet to name the read channel and the fast-path residual.

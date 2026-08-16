@@ -59,8 +59,10 @@ orders with constrained parameters; marques with not-before, expiry and executio
 escalation chains with the agent's principal always first; two-party records throughout; per-agent
 quotas and one-action revocation.
 
-**Identity.** Any OIDC issuer; DPoP-bound tokens; AWS and GCP workload identity; freshness
-requirements on approval and on critical execution; RFC 8693 `act` chains for delegated action.
+**Identity.** Any OIDC issuer; DPoP-bound tokens; AWS and GCP workload identity; a freshness
+requirement on **producing an approver signature** (not on execution — see
+[EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)); RFC 8693 `act`
+chains for delegated action.
 
 **Deployment.** Control plane plus one or more Pilots; direct and relayed connectivity; AWS and GCP;
 a local development mode needing nothing but PostgreSQL.

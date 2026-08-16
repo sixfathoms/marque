@@ -88,10 +88,14 @@ It is off by default, so the agent flow in
 turning it on for a target its agents use will find out immediately, and the console says so at the
 moment the setting is changed rather than at 3am.
 
-**The Pilot enforces it**, and this joins the list in
-[EDR-0004](./0004-marques-are-signed-leases.md): the marque carries whether presence was required at
-issue time, so the requirement is signed rather than looked up — and a compromised control plane
-cannot turn it off for a marque already issued.
+**The Pilot enforces it**, from `require_execution_presence` in the signed payload
+([EDR-0004](./0004-marques-are-signed-leases.md)) and in the target's entry in the anchored policy
+artefact ([EDR-0015](./0015-policy-is-reviewed-configuration.md)). The rule is **monotone**: the
+Pilot requires presence if **either** source says so, so a control plane can only ever *add* the
+requirement, never remove it — which is what stops it being switched off for a marque already issued.
+It also appears in the canonical `display`
+([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)), so an approver signing on the
+`signing_surface: local` path can see that presence was or was not required.
 
 **Corrections.** `architecture.md`'s failure table and the playbook's break-glass paragraph are
 corrected: already-signed marques execute with the identity provider down, unconditionally, unless
@@ -139,3 +143,4 @@ because that is local.
 
 - **2026-08-15**: Accepted, following an expert-panel finding that execution freshness contradicted
   offline execution, the agent flow, and EDR-0006's criticality keying.
+- **2026-08-16**: Amended after the second panel's synthesis: `require_execution_presence` now exists in EDR-0004's payload and EDR-0015's targets, and is monotone across the two sources.

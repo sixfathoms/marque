@@ -99,11 +99,18 @@ signs — so all signatures cover the same payload, as JWS requires.
 **Verification becomes:**
 
 1. exactly one valid `authority` signature;
-2. **at least `approvals.required` valid, distinct `approver` signatures**, where distinct means
+2. **every stage satisfied**: for each entry in `approvals.stages`, at least `required` valid
+   signatures from **distinct principals drawn from that stage's own `eligible` set**. Distinct means
    different enrolled principals — not merely different keys, since one person may hold several
    ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md));
-3. each approver principal permitted by `approvals.eligible`, resolved principal-by-principal;
-4. everything else as before.
+3. **no principal counted in two stages** — a chain exists to collect independent judgements, and one
+   person satisfying two stages defeats it. `sum(stages[].required)` replaces the old flat count;
+4. every signature resolved against the epoch named by `roster_epoch`, with the key live in it
+   ([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md));
+5. everything else as before.
+
+**The chain preimage travels with the marque**, so `chain` can be recomputed and checked rather than
+merely carried — otherwise the digest attests a structure nobody can inspect.
 
 **Group entries in `eligible` carry the same residual as `invokers`** in
 [EDR-0029](./0029-the-fast-path-authority-chain.md): an offline Pilot cannot resolve identity-provider
@@ -168,3 +175,4 @@ were required but which sequence of stages produced them. It is what makes an af
   malleable and its approval requirement was not covered by any signature.
 - **2026-08-16**: Amended after a second expert panel: noted that binding the requirement is necessary and not sufficient, since the Harbourmaster authors it; the Pilot now recomputes it from anchored policy ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: restructured `approvals` to mirror the escalation chain's stages. A flat `required: 2` over a flat `eligible` list collapsed a conjunction of stages into a disjunction — a chain requiring Sam then data-oncall was satisfiable by two members of data-oncall with no signature from Sam. Also added `roster_epoch` to fix the temporal acceptance rule.
+- **2026-08-16**: Amended after the second panel's synthesis: rewrote the Decision's verification steps over `stages`; they still specified the flat encoding the TL;DR had replaced, so an implementer building from the Decision built exactly the defect the restructure fixed.

@@ -68,9 +68,11 @@ actual database user matches the role's declared `db_user`, and refuses the conn
 This is the check that catches a credential reference resolving to a broader identity than intended.
 
 **Roles carry a criticality.** `routine`, `sensitive`, `critical`. Criticality is an input to policy
-(who may approve), to freshness (whether execution needs a fresh authentication, per
-[EDR-0003](./0003-federated-identity-and-sender-constrained-tokens.md)), and to defaults (budget
-size, marque lifetime). It is a property of the role rather than of the statement, because the
+(who may approve), to signing requirements (`require_key_backing`, `signing_surface`), and to
+defaults (budget size, marque lifetime). It is **not** an input to execution-time freshness — that
+clause was removed by
+[EDR-0035](./0035-execution-freshness-is-a-property-of-the-approval.md), which also settles that
+target and role criticality compose as `max(target, role)`. It is a property of the role rather than of the statement, because the
 statement is what everyone is looking at and the role is what everyone forgets.
 
 **Read-only roles are first-class.** A large fraction of production access is a `SELECT` someone is
@@ -117,3 +119,4 @@ for the writable role out of habit.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the second panel's synthesis: criticality no longer feeds execution-time freshness ([EDR-0035](./0035-execution-freshness-is-a-property-of-the-approval.md)), and composes as `max(target, role)`.

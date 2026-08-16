@@ -54,8 +54,11 @@ This table is the design's actual argument, and every record defends a row of it
 | Tender | traffic analysis and denial of service | statement or result contents (it is not a party to the session) |
 | One approver's device key | ability to sign payloads | validity — a marque also needs the Harbourmaster's countersignature under policy |
 
-Two components have to fall together before anything runs that should not, and the pair is always
-one machine plus one human's hardware-backed key.
+Two components have to fall together before anything runs that should not, and the pair is always one
+machine plus one human's hardware-backed key — **with one stated exception**: on a fast path whose
+standing order names a *group* in `invokers`, a compromised control plane can invoke a genuine order
+as a principal of its choosing, at unbounded volume, bounded only to that order's approved shape and
+parameter constraints ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)).
 
 ## The object model
 
@@ -133,7 +136,11 @@ signatures over one payload:
   "nbf": 1786953600, "exp": 1786957200,
   "budget": { "executions": 1, "max_rows": 250 },
   "fence": ["tier = 'sandbox'"],
-  "approvals": { "required": 2, "eligible": [ … ], "chain": "sha256:…" },
+  "approvals": { "stages": [ { "n": 1, "required": 1, "eligible": [ … ] },
+                             { "n": 2, "required": 1, "eligible": [ … ] } ],
+                 "chain": "sha256:…" },
+  "roster_epoch": 47, "objects": [ … ], "machinery": "sha256:…",
+  "display": "…", "require_execution_presence": false,
   "auth": { "kind": "interactive" }
 }
 ```
@@ -193,6 +200,9 @@ statement produces a partially-applied change nobody reviewed. Instead:
 
 ```sql
 BEGIN ISOLATION LEVEL REPEATABLE READ;      -- READ COMMITTED is unsound here
+SET LOCAL search_path = pg_catalog;         -- else an unqualified fence can be redefined
+-- capture write-set baseline (a delta, not a snapshot)
+
 -- (a) would this touch anything outside the fence?
 --     `IS NOT TRUE`, never `NOT (…)` — a NULL fence value is OUTSIDE the fence
 SELECT count(*) FROM public.accounts
@@ -203,7 +213,8 @@ UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
 -- (c) did any affected row end up outside the fence?   (catches tier := 'production')
 -- (d) affected rows <= max_rows                        (named relation only)
--- (e) write-set assert: nothing outside the declared object scope was written
+SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire before (e)
+-- (e) write-set assert: nothing outside the marque's `objects` was written
 COMMIT;
 ```
 

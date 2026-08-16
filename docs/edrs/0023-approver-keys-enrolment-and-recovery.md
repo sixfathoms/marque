@@ -79,8 +79,12 @@ exposed to script execution, and that is the wrong trade
 
 **Policy may require an envelope — and, separately, a surface.** `require_envelope`
 ([EDR-0015](./0015-policy-is-reviewed-configuration.md)) names which envelope a target accepts, and a
-`critical` target defaults to `webauthn`, so the file-backed fallback below cannot approve the
-highest-consequence changes.
+`critical` target's defaults are **`require_key_backing: hardware` plus `signing_surface: local`**
+([EDR-0015](./0015-policy-is-reviewed-configuration.md)) — *not* `require_envelope: webauthn`, which
+an earlier version of this paragraph asserted and which
+[EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md) removed as the default. The envelope was
+the wrong proxy for "not a file on a laptop", since `es256` covers both a Secure Enclave key and the
+file fallback.
 
 **That is a statement about the key, not about where signing happens**, and the two were originally
 conflated. An envelope requirement alone pushed `critical` approvals into the browser, whose assets
@@ -107,7 +111,7 @@ root — not values read from the assertion or from the control plane, which wou
 
 | Situation | Requires |
 |---|---|
-| First key, for a person already in an approver group | a fresh interactive authentication **and** a countersignature from an already-enrolled approver |
+| First key, for a person already in an approver group | a fresh interactive authentication **and** countersignatures from **k already-enrolled approvers** — k is defined in [EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md) and nowhere else, since a countersignature's effect is to produce a roster epoch |
 | Additional key for yourself | a fresh authentication **and** a signature from one of your existing enrolled keys |
 | First key in a brand-new deployment | the bootstrap ceremony below |
 
@@ -152,9 +156,12 @@ published at the `jwks_uri` in the bootstrap document
 
 ### Recovery, rehearsed
 
-The catastrophic case is every approver key being unavailable at once. The documented ceremony
-requires **two people with deployment infrastructure access**, reopens the bootstrap window, and is
-announced. It cannot be performed by one person, and it cannot be performed silently.
+The catastrophic case is every approver key being unavailable at once. Under the roster
+([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)) this is heavier than
+reopening a window, and the ceremony has to say so: with no live approver keys **no new roster epoch
+can be signed**, so recovery means minting a **new genesis roster**, **re-pinning every Pilot's root
+by re-deployment**, and resolving each Pilot's epoch high-water mark and `min_epoch` floor against it.
+It requires **two people with deployment infrastructure access**, and it is announced. It cannot be performed by one person, and it cannot be performed silently.
 
 It is **rehearsed on a schedule** against a non-production deployment. A recovery path nobody has
 executed is a hope, and this one will be reached for on the worst day
@@ -207,3 +214,4 @@ executed is a hope, and this one will be reached for on the worst day
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated the WebAuthn challenge binding once rather than twice inconsistently, and added the `require_envelope` policy hook.
 - **2026-08-16**: Amended after a second expert panel: stated that `require_envelope` governs the key and `signing_surface` governs where signing happens; the two were conflated ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: specified the **whole** WebAuthn verification set (challenge with ceremony domain separation, `type`, `origin` allowlist, rpIdHash, UV flag, counter policy) rather than only the challenge binding; an assertion checked on the challenge alone is replayable from another origin or another ceremony.
+- **2026-08-16**: Amended after the second panel's synthesis: corrected the `critical` default (it is `require_key_backing: hardware` plus `signing_surface: local`, not `require_envelope: webauthn`), deferred k to [EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md), and rewrote recovery as the post-roster ceremony — with no live approver keys no epoch can be signed, so recovery means a new genesis roster and re-pinning every Pilot.

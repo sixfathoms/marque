@@ -79,9 +79,14 @@ submitter, expressed as an RFC 8693 `act` claim chain. Every artefact it writes 
 (the analyst identity, with its model and prompt version) and the principal (the submitter). A record
 with one name is a bug, not a shorthand.
 
-**Freshness.** Two operations require an authentication no older than a deployment-configured
-interval (default five minutes): **producing a human approver signature**, and **executing** against
-a target marked `critical`. The client re-runs the interactive flow; the token carries `auth_time`
+**Freshness.** **One** operation requires an authentication no older than a deployment-configured
+interval (default five minutes): **producing a human approver signature**. An earlier version of this
+record also required it for *executing* against a `critical` target;
+[EDR-0035](./0035-execution-freshness-is-a-property-of-the-approval.md) removed that, because it was
+unsatisfiable during the outages break-glass marques exist for and locked agents out of the flow
+escalation exists to serve. Where a deployment genuinely wants a human present at execution, the
+deliberate replacement is `require_execution_presence`, proved by an authenticator assertion rather
+than by a token from an identity provider. The client re-runs the interactive flow; the token carries `auth_time`
 and the server checks it. A workload principal cannot satisfy a freshness requirement at all, which
 is the intended answer — a machine may not approve.
 
@@ -139,3 +144,4 @@ skipped. This paragraph resolves what was, until review found it, a direct contr
 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended to scope the freshness rule to *producing a human approver signature*, resolving a contradiction with [EDR-0008](./0008-standing-orders.md) that an expert-panel review found. See [EDR-0029](./0029-the-fast-path-authority-chain.md). The decision is unchanged.
+- **2026-08-16**: Amended after the second panel's synthesis: removed the execution-freshness clause that [EDR-0035](./0035-execution-freshness-is-a-property-of-the-approval.md) was written to retire and that this record still carried, and named `require_execution_presence` as the deliberate replacement.

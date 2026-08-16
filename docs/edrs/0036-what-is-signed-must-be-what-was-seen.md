@@ -91,8 +91,13 @@ applied by a signed act. That act now produces an artefact of the same family as
 co-signed by **k approver device keys**, epoch-chained, monotonic, and distributed to Pilots. The
 control plane transports it and cannot author it.
 
-A Pilot then **recomputes** the approval requirement for `(target, role, request shape)` from the
-policy artefact and **compares it to the payload's `approvals` block**. A mismatch is a refusal, not
+A Pilot then **recomputes** the approval requirement from the policy artefact and **compares it to
+the payload's `approvals` block**. Recomputation consumes **only signed payload fields** — `target`,
+`role`, `req`, `objects`, `budget`, `sub`, `act` — plus the artefact itself. Anything a Pilot cannot
+derive offline may not appear in a rule it must recompute; **rehearsed magnitude in particular**,
+which [EDR-0019](./0019-escalation-is-a-chain.md) uses to build a chain, is not knowable before
+execution and is refused at policy-apply time if a rule depends on it. Otherwise the check would be
+unimplementable for exactly the chains it most needs to verify. A mismatch is a refusal, not
 a warning. `approvals` stays in the payload — it is what the signatures cover, and
 [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)'s anti-stripping property depends
 on it — but it is now **checked against an independent source** rather than believed.
@@ -216,3 +221,4 @@ compromise tables claim.
 
 - **2026-08-16**: Accepted, following a second expert panel's finding that an authentic approver
   signature could be induced over a payload the approver never saw.
+- **2026-08-16**: Amended after the second panel's synthesis: bounded recomputation to signed payload fields; a rule depending on rehearsed magnitude is unimplementable offline and is refused at apply time.

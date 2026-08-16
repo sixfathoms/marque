@@ -75,7 +75,12 @@ multiple signatures over one payload natively. The payload:
   "revocation": { "policy": "required", "grace_seconds": 0 },
   "act": [ … ],                          // delegation chain, if any
   "analysis": "sha256:1a7e…",           // what the approver was shown
-  "display": "…"                         // canonical rendering, shown verbatim to the signer (EDR-0036)
+  "display": "…",                        // canonical rendering, shown verbatim to the signer (EDR-0036)
+  "objects": [ … ],                      // write-set reference set (EDR-0033)
+  "machinery": "sha256:…",               // relation fingerprint, re-checked at execution (EDR-0033)
+  "roster_epoch": 47,                    // which epoch signatures resolve against (EDR-0030)
+  "require_execution_presence": false    // EDR-0035; monotone — the Pilot requires it if EITHER
+                                         //   this or the anchored policy says so
 }
 ```
 
@@ -100,9 +105,17 @@ be moved to a different statement, because the statement is what it names.
 signed payload, so "the approver saw a report that said this was 3 rows" is provable after the fact,
 and a later re-analysis cannot quietly replace what they read.
 
-**Verification is local.** Given the deployment's JWKS and the current time, the Pilot checks the
-signatures, the window, the subject against the authenticated caller, and the statement it was handed
-against `req`. It does not ask the Harbourmaster anything.
+**Verification is local.** The Pilot checks the signatures, the window, the caller, and the statement
+it was handed against `req`, without asking the Harbourmaster anything. Two parts of that sentence as
+originally written have since been replaced, and they are named here because this record is where a
+reader is sent first:
+
+- **not "the deployment's JWKS"** — approver keys come from the per-tenant anchored roster
+  ([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)). A control-plane-served
+  key set is the exact construction that record exists to close.
+- **not "the subject against the authenticated caller"** — the caller proves possession of `cnf.jkt`
+  ([EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md)); `sub` is recorded for the
+  logbook and policy, not checked as a credential.
 
 > [!NOTE]
 > Two later records complete this payload and this rule, and both were written after review found
@@ -230,3 +243,4 @@ the statement affects more rows than were approved.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: gave the revocation list a field-level definition (signed `issued_at`, monotonic `sequence`, `next_update`, no downgrade), named the signature algorithms, corrected the claim that the approver's device key is the DPoP key (it is not, in the console), and made the revocation list the independent check on Pilot clock skew.
 - **2026-08-16**: Amended after a second expert panel: the payload gains `display`, a canonical rendering covered by every signature ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: widened the revocation list's `revoked` array to a typed set — the fast path verifies *artefacts*, and a list of marque ids cannot revoke the standing order that keeps minting them — and stated plainly who signs the list and what a compromised signer can and cannot do with it.
+- **2026-08-16**: Amended after the second panel's synthesis: corrected "Verification is local", which was verbatim the construction [EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md) exists to close, and added the payload fields five later records had claimed it carried.

@@ -58,6 +58,14 @@ directory that is not a sidebar category; a changelog page missing its `<!-- @en
 7. **Be honest in Consequences.** A record with no "harder" section has not been thought through, and
    writing one that reads like marketing copy is worse than not writing it.
 
+8. **Discharge every cross-record obligation in the same commit.** The corpus's dominant failure mode
+   is a new record stating an obligation on an older one — "EDR-0010's report gains `write_set`",
+   "this joins the list in EDR-0004", "EDR-0026's capability table gains…" — and the obligation never
+   being carried out. Three of those shipped and were caught only by a third adversarial read. If you
+   write that another record gains a field, a row or a rule, **edit that record in the same change**
+   and give it a dated changelog line. Grep your own diff for `gains`, `joins the list`, `is added
+   to`, `now carries` before pushing.
+
 ## The design's invariants
 
 Load-bearing, and easy to undo by accident. A change that weakens one needs a superseding record, not
