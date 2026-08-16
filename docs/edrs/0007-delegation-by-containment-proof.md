@@ -113,6 +113,7 @@ The fence never rewrites the operator's statement. The Pilot executes, in one tr
 
 ```sql
 BEGIN ISOLATION LEVEL REPEATABLE READ;
+SET LOCAL search_path       = pg_catalog;   -- pinned: see rule 4
 SET LOCAL statement_timeout = …;
 SET LOCAL lock_timeout      = …;
 
@@ -129,6 +130,7 @@ UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 -- (c) post-assert: did any affected row end up outside the fence?
 --     same TRUE-only rule; catches an update that moves a row out of scope
 -- (d) affected rows <= max_rows            (of the NAMED RELATION only)
+SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire BEFORE (e)
 -- (e) write-set assert                      (EDR-0033)
 
 COMMIT;
@@ -158,7 +160,24 @@ Three rules govern how those checks are written, and each closes a way the fence
    `indeterminate` ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md)). On MySQL, InnoDB's
    repeatable read uses current reads for writes, so the locking pre-select in
    [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) is what applies instead.
-3. **`max_rows` bounds the named relation only.** Everything the engine writes on the statement's
+3. **`search_path` is pinned, and every identifier is schema-qualified.** PostgreSQL resolves
+   unqualified names — relations, functions *and operators* — through `search_path`, so an
+   unqualified fence like `tier = 'sandbox'` can be made to mean something else by anyone who can
+   create an object in an earlier schema. The session sets `search_path = pg_catalog`, the grammar
+   already requires relations to be named directly (`public.accounts`), and a fence containing an
+   unqualified non-builtin reference is refused at compile time
+   ([EDR-0016](./0016-natural-language-delegations-are-compiled.md)).
+4. **Deferred constraint triggers are forced to fire before the write-set assertion.** A
+   `DEFERRABLE INITIALLY DEFERRED` constraint fires at `COMMIT` — *after* check (e) has read a clean
+   write set — so its writes would land inside the committed transaction unchecked, by a mechanism
+   designed to defer until commit. `SET CONSTRAINTS ALL IMMEDIATE` immediately before (e) pulls them
+   forward into the checked window ([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
+5. **A fence may reference only columns of the target relation.** REPEATABLE READ makes the
+   pre-check and the statement agree about rows *this* transaction writes; it does not protect a
+   fence that depends on some other row — a tenant row, a parent — which a concurrent transaction may
+   change between (a) and (b). A fence needing another relation is outside the checkable subset
+   unless the engine can lock the referenced rows for the transaction's duration.
+6. **`max_rows` bounds the named relation only.** Everything the engine writes on the statement's
    behalf — cascades, triggers, rewritten targets — is bounded by the write-set assertion in
    [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md), not by this count.
 
@@ -225,3 +244,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after an expert-panel review found the worked fence SQL unsound in two independent ways. The decision is unchanged — three checks, abort loudly, never narrow — but the encoding was wrong: `NOT (fence)` let a row with a NULL fence column pass every check, so the rule is now TRUE-only (`IS NOT TRUE`); and no isolation level was named, so `BEGIN` got READ COMMITTED and the pre-check and the statement took different snapshots. Also added the parameter-binding rule, further subset exclusions (multi-relation DML, locking subqueries, `ON CONFLICT DO UPDATE`), and a pointer to [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) for writes outside the named relation.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated that `max_rows` bounds the named relation only, and added the write-set assertion as check (e) — see [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md).
+- **2026-08-16**: Amended after a second expert panel: pinned `search_path` (PostgreSQL resolves unqualified relations, functions **and operators** through it, so an unqualified fence can be redefined by anyone who can create an object in an earlier schema), forced deferred constraint triggers to fire before the write-set assertion, and restricted a fence to columns of the target relation — REPEATABLE READ protects only rows this transaction writes.

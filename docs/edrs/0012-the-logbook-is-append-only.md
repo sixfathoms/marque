@@ -21,6 +21,10 @@ nothing is deleted.
 - Marque's own database role holds `INSERT` and `SELECT` on the journal and **nothing else**. Not
   `UPDATE`, not `DELETE`. A bug, an injection, or a compromised control plane cannot rewrite history,
   because the privilege to do so is not held by the process.
+- **And it must not own the table.** An owner can grant itself anything, so ownership would make the
+  withheld grant decorative. The journal is owned by a separate role used only by migrations, which
+  the running service cannot assume — the same distinction between *operating* and *authority* that
+  [EDR-0025](./0025-tenants-are-partitioned-from-day-one.md) draws for deployment operators.
 - Every entry names **actor and principal** — the identity that acted and, when acting under
   delegation, who it acted for. A one-name entry for a delegated action is rejected at write time
   ([ZFN-38](https://zrz.io/zfn/38-agents-are-principals/)).
@@ -147,3 +151,4 @@ third attempt. Nothing about the old request changes.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: the kind list was presented as complete and had gone stale against four later records; it is now explicitly illustrative, with the registry living with the schema.
+- **2026-08-16**: Amended after a second expert panel: Marque's role must not **own** the journal table: an owner can grant itself anything, which would make the withheld `DELETE` grant decorative.

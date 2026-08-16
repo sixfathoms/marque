@@ -90,6 +90,21 @@ COMMIT;
 - **Statistics collection is a prerequisite, not an optimisation.** If the engine cannot report a
   transaction's write set, the check cannot run and the execution is **refused** — it does not
   proceed unchecked ([ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/)).
+- **A zero is ambiguous, so the check calibrates itself.** "Nothing was written" and "the write was
+  not counted" both read as zero. The statement's *own* effect is the calibration signal: the write
+  set for the named relation must agree with the `RETURNING` count from check (b). If it does not,
+  the counters are not measuring this transaction and the execution is **refused** rather than
+  passed. Without this, `track_counts` being off degrades the strongest containment in the design to
+  a no-op that reports success.
+- **Deferred constraint triggers are pulled forward.** `SET CONSTRAINTS ALL IMMEDIATE` runs
+  immediately before this check ([EDR-0007](./0007-delegation-by-containment-proof.md)), because a
+  `DEFERRABLE INITIALLY DEFERRED` constraint otherwise fires at `COMMIT` — after the write set has
+  been read — and lands its writes inside the committed transaction unchecked.
+- **Partitioned tables are named by leaf, not by parent.** A write to a partitioned parent is counted
+  against the leaf partition it lands in, so an object scope naming only the parent sees an
+  out-of-scope write. A delegation over a partitioned relation must name the partition set, and the
+  compiler resolves and records it at signing time; a partition added afterwards changes the
+  fingerprint and invalidates the marque.
 - Relations written outside scope are reported by name and count, exactly as the fence reports its
   own violations. **Nothing is partially applied**, because the abort precedes the commit.
 
@@ -177,3 +192,4 @@ capability there.
 
 - **2026-08-15**: Accepted, following an expert-panel finding that all three fence checks are blind to
   writes outside the named relation.
+- **2026-08-16**: Amended after a second expert panel: the write set now calibrates against the statement's own `RETURNING` count, because a zero reads the same for "nothing written" and "not counted"; deferred constraint triggers are pulled forward before the check; and partitioned relations are named by leaf, since writes are counted against the partition rather than the parent.

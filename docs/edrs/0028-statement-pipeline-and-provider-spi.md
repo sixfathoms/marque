@@ -98,6 +98,14 @@ flowchart TB
 | **`pre_execute`** | veto only | last look at the bound statement, after approval; **cannot transform** |
 | **`observe`** | nothing | post-outcome notification; a veto here would be a lie, it already ran |
 
+**Transforms do not run on a standing-order fast path.** A standing order is a fixed shape a human
+signed, and [EDR-0029](./0029-the-fast-path-authority-chain.md) step 5 requires the Pilot to
+recompute `template + binding` offline and require the digest to equal `req`. A transform would make
+that recomputation fail — or, worse, force the Pilot to run provider code to reproduce it. A
+deployment needing tenant scoping on a standing order puts the constraint **in the template**, where
+it was reviewed and signed. Transforms apply to interactive and delegated paths, where the digest is
+taken after them and a human or a compiled scope covers the result.
+
 **Transforms run exactly once, and their output is frozen.** Value synthesis is otherwise a
 correctness bug: a provider that injects `now()` would produce different text at rehearsal and at
 execution, so the rehearsed statement would not be the executed one. The transformed text is stored
@@ -219,3 +227,4 @@ matter — a provider is precisely the thing that should read as ordinary and re
 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after an expert-panel review found the "what moves onto the SPI" table mis-describing both records it cites. The Surveyor was listed as a `verify` provider with outcomes `veto`/`refer`; its outcomes are `conforms`/`refer`, and `veto` is precisely the power [EDR-0017](./0017-conformance-matching-may-route-never-widen.md) states it must never have — an implementer building from that row would have shipped a Surveyor that can deny. Restated as a routing provider. Also reconciled the `analyse` stage, which the table used and the stage table omitted, and corrected the TL;DR's stage count.
+- **2026-08-16**: Amended after a second expert panel: transforms do not run on a standing-order fast path — [EDR-0029](./0029-the-fast-path-authority-chain.md) requires the Pilot to recompute `template + binding` offline and match `req`, which a transform would break. Tenant scoping on a standing order belongs in the signed template.
