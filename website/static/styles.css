@@ -418,83 +418,140 @@ iframe.embed.tall { height: 700px; }
 .demo h2 { font-family: var(--display); font-size: 1.75rem; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 1.25rem; color: var(--fg); }
 
 .term {
-  border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
-  background: var(--bg-subtle); box-shadow: var(--shadow); margin: 1.5rem 0 0;
-}
-.term-chrome {
-  display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.9rem;
-  background: var(--bg-muted); border-bottom: 1px solid var(--border-light);
-}
-.term-dots { display: inline-flex; gap: 0.35rem; flex: none; }
-.term-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--fg-faint); opacity: 0.5; }
-.term-title {
-  font-family: var(--mono); font-size: 0.75rem; color: var(--fg-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.term-badge {
-  margin-left: auto; flex: none; font-family: var(--mono); font-size: 0.68rem;
-  text-transform: uppercase; letter-spacing: 0.06em; color: var(--brass);
-  background: var(--brass-soft); border-radius: 999px; padding: 0.15rem 0.55rem;
+  border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
+  background: var(--bg); box-shadow: var(--shadow); margin: 1.75rem 0 0;
 }
 
-.term-tabs {
-  display: flex; gap: 0.25rem; padding: 0.5rem 0.6rem; overflow-x: auto;
-  background: var(--bg-subtle); border-bottom: 1px solid var(--border-light);
-  scrollbar-width: thin;
+/* Chrome: a title bar that reads as a terminal without being a skeuomorph. */
+.term-chrome {
+  display: flex; align-items: center; gap: 0.8rem; padding: 0.7rem 1rem;
+  background: linear-gradient(180deg, var(--bg-muted), var(--bg-subtle));
+  border-bottom: 1px solid var(--border-light);
 }
+.term-dots { display: inline-flex; gap: 0.4rem; flex: none; }
+.term-dots i { width: 10px; height: 10px; border-radius: 50%; opacity: 0.55; }
+.term-dots i:nth-child(1) { background: var(--denied); }
+.term-dots i:nth-child(2) { background: var(--pending); }
+.term-dots i:nth-child(3) { background: var(--granted); }
+.term-title {
+  font-family: var(--mono); font-size: 0.76rem; color: var(--fg-muted);
+  letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.term-badge {
+  margin-left: auto; flex: none; font-family: var(--mono); font-size: 0.66rem;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--brass); background: var(--brass-soft);
+  border: 1px solid hsl(from var(--brass) h s l / 0.3);
+  border-radius: 999px; padding: 0.15rem 0.6rem;
+}
+
+/* Scene control. Numbered chips, one clear active state. */
+.term-tabs {
+  display: flex; gap: 0.3rem; padding: 0.6rem 0.7rem; overflow-x: auto;
+  background: var(--bg-subtle); border-bottom: 1px solid var(--border-light);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.term-tabs::-webkit-scrollbar { height: 6px; }
+.term-tabs::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .term-tab {
-  flex: none; font-family: var(--mono); font-size: 0.74rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 0.45rem; flex: none;
+  font-family: var(--mono); font-size: 0.74rem; cursor: pointer;
   color: var(--fg-muted); background: transparent; border: 1px solid transparent;
-  border-radius: 7px; padding: 0.3rem 0.6rem; white-space: nowrap;
+  border-radius: 8px; padding: 0.32rem 0.65rem; white-space: nowrap;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+.term-tab-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.15rem; height: 1.15rem; border-radius: 4px;
+  font-size: 0.64rem; font-weight: 600;
+  background: var(--bg-muted); color: var(--fg-faint);
 }
 .term-tab:hover { color: var(--fg); background: var(--bg-muted); }
+.term-tab:hover .term-tab-n { color: var(--fg-secondary); }
 .term-tab[aria-selected="true"] {
   color: var(--accent); background: var(--accent-light);
-  border-color: var(--accent); font-weight: 600;
+  border-color: hsl(from var(--accent) h s l / 0.45); font-weight: 600;
 }
+.term-tab[aria-selected="true"] .term-tab-n { background: var(--accent); color: var(--bg); }
 .term-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .term-caption {
-  margin: 0; padding: 0.85rem 1rem; font-size: 0.9rem; line-height: 1.6;
+  margin: 0; padding: 0.9rem 1.1rem; font-size: 0.9rem; line-height: 1.65;
   color: var(--fg-secondary); background: var(--bg-subtle);
   border-bottom: 1px solid var(--border-light);
 }
 
 .term-body {
-  margin: 0; padding: 1rem 1.1rem; min-height: 21rem; max-height: 34rem;
+  margin: 0; padding: 1.1rem 0; min-height: 23rem; max-height: 36rem;
   overflow: auto; background: var(--bg); color: var(--fg-secondary);
-  font-family: var(--mono); font-size: 0.8rem; line-height: 1.62;
+  font-family: var(--mono); font-size: 0.8rem; line-height: 1.7;
   white-space: pre; tab-size: 2;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
-@media (max-width: 640px) { .term-body { font-size: 0.7rem; min-height: 17rem; } }
+.term-body::-webkit-scrollbar { width: 8px; height: 8px; }
+.term-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+@media (max-width: 640px) {
+  .term-body { font-size: 0.69rem; min-height: 18rem; line-height: 1.66; }
+  .term-caption { font-size: 0.85rem; }
+}
 .term-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* Unrevealed lines are hidden from the accessibility tree too, not just faded. */
-.term-body .l { display: block; visibility: hidden; }
-.term-body .l.is-on { visibility: visible; }
-.term-body .l-gap { min-height: 0.5em; }
+/* Unrevealed lines are hidden from the accessibility tree too, not just faded.
+   min-width: max-content lets a line's background span the full scroll width. */
+.term-body .l {
+  display: block; min-width: max-content; padding: 0 1.1rem;
+  visibility: hidden; opacity: 0; transform: translateY(2px);
+}
+.term-body .l.is-on {
+  visibility: visible; opacity: 1; transform: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.term-body .l-gap { min-height: 0.55em; }
 
-.term-body .l-cmd { color: var(--fg); font-weight: 600; }
-.term-body .l-sigil { color: var(--accent); }
+.term-body .l-cmd {
+  color: var(--fg); font-weight: 600;
+  background: var(--bg-subtle); padding-block: 0.12rem;
+  border-left: 2px solid var(--accent); padding-left: calc(1.1rem - 2px);
+}
+.term-body .l-sigil { color: var(--accent); font-weight: 700; }
+.term-body .l-in { color: var(--brass); font-weight: 600; }
 .term-body .l-sql { color: var(--fg); }
 .term-body .l-out { color: var(--fg-secondary); }
 .term-body .l-dim { color: var(--fg-faint); }
-.term-body .l-lbl { color: var(--brass); font-weight: 600; }
+.term-body .l-lbl {
+  color: var(--brass); font-weight: 600; letter-spacing: 0.01em;
+  margin-top: 0.15rem;
+}
 .term-body .l-ok { color: var(--granted); }
 .term-body .l-step { color: var(--pending); }
+.term-body .l-warn { color: var(--denied); font-weight: 600; }
 .term-body .l-err { color: var(--denied); }
-.term-body .l-meas { color: var(--accent); }
-.term-body .l-modl { color: var(--fg-muted); font-style: italic; }
+.term-body .l-meas { color: var(--accent); font-weight: 600; }
+.term-body .l-modl {
+  color: var(--fg-muted); font-style: italic;
+  border-left: 2px solid var(--border); padding-left: calc(1.1rem - 2px);
+}
+
+/* Open-sided rule boxes: a left rail and a head/foot rule. No right edge to
+   misalign, so they degrade cleanly at any width. */
+.term-body .l-rule  { color: var(--brass); }
+.term-body .l-ruleu { color: var(--pending); font-weight: 600; }
+.term-body .l-ruled { color: var(--denied); font-weight: 600; }
+.term-body .l-rail { color: var(--border); padding-right: 0.55rem; }
+.term-body .rail-b .l-rail { color: hsl(from var(--brass) h s l / 0.55); }
+.term-body .rail-u .l-rail { color: hsl(from var(--pending) h s l / 0.6); }
+.term-body .rail-d .l-rail { color: hsl(from var(--denied) h s l / 0.6); }
 
 .term-controls {
   display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
-  padding: 0.6rem 0.9rem; background: var(--bg-subtle);
+  padding: 0.65rem 1rem; background: var(--bg-subtle);
   border-top: 1px solid var(--border-light);
 }
 .term-btn {
   font-family: var(--mono); font-size: 0.74rem; cursor: pointer;
   color: var(--fg-secondary); background: var(--bg); border: 1px solid var(--border);
-  border-radius: 7px; padding: 0.3rem 0.7rem;
+  border-radius: 8px; padding: 0.32rem 0.75rem;
+  transition: border-color 0.12s ease, color 0.12s ease;
 }
 .term-btn:hover:not(:disabled) { border-color: var(--fg-faint); color: var(--fg); }
 .term-btn:disabled { opacity: 0.45; cursor: default; }
@@ -502,5 +559,6 @@ iframe.embed.tall { height: 700px; }
 .term-status { font-family: var(--mono); font-size: 0.72rem; color: var(--fg-faint); }
 
 @media (prefers-reduced-motion: reduce) {
-  .term-body .l { visibility: visible; }
+  .term-body .l { visibility: visible; opacity: 1; transform: none; transition: none; }
+  .term-tab { transition: none; }
 }
