@@ -28,6 +28,36 @@
   </p>
 </section>
 
+<section class="demo" id="demo">
+  <h2>What it looks like</h2>
+  <p class="band-note">
+    The same statement, followed from the moment someone types it to the moment somebody reads the
+    record months later. Step through it, or let it play.
+  </p>
+
+  <div class="term" data-term>
+    <div class="term-chrome">
+      <span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="term-title">marque — prod-primary</span>
+      <span class="term-badge">Illustrative</span>
+    </div>
+    <div class="term-tabs" role="tablist" aria-label="Demonstration scenes" data-term-tabs></div>
+    <p class="term-caption" data-term-caption></p>
+    <pre class="term-body" id="term-panel" role="tabpanel" tabindex="0" data-term-body></pre>
+    <div class="term-controls">
+      <button type="button" class="term-btn" data-term-replay>Replay</button>
+      <button type="button" class="term-btn" data-term-skip>Show full transcript</button>
+      <span class="term-status" role="status" data-term-status></span>
+    </div>
+  </div>
+
+  <p class="lede-note">
+    <b>Illustrative.</b> This is the flow the decision records specify — not a recording of running
+    software. Marque is at design stage and the implementation has not started, so every transcript
+    above is written from the records rather than captured from a terminal.
+  </p>
+</section>
+
 <section class="explainer">
   <h2>What a request looks like</h2>
   <div class="flow-strip">
@@ -139,6 +169,53 @@
   </div>
 </section>
 
+<section class="explainer">
+  <h2>Questions you can answer afterwards</h2>
+  <p class="band-note">
+    The case for running this is mostly felt later — in an incident review, an audit, or the hour
+    after something went wrong. These are the questions that are usually unanswerable, and what
+    answers them here.
+  </p>
+  <div class="feature-grid">
+    <div class="feature">
+      <h3>“Who changed this row, and who said they could?”</h3>
+      <p>One query. The answer includes the statement text, the analysis the approver was actually
+      looking at, and their signature over it.</p>
+      <a href="{{base}}/edrs/0012-the-logbook-is-append-only/">EDR-0012 →</a>
+    </div>
+    <div class="feature">
+      <h3>“Was that the model, or the person?”</h3>
+      <p>A column, not an investigation. Anything an agent did carries both names — the actor and the
+      human it acted for — and a one-name record is rejected at write time.</p>
+      <a href="{{base}}/edrs/0018-agents-are-submitters-under-intersected-scope/">EDR-0018 →</a>
+    </div>
+    <div class="feature">
+      <h3>“Did anyone know it was 412 rows?”</h3>
+      <p>The rehearsed count is bound into what the approver signed, so what they were shown is
+      provable after the fact rather than remembered.</p>
+      <a href="{{base}}/edrs/0010-rehearse-before-you-sign/">EDR-0010 →</a>
+    </div>
+    <div class="feature">
+      <h3>“Did that apply, or not?”</h3>
+      <p>Including the honest answer. An execution whose outcome could not be established is recorded
+      as <code>indeterminate</code> rather than guessed at in either direction.</p>
+      <a href="{{base}}/edrs/0011-execution-is-idempotent-and-fenced/">EDR-0011 →</a>
+    </div>
+    <div class="feature">
+      <h3>“What can this tool actually reach?”</h3>
+      <p>A short list of roles and their grants, in the database’s own vocabulary. A bug in Marque’s
+      scope checker is contained by the role, not by Marque.</p>
+      <a href="{{base}}/edrs/0006-every-statement-names-a-role/">EDR-0006 →</a>
+    </div>
+    <div class="feature">
+      <h3>“Can we still work if Marque is down?”</h3>
+      <p>A marque already issued keeps executing — the Pilot verifies it by computation, offline. The
+      tool stays usable during the incidents it exists for.</p>
+      <a href="{{base}}/edrs/0004-marques-are-signed-leases/">EDR-0004 →</a>
+    </div>
+  </div>
+</section>
+
 <section class="explore">
   <h2>Start here</h2>
   <div class="card-grid">
@@ -176,3 +253,5 @@
     </a>
   </div>
 </section>
+
+<script src="{{base}}/terminal.js" defer></script>

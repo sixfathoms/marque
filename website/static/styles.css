@@ -412,3 +412,95 @@ iframe.embed.tall { height: 700px; }
 .rule-brass { border: 0; border-top: 2px solid var(--brass); width: 3rem; margin: 1.5rem 0; opacity: 0.8; }
 .lede-note { font-size: 0.9rem; color: var(--fg-muted); border-left: 3px solid var(--brass); padding-left: 0.9rem; margin: 1.5rem 0 0; }
 .lede-note b { color: var(--fg-secondary); }
+
+/* ---- Landing: pseudo-terminal demo ---- */
+.demo { padding: 2.5rem 0; border-top: 1px solid var(--border-light); }
+.demo h2 { font-family: var(--display); font-size: 1.75rem; font-weight: 600; letter-spacing: -0.015em; margin: 0 0 1.25rem; color: var(--fg); }
+
+.term {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  background: var(--bg-subtle); box-shadow: var(--shadow); margin: 1.5rem 0 0;
+}
+.term-chrome {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.9rem;
+  background: var(--bg-muted); border-bottom: 1px solid var(--border-light);
+}
+.term-dots { display: inline-flex; gap: 0.35rem; flex: none; }
+.term-dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--fg-faint); opacity: 0.5; }
+.term-title {
+  font-family: var(--mono); font-size: 0.75rem; color: var(--fg-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.term-badge {
+  margin-left: auto; flex: none; font-family: var(--mono); font-size: 0.68rem;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--brass);
+  background: var(--brass-soft); border-radius: 999px; padding: 0.15rem 0.55rem;
+}
+
+.term-tabs {
+  display: flex; gap: 0.25rem; padding: 0.5rem 0.6rem; overflow-x: auto;
+  background: var(--bg-subtle); border-bottom: 1px solid var(--border-light);
+  scrollbar-width: thin;
+}
+.term-tab {
+  flex: none; font-family: var(--mono); font-size: 0.74rem; cursor: pointer;
+  color: var(--fg-muted); background: transparent; border: 1px solid transparent;
+  border-radius: 7px; padding: 0.3rem 0.6rem; white-space: nowrap;
+}
+.term-tab:hover { color: var(--fg); background: var(--bg-muted); }
+.term-tab[aria-selected="true"] {
+  color: var(--accent); background: var(--accent-light);
+  border-color: var(--accent); font-weight: 600;
+}
+.term-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.term-caption {
+  margin: 0; padding: 0.85rem 1rem; font-size: 0.9rem; line-height: 1.6;
+  color: var(--fg-secondary); background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.term-body {
+  margin: 0; padding: 1rem 1.1rem; min-height: 21rem; max-height: 34rem;
+  overflow: auto; background: var(--bg); color: var(--fg-secondary);
+  font-family: var(--mono); font-size: 0.8rem; line-height: 1.62;
+  white-space: pre; tab-size: 2;
+}
+@media (max-width: 640px) { .term-body { font-size: 0.7rem; min-height: 17rem; } }
+.term-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Unrevealed lines are hidden from the accessibility tree too, not just faded. */
+.term-body .l { display: block; visibility: hidden; }
+.term-body .l.is-on { visibility: visible; }
+.term-body .l-gap { min-height: 0.5em; }
+
+.term-body .l-cmd { color: var(--fg); font-weight: 600; }
+.term-body .l-sigil { color: var(--accent); }
+.term-body .l-sql { color: var(--fg); }
+.term-body .l-out { color: var(--fg-secondary); }
+.term-body .l-dim { color: var(--fg-faint); }
+.term-body .l-lbl { color: var(--brass); font-weight: 600; }
+.term-body .l-ok { color: var(--granted); }
+.term-body .l-step { color: var(--pending); }
+.term-body .l-err { color: var(--denied); }
+.term-body .l-meas { color: var(--accent); }
+.term-body .l-modl { color: var(--fg-muted); font-style: italic; }
+
+.term-controls {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.6rem 0.9rem; background: var(--bg-subtle);
+  border-top: 1px solid var(--border-light);
+}
+.term-btn {
+  font-family: var(--mono); font-size: 0.74rem; cursor: pointer;
+  color: var(--fg-secondary); background: var(--bg); border: 1px solid var(--border);
+  border-radius: 7px; padding: 0.3rem 0.7rem;
+}
+.term-btn:hover:not(:disabled) { border-color: var(--fg-faint); color: var(--fg); }
+.term-btn:disabled { opacity: 0.45; cursor: default; }
+.term-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.term-status { font-family: var(--mono); font-size: 0.72rem; color: var(--fg-faint); }
+
+@media (prefers-reduced-motion: reduce) {
+  .term-body .l { visibility: visible; }
+}
