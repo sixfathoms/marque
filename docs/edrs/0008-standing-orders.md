@@ -29,6 +29,7 @@ are typed and constrained; a value that fails its constraint is refused at invoc
     { "name": "tier", "type": "string", "one_of": ["sandbox", "trial"] }
   ],
   "objects": [ { "table": "public.accounts" } ],   // write-set reference set (EDR-0033)
+  "issued_at": "…", "roster_epoch": 47,            // signatures resolve against this epoch (EDR-0030)
   "max_rows": 1,
   "invokers": ["group:support"],
   "rate_limit": { "per_invoker": "20/hour", "total": "200/hour" },
@@ -165,3 +166,4 @@ Renewal is a re-approval, which is the moment someone re-reads it — the whole 
 - **2026-08-15**: Amended after review: the signed standing order supplies the approver limb of a marque minted by invocation, and travels with it for offline verification ([EDR-0029](./0029-the-fast-path-authority-chain.md)). Added the residual that group-named `invokers` are not offline-verifiable, and the rule that `critical` targets must name principals.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: required `max_rows` on every write standing order (or an explicit acknowledgement), specified `from_query`'s own constraints, and corrected the "unchanged" list, which named fencing rather than the assertions that actually apply.
 - **2026-08-16**: Amended after the second panel's synthesis: added the `objects` field [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) sources the fast-path write-set reference set from, and corrected the residual, which counted budget and rate limits the compromised component itself enforces.
+- **2026-08-16**: Amended in the second panel's should-fix pass: added signed `issued_at` and `roster_epoch`, so a long-lived artefact verified against roster keys has a stated answer to whether the signing key was live.

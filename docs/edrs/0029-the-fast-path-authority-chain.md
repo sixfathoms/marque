@@ -112,8 +112,23 @@ the compilation).
    the Harbourmaster did — the check is deterministic, so the Pilot repeating it costs little and
    removes a trust assumption.
 6. `sub` is permitted by the artefact — see the residual below.
-7. The marque's `exp` and `budget` are **within** the artefact's limits — scalar comparisons. For
-   `fence`, "within" is **not** left to an implementer, because predicate containment is undecidable
+7. The marque's limits are **within** the artefact's, and what that compares depends on the kind:
+
+   | Kind | Compared |
+   |---|---|
+   | `standing_order` | `exp` within the order's `expires`; `objects` equal to the order's; there is no per-marque `fence` to compare, because the order's template *is* the bound |
+   | `delegation`, `surveyed` | `exp`, `budget`, `objects` and `fence` against the compiled scope |
+
+   **Only a signed compilation may authorise a `delegation`-kind marque**
+   ([EDR-0016](./0016-natural-language-delegations-are-compiled.md)); a hand-authored scope goes
+   through the same signing ceremony or is fast-path-ineligible, since the Pilot has nothing else to
+   verify against.
+
+   **A delegation chain ships whole.** `auth.artefact` names the terminal grant, but where authority
+   descends through hops (theo → sam → agent) the **entire chain of signed artefacts** travels in the
+   bundle, so the Pilot can verify attenuation at every hop rather than trusting that it happened.
+
+   For `fence`, "within" is **not** left to an implementer, because predicate containment is undecidable
    and a semantic reading would be an approximation in the permissive direction (the exact error
    [EDR-0007](./0007-delegation-by-containment-proof.md) exists to avoid). The rule is **syntactic
    identity after canonicalisation**: `marque.fence == artefact.fence`. A correctly-minted fast-path
@@ -217,3 +232,4 @@ state that an offline Pilot cannot resolve. So:
   approver limb on a fast path.
 - **2026-08-16**: Amended after a second expert panel: corrected the claim that principal-named `invokers` are fully offline-verifiable; they were not until the principal roster existed ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
 - **2026-08-16**: Amended after the second panel's should-fix pass: made "within" decidable for a fence (syntactic identity after canonicalisation, since predicate containment is undecidable and a semantic reading would approximate in the permissive direction), corrected the artefact signature count — only a standing order carries two — and struck rate limits and budgets from the compromised-control-plane residual, since both are enforced by the compromised component.
+- **2026-08-16**: Amended in the second panel's should-fix pass: said what check 7 compares per artefact kind, required a signed compilation to authorise a delegation-kind marque, and required a delegation **chain** to ship whole so attenuation is verifiable at every hop.

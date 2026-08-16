@@ -71,7 +71,8 @@ delegation plus a per-clause account of how it got there:
     "objects": [ { "table": "public.accounts", "columns": ["settings"] } ],
     "fence": "tier = 'sandbox'",
     "max_rows": 100,
-    "not_after": "2026-11-30T00:00:00Z"
+    "not_after": "2026-11-30T00:00:00Z",
+    "issued_at": "…", "roster_epoch": 47   // the grantor signature resolves against this epoch
   },
   "derivation": [
     { "clause": "update … settings … on accounts", "became": "UPDATE on public.accounts(settings)",
@@ -84,6 +85,13 @@ delegation plus a per-clause account of how it got there:
   "unexpressible": []
 }
 ```
+
+**Signed artefacts carry their moment.** A compiled delegation records a signed `issued_at` and
+`roster_epoch`, and its grantor signature resolves against that epoch on exactly the rule a marque's
+does ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)). Without them a long-lived
+artefact verified against roster keys has no stated answer to "was this key live when this was
+signed" — the question `roster_epoch` was added to settle for marques and which applies with more
+force here, because these artefacts outlive them.
 
 **The grantor signs the compilation.** The console and CLI show the compiled scope first and the
 sentence second, with every `inferred` clause flagged. `marque delegate --from-text` prints the
@@ -137,8 +145,13 @@ rather than its input trusted:
 - every named column must exist in the supplied schema;
 - the predicate must parse under [EDR-0007](./0007-delegation-by-containment-proof.md)'s grammar.
 
-A compilation failing any of those is refused. That is what makes data-borne injection a refusal
-rather than a wider delegation.
+A compilation failing any of those is refused. **What those constraints actually buy is narrower than
+it first reads**: they make a compilation *ungroundable in fabricated evidence* — a literal it did not
+receive, a column that does not exist, a predicate that will not parse. They do **not** bound its
+*meaning*. Injected schema evidence can still steer the compiler toward a wider but perfectly
+well-formed predicate — `tier <> 'production'` in place of `tier = 'sandbox'`. What bounds that is
+the **grantor's signature on the compiled form** and **attenuation against the grantor's own
+authority**, which is why the human reads the compilation and not the sentence.
 
 **Recompilation is a new delegation.** Editing the sentence produces a new compilation requiring a
 new signature. An existing delegation is never re-derived, so improving the compiler cannot change
@@ -171,7 +184,9 @@ what someone is already permitted to do.
 
 - The compiler's test suite includes adversarial sentences — ones that try to compile to more than
   they appear to say, and ones with injected instructions in the text — **and adversarial schema
-  evidence**: a column value containing an instruction, a column named to read as one. A failure to
+  evidence**: a column value containing an instruction, a column named to read as one, and evidence that
+  **steers the compiler to a wider but well-formed predicate** — the case the output constraints do not
+  catch. A failure to
   refuse is a build failure.
 - Compiled delegations are reviewed at renewal against their sentence, which is when a drifted
   compilation is caught.
@@ -189,3 +204,4 @@ what someone is already permitted to do.
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: the signed compilation supplies the approver limb of a marque minted by a delegation match, and travels with it so a Pilot can verify offline that a human signed the scope ([EDR-0029](./0029-the-fast-path-authority-chain.md)).
 - **2026-08-16**: Amended after the expert panel's should-fix pass: gated distinct values to columns classified non-sensitive — this is the only path by which production data reaches a model whose output becomes a candidate authority artefact — and declared schema evidence untrusted input with the compiler's output constrained rather than its input trusted.
+- **2026-08-16**: Amended in the second panel's should-fix pass: added `issued_at` and `roster_epoch`; and corrected an overclaim — the output constraints make a compilation ungroundable in fabricated evidence, they do not bound its *meaning*, so a steered-but-well-formed predicate is bounded by the grantor's signature and attenuation instead.

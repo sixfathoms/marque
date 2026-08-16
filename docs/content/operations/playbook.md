@@ -43,9 +43,10 @@ Tier B — the three that will actually bite are the **replication slot**, **Pil
 | Declared-versus-used scope gap per agent | small | A wide declaration for a narrow task is a badly built or compromised agent |
 | Panel disagreement rate (Tier B) | low and stable | A delegation whose panel keeps disagreeing needs rewriting |
 | Fast-path share of all executions | known | If it drifts to nearly everything, the queue has stopped being a control |
-| Rehearsal-versus-actual row divergence | near zero | A large divergence means the data moved, or the fence is not doing what anyone thinks |
+| Rehearsal-versus-actual **write-set** divergence | near zero | Compared per relation, not on top-level counts — a cascade measures identically on both sides, so the top-level comparison cannot fire ([EDR-0033](../../edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)) |
 | **Roster age and epoch, per Pilot** | current | A compromised or broken control plane cannot forge an approver key, but it *can* withhold a roster update — so a new approver is unrecognised and a retired key stays live until Pilots see a newer epoch ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)) |
 | Pilot pinned genesis root | unchanged | A changed root means someone re-deployed a Pilot against a different definition of who may approve |
+| **Pilot incarnation versus roster/policy epoch** | incarnation stable, epochs at or above `min_epoch` | This is the observable for the reset-to-genesis case: a new incarnation sitting at a low epoch is a rebuilt Pilot that a compromised control plane could walk forward, reinstating retired keys ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)) |
 | Rehearsal rate per principal | stable | A step change is what oracle extraction looks like ([EDR-0034](../../edrs/0034-the-pilot-api-has-one-authorisation-model.md)) |
 | Pilot clock skew | milliseconds | A wrong clock either honours expired marques or refuses valid ones ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)) |
 | Logbook chain verification | passing | A break is an alert, never a log line ([EDR-0012](../../edrs/0012-the-logbook-is-append-only.md)) |
@@ -69,7 +70,8 @@ invocation counts and retire the unused.
 
 **Monthly.** Verify the logbook chain against its external anchor by actually restoring from it — an
 anchor nobody has read is a hope ([ZFN-36](https://zrz.io/zfn/36-test-backups-by-restoring/)).
-**Audit the enrolled approver roster** against the logbook and the external anchor: every entry
+**Audit the enrolled approver roster and the policy artefact** — both are epoch-chained and both need
+their chains verified — against the logbook and the external anchor: every entry
 should trace to an enrolment someone remembers, and a roster that verifies but is not anchored is a
 finding ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)). Review
 `secret-ref` carve-outs against their review dates. Review agents whose owners have left.

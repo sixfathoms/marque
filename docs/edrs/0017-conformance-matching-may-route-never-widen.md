@@ -91,8 +91,11 @@ the part that can fail.
 
 **The panel.** A conformance judgment is not one call. `n` **separately-framed** judgments (floor of
 3, set by `surveyor.jurors` in [EDR-0015](./0015-policy-is-reviewed-configuration.md)) run with three
-**mandatory** framings — one asked to certify, one asked to *refute* conformance, one given only the
-compiled bound and the statement with the sentence withheld. **Unanimity is required for
+**mandatory** framings — one asked to certify, one asked to *refute* conformance, one given only the compiled bound and
+the statement **with the residual clause withheld** — an *un-anchored shape screen*, which asks
+"would this statement be reasonable against this bound at all?" and contributes a **veto rather than
+an answer**, with its own expected-dissent band. Defining it only by what it is denied left the
+per-framing dissent metric with no rate to compare against. **Unanimity is required for
 `conforms`.** Any disagreement is a `refer`. Dissent is tracked **per framing**, since a framing that
 never dissents is not contributing.
 
@@ -101,8 +104,12 @@ the panel narrows **careless error**, not **correlated injection** — a prompt 
 will often fool its siblings. What holds against injection is the deterministic outer bound, not the
 vote count.
 
-**Provider diversity where it exists, degraded loudly where it does not.** Where a deployment has more
-than one model provider configured, jurors **must** come from distinct providers. Where only one is
+**Provider diversity where it exists, degraded loudly where it does not.** Diversity is a property of
+the **panel actually convened**, not of the deployment's provider count — a two-provider deployment
+that happens to route all three jurors to one provider is correlated regardless of what the
+configuration says. So the rule is a distribution constraint: with `p` providers available, **no
+provider supplies more than ⌈n/p⌉ jurors**, and the marking below keys on whether that was achieved
+for *this* judgment. Where only one is
 available, Tier B still runs, and:
 
 - the delegation is **visibly marked as running a correlated panel**, in the console and in the
@@ -203,3 +210,4 @@ the Surveyor by only ever choosing between two paths that both end in a human-gr
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: a `surveyed` marque names the human-signed outer bound in its `auth` block, and the Pilot verifies **that bound** rather than the judgment ([EDR-0029](./0029-the-fast-path-authority-chain.md)). A control plane skipping the Surveyor is equivalent to one that answered `conforms`, and both are contained by the signed bound — which is what this record claimed, now stated as a verification property rather than an intention.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: replaced "independent" with "separately-framed" and said plainly that the panel narrows careless error, not correlated injection; required provider diversity where available and a visibly-marked, more heavily sampled degraded mode where not; named the audit reviewer's evidence set; required a Tier-B bound to carry a row fence; and stated that the prompt bundle is deliberately not pinned.
+- **2026-08-16**: Amended in the second panel's should-fix pass: gave the third framing a stated question (an un-anchored shape screen contributing a veto) so its dissent band means something, and made diversity a property of the panel convened rather than of the deployment's provider count.

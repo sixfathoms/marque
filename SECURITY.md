@@ -25,7 +25,7 @@ issue, not a documentation issue:
 | A compromised control plane cannot cause a statement to execute **whose shape no human signed** — it holds no target credential, cannot produce an approver signature, and a fast-path marque must carry the human-signed artefact that authorised it | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md), [EDR-0005](docs/edrs/0005-control-plane-holds-no-credentials.md), [EDR-0029](docs/edrs/0029-the-fast-path-authority-chain.md) |
 | A marque cannot be stripped of approver signatures to weaken its approval requirement | [EDR-0030](docs/edrs/0030-a-marque-states-its-own-approval-requirement.md) |
 | A stolen session or a compromised control plane cannot enrol approver authority — the approver roster is co-signed and anchored outside the control plane | [EDR-0031](docs/edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md) |
-| A statement cannot write to a relation outside the delegation's declared object scope without the transaction aborting — including via cascades, triggers and rewritten targets | [EDR-0033](docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md) |
+| A statement cannot write to a relation outside **the marque's** declared object scope without the transaction aborting — bounded to what the mechanism measures: tuple changes, in this database, in this transaction (see limitations) | [EDR-0033](docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md) |
 | A row whose fence expression is NULL is treated as outside the fence, not inside it | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | Every Pilot method verifies a submitter signature — the control plane relays, it does not authorise | [EDR-0034](docs/edrs/0034-the-pilot-api-has-one-authorisation-model.md) |
 | An authentic approver signature attests a payload the approver actually saw — a compromised control plane cannot render one marque and obtain a signature over another | [EDR-0036](docs/edrs/0036-what-is-signed-must-be-what-was-seen.md) |
@@ -86,5 +86,23 @@ discussion, but they are not surprises:
 - **A compromised control plane can withhold a roster update**, so a newly-enrolled approver may be
   unrecognised and a retired key may stay live until Pilots see a newer epoch. Roster age is a
   monitored signal.
+- **Fast-path volume is unbounded against a compromised control plane.** Rate limits are enforced at
+  ingress, by the component that is compromised, and a budget bounds one marque rather than how many
+  are minted ([EDR-0029](docs/edrs/0029-the-fast-path-authority-chain.md)).
+- **The revocation list is signed by the component whose compromise it exists to remediate.** A
+  compromised control plane can suppress a revocation — bounded by `next_update`, after which a
+  `required`-policy Pilot refuses — or forge one, which is a visible denial of service. It cannot use
+  it to authorise anything ([EDR-0004](docs/edrs/0004-marques-are-signed-leases.md)).
+- **The write-set assertion is blind to `TRUNCATE` and to writes made on a separate session** (dblink,
+  an extension, a `SECURITY DEFINER` function opening its own connection). The first has a stated
+  detector; the second is bounded only by the role
+  ([EDR-0033](docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
+- **A pipeline `transform` provider is trusted for statement content.** The SPI's mechanisms enforce
+  containment within the submitter's authority, **not** narrowing: a transform can rewrite
+  `WHERE id = 42` to `id = 43` inside the scope and pass every check
+  ([EDR-0028](docs/edrs/0028-statement-pipeline-and-provider-spi.md)).
+- **Catalog introspection is a read channel over object definitions** — function bodies, view bodies,
+  defaults and check expressions. A deployment keeping secrets in them must treat it as one
+  ([EDR-0027](docs/edrs/0027-be-psql-then-be-better-than-psql.md)).
 - **Statement text may contain personal data and the logbook is immutable**
   ([EDR-0012](docs/edrs/0012-the-logbook-is-append-only.md)).

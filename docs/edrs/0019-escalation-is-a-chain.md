@@ -31,7 +31,10 @@ Three rules:
    it advances the request to it. The final marque carries every signature the chain required
    ([EDR-0004](./0004-marques-are-signed-leases.md) already supports several).
 3. **The chain is computed once, at submission, and recorded.** It cannot lengthen or shorten while
-   the request is open — a policy change mid-flight applies to the next request, not this one.
+   the request is open — a policy change mid-flight applies to the next request, not this one. **That
+   frozen chain is what a marque's `approvals.stages` encodes**, `chain` is its digest, and the
+   preimage travels in the marque bundle so a Pilot can recompute it rather than merely carry it
+   ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)).
 
 ## Context
 
@@ -159,3 +162,4 @@ the agent's own reply to its caller.
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: the chain's freeze at submission is now load-bearing for [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md), which binds the required approval count, the eligible approvers and the chain digest into the signed payload. Loosening the freeze would break that record's verification.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: defined `refuse_if_unfilled` and stated that the self-approval and distinctness tests apply to every human party to a request, so an unfillable chain refuses cleanly instead of deadlocking.
+- **2026-08-16**: Amended in the second panel's should-fix pass: stated that the frozen chain is what EDR-0030's `approvals.stages` encodes and that its preimage travels in the marque bundle.

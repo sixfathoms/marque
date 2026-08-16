@@ -15,7 +15,8 @@ aliases: []
 ## TL;DR
 
 Every statement, from every surface, moves through a named pipeline. Configured **providers** may
-join four of its stages — two that can change an outcome:
+join five of its stages — two that can change an outcome, one that vetoes, one that contributes
+evidence, and one that is notification-only:
 
 - **`transform`** — rewrite the statement. Inject a constraint, rename a column or table, synthesise
   a value, add a cast.
@@ -101,8 +102,9 @@ flowchart TB
 |---|---|---|
 | `parse` | — | engine-supplied ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)) |
 | **`transform`** | rewrite the statement | runs **before** the digest, so the result is what gets signed |
+| **`parse` (again)** | — | **re-runs on the transformed statement.** Checkable-subset membership is a property of the text that will actually run ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)), so a transform that pushes a statement *out* of the subset makes it ineligible for any delegated fast path and it goes to a human |
 | `normalise` | — | canonicalise, take the digest |
-| `scope` | — | unconditional containment check |
+| `scope` | — | unconditional containment check — [EDR-0007](./0007-delegation-by-containment-proof.md) §1 in full, including checkable-subset membership |
 | **`verify`** | veto, **asynchronously** | the request may sit in `verifying`; deadlines apply |
 | `rehearse` | — | [EDR-0010](./0010-rehearse-before-you-sign.md) |
 | **`analyse`** | contribute evidence — no transform, no veto, no route | [EDR-0009](./0009-the-leadsman-is-advisory.md); a failure here never blocks |
@@ -172,7 +174,7 @@ the pipeline honest and lets deployments substitute their own:
 
 | Today | Becomes |
 |---|---|
-| The Leadsman's analysis ([EDR-0009](./0009-the-leadsman-is-advisory.md)) | an `analyse` provider. `analyse` is therefore a **fourth** provider-joinable stage, contributing evidence only: it cannot transform, veto or route, and its failure never blocks a request |
+| The Leadsman's analysis ([EDR-0009](./0009-the-leadsman-is-advisory.md)) | an `analyse` provider — one of the five provider-joinable stages, contributing evidence only: it cannot transform, veto or route, and its failure never blocks a request |
 | The Surveyor's conformance judgment ([EDR-0017](./0017-conformance-matching-may-route-never-widen.md)) | a **routing** provider at `verify`, whose outcomes are `conforms`/`refer`. It selects a route inside a human-signed bound; it **cannot deny** — denial is a human act. This is narrowing in the record's sense (it can only send work *to* a human, never past one), not the `veto` outcome defined below |
 | Change-freeze, ticket linkage, data classification | `verify` providers |
 
@@ -249,3 +251,4 @@ matter — a provider is precisely the thing that should read as ordinary and re
 - **2026-08-15**: Amended after an expert-panel review found the "what moves onto the SPI" table mis-describing both records it cites. The Surveyor was listed as a `verify` provider with outcomes `veto`/`refer`; its outcomes are `conforms`/`refer`, and `veto` is precisely the power [EDR-0017](./0017-conformance-matching-may-route-never-widen.md) states it must never have — an implementer building from that row would have shipped a Surveyor that can deny. Restated as a routing provider. Also reconciled the `analyse` stage, which the table used and the stage table omitted, and corrected the TL;DR's stage count.
 - **2026-08-16**: Amended after a second expert panel: transforms do not run on a standing-order fast path — [EDR-0029](./0029-the-fast-path-authority-chain.md) requires the Pilot to recompute `template + binding` offline and match `req`, which a transform would break. Tenant scoping on a standing order belongs in the signed template.
 - **2026-08-16**: Amended after the second panel's synthesis: carried both `req_submitted` and `req` plus a signed `transform_chain`, since a submitter cannot sign a post-transform digest; and stated plainly that the three mechanisms enforce containment within the submitter's authority and **not** narrowing — a transform can move `id = 42` to `id = 43` inside the scope and pass every check.
+- **2026-08-16**: Amended in the second panel's should-fix pass: fixed the provider-joinable stage count (five), stated that `parse` re-runs on the transformed statement so subset membership is a property of the text that will run, and that `scope` is EDR-0007 §1 in full.

@@ -76,7 +76,7 @@ the oracle this record closes.
 | Method | Requires |
 |---|---|
 | `Execute` | a valid marque, plus proof of possession of `cnf.jkt` |
-| `Rehearse` | a submitter signature over the request digest, from a principal permitted that target and role |
+| `Rehearse` | a submitter signature over the request digest, from a principal **the anchored policy artefact permits** for that target and role ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)) — evaluated under the same recomputation-input restriction, and a Pilot holding no verified policy artefact **refuses rather than skipping the check** |
 | `Introspect` | the same, plus the statement matching the **Pilot-held** introspection allowlist |
 | `RevocationList` | nothing — it is public, signed, and revealing it helps nobody |
 
@@ -165,3 +165,4 @@ identity ([EDR-0021](./0021-connections-identity-and-read-routing.md)), so it is
 - **2026-08-15**: Accepted, following an expert-panel finding that only `Execute` had a stated caller
   check.
 - **2026-08-16**: Amended after a second expert panel: deleted "the enrolled principal set distributed with it" — an undefined artefact with no anchor, which reopened the very oracle this record closes — in favour of the principal roster ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
+- **2026-08-16**: Amended in the second panel's should-fix pass: named the anchored policy artefact as the source for `Rehearse`'s permission check, which this record previously required with no source a Pilot could consult.

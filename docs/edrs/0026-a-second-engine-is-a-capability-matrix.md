@@ -40,8 +40,10 @@ operator must be told which.
 "Support MySQL" sounds like adding a driver. It is not, because almost every control in this system
 is implemented *in the target's own semantics* rather than in Marque:
 
-- The fence is three checks inside a transaction, two of which depend on being able to see the rows a
-  statement affected ([EDR-0007](./0007-delegation-by-containment-proof.md)).
+- The fence is **four** checks inside a transaction, two of which depend on being able to see the rows
+  a statement affected, and one on per-relation write counts for the transaction
+  ([EDR-0007](./0007-delegation-by-containment-proof.md),
+  [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
 - The rehearsal depends on a transaction that can always be rolled back, and on timeouts that bound
   a statement and a lock wait ([EDR-0010](./0010-rehearse-before-you-sign.md)).
 - The purity allowlist depends on knowing which functions can write, which is a per-engine catalogue.
@@ -118,7 +120,9 @@ enforcement primitives, never policy.
 An engine ships when it has: a parser with a defined checkable subset, a purity allowlist reviewed
 against that engine's extension ecosystem, all **four** fence checks or a declared absence, a rehearsal
 whose rollback is structural, a timeout story for reads *and* writes, and a conformance suite
-including near-miss statements and fence-escape attempts. **A partially-implemented engine does not
+including near-miss statements, fence-escape attempts, a **NULL-fence** case, and a **cascade escape** —
+a delegated `DELETE` on a parent with a cascading child must abort with the child named
+([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)). **A partially-implemented engine does not
 ship behind a flag**, because a flag is how a weaker control reaches production believing itself to
 be the stronger one.
 
@@ -155,7 +159,7 @@ be the stronger one.
 - [ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/) — never trade a stronger guarantee for
   a wider compatibility claim.
 - [ZFN-22](https://zrz.io/zfn/22-extract-complexity-at-the-seam/) — the engine interface is the seam.
-- [EDR-0007](./0007-delegation-by-containment-proof.md) — the three fence checks an engine must
+- [EDR-0007](./0007-delegation-by-containment-proof.md) — the four fence checks an engine must
   supply or decline.
 - [EDR-0010](./0010-rehearse-before-you-sign.md) — the rehearsal contract.
 - [EDR-0021](./0021-connections-identity-and-read-routing.md) — the identity modes an engine declares.
@@ -164,3 +168,4 @@ be the stronger one.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the second panel's should-fix pass: added `fence.write_set` to the capability table and corrected "three fence checks" to four; [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) had claimed this record already carried it, and it did not.
+- **2026-08-16**: Amended in the second panel's should-fix pass: corrected the two remaining "three fence checks" references and added NULL-fence and cascade-escape cases to the required conformance suite.

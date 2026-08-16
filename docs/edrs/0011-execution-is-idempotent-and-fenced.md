@@ -126,7 +126,8 @@ thing to make an exception for and the exception would mean a read marque never 
 - The Pilot now has durable state, which it would otherwise not need: something to back up, restore
   and reason about during a failover.
 - Two Pilots serving the same target must not share a marque, or the ledger is not authoritative. A
-  marque is pinned to a Pilot identity at issue time, and a Pilot that has permanently lost its
+  marque is pinned to a Pilot identity at issue time by the `pilot` claim
+  ([EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md)), and a Pilot that has permanently lost its
   ledger cannot honour outstanding marques.
 
 **New obligations.**
@@ -150,3 +151,4 @@ thing to make an exception for and the exception would mean a read marque never 
 - **2026-08-16**: Amended after the expert panel's should-fix pass: added a ledger incarnation so its loss is detectable, an owner and lease so a claim can leave `in_progress` after a Pilot dies, and the path by which an outcome reaches the logbook.
 - **2026-08-16**: Amended after the second panel's should-fix pass: added `aborted_not_applied`, a terminal-but-clean outcome re-runnable under the same nonce without a second budget decrement, which [EDR-0007](./0007-delegation-by-containment-proof.md)'s "a 40001 is retryable" claim previously had nothing to land on.
 - **2026-08-16**: Amended after the second panel's synthesis: step 1 verifies proof of possession of `cnf.jkt` rather than the caller against `sub`, which is what [EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md) replaced.
+- **2026-08-16**: Amended in the second panel's should-fix pass: pointed the Pilot-pinning consequence at EDR-0032's `pilot` claim.

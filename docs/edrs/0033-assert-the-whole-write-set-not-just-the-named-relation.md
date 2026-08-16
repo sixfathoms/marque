@@ -114,6 +114,13 @@ COMMIT;
   immediately before this check ([EDR-0007](./0007-delegation-by-containment-proof.md)), because a
   `DEFERRABLE INITIALLY DEFERRED` constraint otherwise fires at `COMMIT` — after the write set has
   been read — and lands its writes inside the committed transaction unchecked.
+- **Relation identity is resolved before comparison, and the rule is stated in full.** TOAST
+  relations (`pg_toast.pg_toast_16432`) enter the write set whenever a value crosses the toast
+  threshold — which is **data-dependent**, so without a rule a rehearsal passes and the execution
+  aborts the first time a value happens to be large enough. They are **excluded**: they are storage
+  for an in-scope relation, not a relation the delegation should name. Plain inheritance children
+  resolve like partitions, via `pg_inherits`. **A relation the mapping cannot resolve aborts** rather
+  than being assumed benign.
 - **Partitioned tables are named by leaf, not by parent.** A write to a partitioned parent is counted
   against the leaf partition it lands in, so an object scope naming only the parent sees an
   out-of-scope write. A delegation over a partitioned relation must name the partition set, and the
@@ -225,3 +232,4 @@ capability there.
 - **2026-08-16**: Amended after a second expert panel: the write set now calibrates against the statement's own `RETURNING` count, because a zero reads the same for "nothing written" and "not counted"; deferred constraint triggers are pulled forward before the check; and partitioned relations are named by leaf, since writes are counted against the partition rather than the parent.
 - **2026-08-16**: Amended after the second panel's should-fix pass: moved the object scope into the marque payload; anchoring it in the delegation left the interactive and standing-order paths with no reference set at all, so the check had nothing to compare against on exactly the path a human reviewed.
 - **2026-08-16**: Amended after the second panel's synthesis: made the write set a **delta** captured at BEGIN and before COMMIT (the counters are pending and session-scoped, and connections are pooled); promoted the machinery fingerprint to its own payload field, since a digest is one-way and a fast-path marque carries no analysis claim; and stated the TRUNCATE and separate-session blind spots.
+- **2026-08-16**: Amended in the second panel's should-fix pass: stated the full relation-identity rule: TOAST relations excluded, inheritance children resolved via `pg_inherits`, and an unresolvable relation aborts.

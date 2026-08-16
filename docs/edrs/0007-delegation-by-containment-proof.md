@@ -79,8 +79,12 @@ is unsure, correctness beats availability, and the answer is a human.
 Two structural rules:
 
 - **Attenuation only.** A delegation can never grant more than the delegator holds — narrower
-  operations, a subset of objects, a fence at least as tight, a `max_rows` no larger, and a
-  `not_after` no later. Chains attenuate at every hop, and depth is bounded by deployment
+  operations, a subset of objects, a `max_rows` no larger, a `not_after` no later, and a fence that is
+  tighter **by syntactic conjunct-set inclusion, never by entailment**. The `fence` array is
+  conjunctive, and a narrower fence must literally carry every conjunct of the wider one and may add
+  more. Entailment is the undecidable check [EDR-0029](./0029-the-fast-path-authority-chain.md) check 7
+  was rewritten to avoid, and it arrives here once per hop in a chain, with the permissive
+  approximation as the failure direction. Chains attenuate at every hop, and depth is bounded by deployment
   configuration.
 - **Delegations expire.** `not_after` is required. There is no perpetual delegation
   ([ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/)).
@@ -245,3 +249,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 - **2026-08-15**: Amended after an expert-panel review found the worked fence SQL unsound in two independent ways. The decision is unchanged — three checks, abort loudly, never narrow — but the encoding was wrong: `NOT (fence)` let a row with a NULL fence column pass every check, so the rule is now TRUE-only (`IS NOT TRUE`); and no isolation level was named, so `BEGIN` got READ COMMITTED and the pre-check and the statement took different snapshots. Also added the parameter-binding rule, further subset exclusions (multi-relation DML, locking subqueries, `ON CONFLICT DO UPDATE`), and a pointer to [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) for writes outside the named relation.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated that `max_rows` bounds the named relation only, and added the write-set assertion as check (e) — see [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md).
 - **2026-08-16**: Amended after a second expert panel: pinned `search_path` (PostgreSQL resolves unqualified relations, functions **and operators** through it, so an unqualified fence can be redefined by anyone who can create an object in an earlier schema), forced deferred constraint triggers to fire before the write-set assertion, and restricted a fence to columns of the target relation — REPEATABLE READ protects only rows this transaction writes.
+- **2026-08-16**: Amended in the second panel's should-fix pass: attenuation compares fences by **syntactic conjunct-set inclusion**, not entailment — the undecidable check EDR-0029 was rewritten to avoid, which otherwise arrives once per hop in a chain.

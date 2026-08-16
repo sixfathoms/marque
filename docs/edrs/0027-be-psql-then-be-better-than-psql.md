@@ -101,7 +101,11 @@ Introspection then:
 - **The class discloses object definitions, and column exclusion cannot fix that.** Excluding
   `pg_proc.prosrc` was the original answer and it is insufficient: function bodies, view definitions,
   column defaults and check expressions are all reachable through definition-returning functions
-  (`pg_get_functiondef`, `pg_get_viewdef`, `pg_get_expr`) that a naive purity allowlist admits. So
+  (`pg_get_functiondef`, `pg_get_viewdef`, `pg_get_expr`, and `pg_get_function_sqlbody` for the
+  `BEGIN ATOMIC` bodies that live in `pg_proc.prosqlbody` rather than `prosrc`) that a naive purity
+  allowlist admits. The rule is a **closure invariant**, not a list: *a function that can return the
+  value of an excluded column is itself excluded from the purity allowlist for this class* — otherwise
+  every new definition-returning function reopens the channel. So
   those functions are **excluded from the purity allowlist for this class**, and the honest statement
   stands in `SECURITY.md`: **introspection is a read channel over object definitions**, and a
   deployment keeping secrets in a function body must treat it as one.
@@ -181,3 +185,4 @@ surfacing what it already knows.
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: corrected the reasoning behind catalog introspection — on PostgreSQL the role does not bound catalog reads, so the reviewed allowlist is the control — made the allowlist column-aware, and restated the shell-out refusal as a capability.
 - **2026-08-16**: Amended after the second panel's should-fix pass: excluding `pg_proc.prosrc` was insufficient — definition-returning functions reach view bodies, defaults and check expressions — so those are excluded from the purity allowlist for this class and the read channel is stated in SECURITY.md. Also recorded that preferring `information_schema` makes `\dt` show fewer objects than real psql, which is a deliberate compatibility deviation.
+- **2026-08-16**: Amended in the second panel's should-fix pass: named `prosqlbody` and `pg_get_function_sqlbody` alongside their siblings, and restated the exclusion as a **closure invariant** — a function that can return the value of an excluded column is itself excluded — since a list goes stale.

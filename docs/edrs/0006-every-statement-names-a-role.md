@@ -55,8 +55,14 @@ the target, which is the correct outcome.
 **Roles are least-privilege by convention, and the convention is checked.** Marque periodically
 introspects each declared role and records what it can actually reach. Two findings are reported:
 
-- a role holding `SUPERUSER`, `rds_superuser`, `cloudsqlsuperuser`, ownership of the schema, or
-  membership that transitively grants any of those;
+- a role holding `SUPERUSER`, `rds_superuser`, `cloudsqlsuperuser`, **`pg_read_all_data`**,
+  **`pg_write_all_data`**, **`BYPASSRLS`**, **`CREATEROLE`** (which on PostgreSQL 15 and earlier lets a
+  role grant itself membership of any non-superuser role), ownership of the schema, or membership that
+  transitively grants any of those;
+- **a schema on the resolution path writable by anyone other than the target's owner** — the
+  introspection counterpart of the `search_path` pin in
+  [EDR-0007](./0007-delegation-by-containment-proof.md), since an object planted in an earlier schema
+  is how an unqualified reference gets redefined;
 - a role whose effective privileges have *widened* since the last introspection.
 
 Both are surfaced in the console and in the operator playbook's review. Neither blocks execution —
@@ -120,3 +126,4 @@ for the writable role out of habit.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the second panel's synthesis: criticality no longer feeds execution-time freshness ([EDR-0035](./0035-execution-freshness-is-a-property-of-the-approval.md)), and composes as `max(target, role)`.
+- **2026-08-16**: Amended in the second panel's should-fix pass: added `pg_read_all_data`, `pg_write_all_data`, `BYPASSRLS` and `CREATEROLE` to the role-escalation findings, plus a finding for a writable schema on the resolution path — the introspection counterpart of EDR-0007's `search_path` pin.

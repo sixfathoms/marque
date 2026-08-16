@@ -28,7 +28,9 @@ Four rules, three of which are specific to this system:
    inseparable for export or deletion.
 3. **Each tenant has its own control-plane signing key.** A marque for tenant A is signed by A's
    `authority` key, so a bug that confuses tenants cannot produce a *valid* marque — the signature
-   fails rather than the check being skipped.
+   fails rather than the check being skipped. The enforcement rule that makes this true — a Pilot
+   trusts only its own tenant's keys and roster, and the payload carries a `tenant` claim — is in
+   [EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md).
 4. **A Pilot serves exactly one tenant.** It holds credentials
    ([EDR-0005](./0005-control-plane-holds-no-credentials.md)); a shared Pilot would be a place where
    two tenants' database credentials sit in one process.
@@ -132,3 +134,4 @@ individually deletable.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended in the second panel's should-fix pass: pointed rule 3 at EDR-0032, which carries the enforcement rule that makes its cryptographic-failure claim true.

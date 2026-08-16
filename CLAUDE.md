@@ -79,10 +79,14 @@ a commit message.
   and the Pilot verifies it offline (EDR-0029). The accurate form of the compromise boundary is
   therefore "cannot cause a statement to execute **whose shape no human signed**", not the
   unqualified version; say it the accurate way.
-- **A marque states its own approval requirement inside the signed payload** (`approvals.required`,
-  `eligible`, `chain`). JWS signature entries are independent, so "at least one approver signature"
-  would let a two-approver marque be stripped to one and still verify — silently unenforcing a
-  two-person rule in exactly the offline case the design prizes (EDR-0030).
+- **A marque states its own approval requirement inside the signed payload**, as **per-stage**
+  thresholds (`approvals.stages[]`, `chain`, `roster_epoch`) mirroring the escalation chain. JWS
+  signature entries are independent, so "at least one approver signature" would let a two-approver
+  marque be stripped to one and still verify; and a *flat* `required`/`eligible` collapses a
+  conjunction of stages into a disjunction, so a chain requiring Sam then data-oncall was satisfiable
+  by two of data-oncall (EDR-0030). The Pilot additionally **recomputes** the requirement from the
+  anchored policy artefact and refuses on mismatch — the payload's copy is authored by the adversary
+  it defends against (EDR-0036).
 - **The control plane holds no target credential**, and has no target database driver linked in. Any
   feature that needs a connection is a Pilot API, not a Harbourmaster one (EDR-0005).
 - **A delegated row scope is a fence that aborts, never a rewrite.** Conjoining the predicate into the
@@ -98,8 +102,9 @@ a commit message.
   in the package (EDR-0010).
 - **The execution nonce is claimed before the statement runs**, and the budget is consumed by the
   claim rather than by success. A crash must lose the attempt, not the count (EDR-0011).
-- **Marque's own database role holds `INSERT` and `SELECT` on the logbook and nothing else.** The
-  immutability is a withheld grant, not a convention (EDR-0012).
+- **Marque's own database role holds `INSERT` and `SELECT` on the logbook and nothing else, and does
+  not OWN the table.** An owner can grant itself anything, which would make the withheld grant
+  decorative. The immutability is a withheld grant plus non-ownership, not a convention (EDR-0012).
 - **Standing-order parameters bind values and never contribute syntax** — not a table name, not a
   column, not a fragment of a predicate (EDR-0008).
 - **The relay is a dumb pipe.** It never parses the Pilot API. Every feature request aimed at it
@@ -108,8 +113,8 @@ a commit message.
   EDR-0009, EDR-0016 and EDR-0017 and it is the one to defend hardest. Concretely: a written
   delegation is compiled and **the human signs the compilation, not the sentence** (EDR-0016); the
   Surveyor has exactly two outcomes, `conforms` and `refer`, runs only *inside* a compiled bound a
-  human signed, requires a unanimous panel, and resolves every error, timeout and ambiguity to
-  `refer` (EDR-0017). Adding a third outcome, dropping unanimity, defaulting to `conforms`, or
+  human signed, requires a unanimous **separately-framed** panel (not "independent" — three calls to
+  one model are correlated), and resolves every error, timeout and ambiguity to `refer` (EDR-0017). Adding a third outcome, dropping unanimity, defaulting to `conforms`, or
   letting a Tier-B delegation exist without a compiled outer bound each changes the risk *category*.
   Tier B ships off and its sampled audit is what makes it correctable — an audit queue nobody reads
   silently removes the mitigation.
@@ -125,7 +130,8 @@ a commit message.
   applies a statement outside the nonce's accounting; failover surfaces as `indeterminate` (EDR-0021).
 - **The proxy forwards no bytes.** It terminates the wire protocol and constructs its own requests.
   "Just pass reads through" turns it into the tunnel the design refuses (EDR-0022).
-- **Enrolling an approver key needs a second enrolled approver**, and the roster the Pilot trusts is
+- **Enrolling an approver key needs k enrolled approvers** (k is defined in EDR-0031 and nowhere else),
+  and the roster the Pilot trusts is
   **co-signed and anchored outside the control plane** — a Pilot must never learn who may approve from
   the Harbourmaster (EDR-0023, EDR-0031).
 - **The console has no bulk approve**, and every mutating action is a signed act (EDR-0024).
@@ -135,10 +141,17 @@ a commit message.
   silently weakened (EDR-0026).
 - **Catalog introspection is bounded by the reviewed allowlist, not by the role** — most of
   `pg_catalog` is world-readable, so the role does no work there (EDR-0027).
-- **A pipeline provider may narrow or veto, never widen, permit or replace a check.** The digest is
-  taken after transformation; scope and fence re-run on the transformed statement (EDR-0028).
-- **The fence is TRUE-only and runs at REPEATABLE READ.** `NOT (fence)` lets a NULL-fenced row through
-  every check; READ COMMITTED lets the pre-check and the statement see different snapshots (EDR-0007).
+- **A pipeline provider may narrow or veto, never widen, permit or replace a check** — but be precise
+  about what that buys: the mechanisms enforce **containment within the submitter's authority, not
+  narrowing**. A transform can rewrite `id = 42` to `id = 43` inside the scope and pass everything, so
+  a `transform` provider is trusted for statement content. The digest is taken after transformation,
+  `parse` re-runs on the result, both `req_submitted` and `req` travel, and transforms do not run on a
+  standing-order fast path (EDR-0028).
+- **The fence is TRUE-only, runs at REPEATABLE READ, pins `search_path`, and forces
+  `SET CONSTRAINTS ALL IMMEDIATE` before the write-set check.** `NOT (fence)` lets a NULL-fenced row
+  through every check; READ COMMITTED lets the pre-check and the statement see different snapshots; an
+  unqualified fence can be redefined via `search_path`; and a deferred constraint trigger otherwise
+  fires at COMMIT, after the write set was read (EDR-0007, EDR-0033).
 - **The write-set assertion bounds everything the engine writes on the statement's behalf.**
   `max_rows` bounds the named relation only; a cascade is invisible to `RETURNING` (EDR-0033).
 - **Every Pilot method verifies a submitter signature.** The control plane relays, it does not
