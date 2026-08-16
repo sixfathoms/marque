@@ -402,6 +402,14 @@
     let active = 0;
     let timers = [];
     let playing = false;
+    let autoStart = null;
+
+    // Fires at most once, and never after the reader has chosen a scene.
+    function stopAutoStart() {
+      if (!autoStart) return;
+      autoStart.disconnect();
+      autoStart = null;
+    }
 
     SCENES.forEach(function (scene, i) {
       const b = document.createElement('button');
@@ -562,6 +570,9 @@
     }
 
     function select(i, autoplay) {
+      // A deliberate choice cancels the auto-start: the reader has begun on
+      // their own terms and must not be dragged back to the first scene.
+      if (autoplay) stopAutoStart();
       active = i;
       tabs.forEach(function (t, j) {
         t.setAttribute('aria-selected', j === i ? 'true' : 'false');
@@ -590,22 +601,25 @@
       return;
     }
 
-    // Start when it is actually on screen, once.
+    // Start when it is actually on screen, once — and start whatever is
+    // selected, not scene 0. Clicking or focusing a tab can itself scroll the
+    // demo into view, so the observer can fire *after* a deliberate choice;
+    // playing scene 0 there replaces the transcript the reader asked for while
+    // their tab still reads as selected — chrome and content disagreeing.
     if ('IntersectionObserver' in window) {
-      const io = new IntersectionObserver(
+      autoStart = new IntersectionObserver(
         function (entries) {
           entries.forEach(function (e) {
-            if (e.isIntersecting) {
-              io.disconnect();
-              play(0);
-            }
+            if (!e.isIntersecting) return;
+            stopAutoStart();
+            play(active);
           });
         },
         { threshold: 0.25 },
       );
-      io.observe(root);
+      autoStart.observe(root);
     } else {
-      play(0);
+      play(active);
     }
   }
 
