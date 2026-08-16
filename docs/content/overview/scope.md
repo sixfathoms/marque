@@ -207,6 +207,12 @@ Phase 3 is a success if, in the deployment that adopts it first:
 - **At least one agent runs against production with a scope its owner can state in a sentence**, and
   its escalations are answered in minutes rather than accumulating.
 
+## Beyond the first release
+
+Candidates that are **not decided** and carry no record — shadow mode, delegation mining,
+compensating statements, cumulative blast-radius budgets, verifiable evidence bundles — are collected
+in [Ideas](./ideas.md), along with two that are already refused and why.
+
 ## Risks
 
 | Risk | Mitigation | Residual |
