@@ -1,0 +1,61 @@
+# golangci-lint runs from the isolated tools module; see the Makefile.
+#
+# The enabled set is chosen for what this system actually does. The database
+# linters (rowserrcheck, sqlclosecheck, noctx) matter because the Pilot's whole
+# job is holding a connection correctly; errorlint matters because a refusal
+# carries a structured detail that has to survive wrapping (EDR-0020); and
+# exhaustive matters because several of the design's invariants are "this enum
+# has exactly these outcomes" — the Surveyor's conforms/refer being the sharpest
+# (EDR-0017). A switch that silently ignores a new variant is how a third
+# outcome gets added by accident.
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint
+    - exhaustive
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - usetesting
+
+  settings:
+    misspell:
+      # British spelling is a house rule for prose (CONTRIBUTING.md), and
+      # comments are prose. This is the rule enforced rather than remembered.
+      locale: UK
+    exhaustive:
+      default-signifies-exhaustive: true
+
+  exclusions:
+    # Generated code is reviewed as a wire-contract diff, not as Go style.
+    generated: lax
+    paths:
+      - gen
+    rules:
+      # Table-driven tests read better with the fixtures inline, and a test's
+      # own failure is its error handling.
+      - path: _test\.go$
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/sixfathoms/marque
+  exclusions:
+    generated: lax
+    paths:
+      - gen

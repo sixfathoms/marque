@@ -4,3 +4,8 @@ website/dist/
 *.log
 .env
 .env.*
+
+# Build output. `bin/` holds the three binaries and the pinned developer tools;
+# `dist/` is goreleaser's.
+bin/
+dist/
