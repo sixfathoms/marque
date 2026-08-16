@@ -24,6 +24,10 @@ issue, not a documentation issue:
 |---|---|
 | A compromised control plane cannot cause a statement to execute **whose shape no human signed** — it holds no target credential, cannot produce an approver signature, and a fast-path marque must carry the human-signed artefact that authorised it | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md), [EDR-0005](docs/edrs/0005-control-plane-holds-no-credentials.md), [EDR-0029](docs/edrs/0029-the-fast-path-authority-chain.md) |
 | A marque cannot be stripped of approver signatures to weaken its approval requirement | [EDR-0030](docs/edrs/0030-a-marque-states-its-own-approval-requirement.md) |
+| A stolen session or a compromised control plane cannot enrol approver authority — the approver roster is co-signed and anchored outside the control plane | [EDR-0031](docs/edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md) |
+| A statement cannot write to a relation outside the delegation's declared object scope without the transaction aborting — including via cascades, triggers and rewritten targets | [EDR-0033](docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md) |
+| A row whose fence expression is NULL is treated as outside the fence, not inside it | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
+| Every Pilot method verifies a submitter signature — the control plane relays, it does not authorise | [EDR-0034](docs/edrs/0034-the-pilot-api-has-one-authorisation-model.md) |
 | A compromised Pilot cannot create authority it was not given | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md) |
 | A statement cannot affect rows outside a delegation's fence without the transaction aborting | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | A standing order's parameters cannot alter the shape of its statement | [EDR-0008](docs/edrs/0008-standing-orders.md) |
@@ -60,5 +64,17 @@ discussion, but they are not surprises:
   advisory ([EDR-0017](docs/edrs/0017-conformance-matching-may-route-never-widen.md)).
 - **Prompt injection in statement text is an ongoing arms race.** The structural mitigation is the
   deterministic outer bound, which holds when the prompt defence does not.
+- **A compromised control plane retains a bounded read channel.** It can relay operator-signed
+  rehearsals, returning `rows_affected` and `duration_ms` — an oracle, quota'd per principal and
+  visible in the target's own logs, but an oracle
+  ([EDR-0034](docs/edrs/0034-the-pilot-api-has-one-authorisation-model.md)).
+- **Infrastructure control is a trust root.** Whoever deploys Pilots sets their genesis roster root
+  and therefore can define who approves. Marque bounds what that can do *silently* — the root is
+  recorded, reported by each Pilot, and changing it is a re-deployment — but it does not pretend
+  infrastructure access is not authority
+  ([EDR-0031](docs/edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)).
+- **A compromised control plane can withhold a roster update**, so a newly-enrolled approver may be
+  unrecognised and a retired key may stay live until Pilots see a newer epoch. Roster age is a
+  monitored signal.
 - **Statement text may contain personal data and the logbook is immutable**
   ([EDR-0012](docs/edrs/0012-the-logbook-is-append-only.md)).

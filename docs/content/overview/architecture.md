@@ -47,7 +47,7 @@ This table is the design's actual argument, and every record defends a row of it
 
 | Compromised | Attacker gains | Attacker does **not** gain |
 |---|---|---|
-| Harbourmaster | read of request text, analyses, approval history; ability to refuse service; **on a fast path, ability to invoke a genuine standing order as a principal of its choosing where `invokers` names a group** ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | any database access; ability to mint a marque for a statement shape no human signed — it has no approver key, and a fast-path marque must carry the human-signed artefact that authorised it |
+| Harbourmaster | read of request text, analyses, approval history; ability to refuse service; a **bounded, quota'd, target-visible read channel** by relaying operator-signed rehearsals ([EDR-0034](../../edrs/0034-the-pilot-api-has-one-authorisation-model.md)); **on a fast path, ability to invoke a genuine standing order as a principal of its choosing where `invokers` names a group** ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | any database access; ability to mint a marque for a statement shape no human signed — it has no approver key, and a fast-path marque must carry the human-signed artefact that authorised it |
 | Pilot | ability to execute marques that already exist and are unexpired; target credentials for its own targets | authority to create new marques; access to targets served by other Pilots |
 | Leadsman | ability to write misleading prose into an analysis | any authority; any credential; any other request |
 | Surveyor | ability to route a request onto the fast path **within a scope a human already signed** | the ability to widen that scope, deny anything, or reach a request outside a Tier-B delegation |
@@ -126,17 +126,31 @@ signatures over one payload:
 
 ```jsonc
 {
-  "mrq": "mrq_01JB2Q9F3K8Z", "target": "prod-primary", "role": "settings_writer",
-  "sub": "operator@acme.example", "req": "sha256:9f2c…",
+  "mrq": "mrq_01JB2Q9F3K8Z", "tenant": "acme", "target": "prod-primary",
+  "role": "settings_writer", "pilot": "pilot-us-west-2",
+  "sub": "operator@acme.example", "cnf": { "jkt": "…" },
+  "req": "sha256:9f2c…", "analysis": "sha256:1a7e…",
   "nbf": 1786953600, "exp": 1786957200,
   "budget": { "executions": 1, "max_rows": 250 },
   "fence": ["tier = 'sandbox'"],
-  "analysis": "sha256:1a7e…"
+  "approvals": { "required": 2, "eligible": [ … ], "chain": "sha256:…" },
+  "auth": { "kind": "interactive" }
 }
 ```
 
 `approver` — the human's device key, *this person agreed to this*. `authority` — the Harbourmaster's
 key, *policy permitted them to*. Both required.
+
+Four of those fields exist because a review found the design asserting properties nothing enforced.
+`auth` names the human-signed artefact when no human is present at mint time
+([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)); `approvals` states the requirement
+inside what every signature covers, so a signature cannot be stripped
+([EDR-0030](../../edrs/0030-a-marque-states-its-own-approval-requirement.md)); and `cnf`, `tenant`
+and `pilot` bind the caller, the tenant and the executing Pilot
+([EDR-0032](../../edrs/0032-a-marque-binds-its-executor-tenant-and-pilot.md)). The approver keys the
+Pilot checks all this against come from a roster anchored **outside** the control plane
+([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)) — without that,
+the rest is theatre.
 
 **Execution** ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)) claims the nonce
 and decrements the budget *before* anything runs, so a crash loses the attempt rather than the count.
@@ -162,9 +176,11 @@ statement, so a rogue transform is bounded by the submitter's own authority; and
 which a provider can disable the fence, the magnitude assertion, marque verification or the role.
 
 The line for deciding what may become a provider: **if disabling it would let something run that
-otherwise could not, it is not a provider.** The analyser and the Surveyor sit on the SPI — both are
-already authority-free or veto-only. The containment check, the fence, signature verification, the
-nonce and the logbook never will.
+otherwise could not, it is not a provider.** The analyser sits on the SPI as an evidence-only
+`analyse` provider; the Surveyor sits on it as a **routing** provider whose outcomes are
+`conforms`/`refer` — it selects a route inside a human-signed bound and **cannot deny**, since denial
+is a human act. The containment check, the fence, signature verification, the nonce and the logbook
+never will.
 
 ### The fence, concretely
 
@@ -172,21 +188,28 @@ The delegated row predicate is never conjoined into the operator's `WHERE`. Sile
 statement produces a partially-applied change nobody reviewed. Instead:
 
 ```sql
-BEGIN;
+BEGIN ISOLATION LEVEL REPEATABLE READ;      -- READ COMMITTED is unsound here
 -- (a) would this touch anything outside the fence?
+--     `IS NOT TRUE`, never `NOT (…)` — a NULL fence value is OUTSIDE the fence
 SELECT count(*) FROM public.accounts
- WHERE (<statement's own predicate>) AND NOT (tier = 'sandbox');
+ WHERE (<statement's own predicate>) AND (tier = 'sandbox') IS NOT TRUE;
 --    > 0  →  ROLLBACK and report the count
 
 UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
 -- (c) did any affected row end up outside the fence?   (catches tier := 'production')
--- (d) affected rows <= max_rows
+-- (d) affected rows <= max_rows                        (named relation only)
+-- (e) write-set assert: nothing outside the declared object scope was written
 COMMIT;
 ```
 
-Check **(c)** is the one that is easy to miss: an `UPDATE` can satisfy the fence before and violate
-it after.
+Three things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
+fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md));
+READ COMMITTED lets the pre-check and the statement see different snapshots; and **(e)** is what
+bounds writes the engine performs on the statement's behalf — a cascading delete returns one row and
+can destroy millions in a table no delegation names
+([EDR-0033](../../edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)). Check **(c)**
+catches an `UPDATE` that satisfies the fence before and violates it after.
 
 ## Agents and escalation
 
@@ -323,7 +346,7 @@ cloud is special, and no cloud-specific connectivity primitive is required.
 | Leadsman | Requests queue normally with deterministic facts attached and a visible "no summary produced" note. Never blocks. |
 | Surveyor | Tier-B delegations fall back to referring everything to a human. Tier-A delegations are unaffected, because no model was in their path. |
 | Tender | Its Pilots become unreachable. A direct-mode Pilot is unaffected. |
-| Identity provider | Nobody can submit or approve. Already-signed marques still execute. |
+| Identity provider | Nobody can submit or approve. **Already-signed marques still execute, unconditionally** — the caller proves possession of the key the marque names rather than presenting a token ([EDR-0032](../../edrs/0032-a-marque-binds-its-executor-tenant-and-pilot.md), [EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)). |
 | WAL listener | Notifications and projections stall. **The replication slot retains WAL and can fill the primary's disk** — this is the alert that matters most. |
 
 The pattern is deliberate: **an incident in progress can still be worked with grants already

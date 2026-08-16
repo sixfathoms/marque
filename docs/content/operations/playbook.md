@@ -42,6 +42,9 @@ that separate them, and **the first three are the ones that will actually bite**
 | Panel disagreement rate (Tier B) | low and stable | A delegation whose panel keeps disagreeing needs rewriting |
 | Fast-path share of all executions | known | If it drifts to nearly everything, the queue has stopped being a control |
 | Rehearsal-versus-actual row divergence | near zero | A large divergence means the data moved, or the fence is not doing what anyone thinks |
+| **Roster age and epoch, per Pilot** | current | A compromised or broken control plane cannot forge an approver key, but it *can* withhold a roster update — so a new approver is unrecognised and a retired key stays live until Pilots see a newer epoch ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)) |
+| Pilot pinned genesis root | unchanged | A changed root means someone re-deployed a Pilot against a different definition of who may approve |
+| Rehearsal rate per principal | stable | A step change is what oracle extraction looks like ([EDR-0034](../../edrs/0034-the-pilot-api-has-one-authorisation-model.md)) |
 | Pilot clock skew | milliseconds | A wrong clock either honours expired marques or refuses valid ones ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)) |
 | Logbook chain verification | passing | A break is an alert, never a log line ([EDR-0012](../../edrs/0012-the-logbook-is-append-only.md)) |
 | Execution ledger size | bounded | Unbounded growth means reaping stopped ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)) |
@@ -63,7 +66,10 @@ important one ([EDR-0006](../../edrs/0006-every-statement-names-a-role.md)). Rev
 invocation counts and retire the unused.
 
 **Monthly.** Verify the logbook chain against its external anchor by actually restoring from it — an
-anchor nobody has read is a hope ([ZFN-36](https://zrz.io/zfn/36-test-backups-by-restoring/)). Review
+anchor nobody has read is a hope ([ZFN-36](https://zrz.io/zfn/36-test-backups-by-restoring/)).
+**Audit the enrolled approver roster** against the logbook and the external anchor: every entry
+should trace to an enrolment someone remembers, and a roster that verifies but is not anchored is a
+finding ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)). Review
 `secret-ref` carve-outs against their review dates. Review agents whose owners have left.
 
 **Per release.** Re-run the compiler and Surveyor regression suites. A prompt or model change that
@@ -150,7 +156,11 @@ verifies it locally and does not consult the Harbourmaster
 ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)).
 
 What does not work: submitting, approving, and — after the revocation refresh interval — executing
-marques with `revocation.policy = required`. Marques deliberately marked break-glass carry a
+marques with `revocation.policy = required`. **Execution itself does not need the identity provider**:
+the caller proves possession of the key the marque names rather than presenting a token
+([EDR-0032](../../edrs/0032-a-marque-binds-its-executor-tenant-and-pilot.md)), and execution requires
+no fresh interactive authentication even on a `critical` target
+([EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)). Marques deliberately marked break-glass carry a
 `grace` window and keep working; every such execution is flagged in the logbook as having run without
 a fresh revocation check, and each one should be reviewed afterwards.
 
@@ -161,7 +171,7 @@ pre-issued break-glass marques for a `critical` target are worth holding *before
 
 | Compromised | Immediate action | What it did not get |
 |---|---|---|
-| Harbourmaster | Stop it. Rotate its signing key. Every marque signed after the suspected time is suspect — revoke them. **Also review fast-path invocations**: it could have invoked genuine standing orders as principals of its choosing where `invokers` names a group ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | Any database access; a marque for any statement shape no human had already signed |
+| Harbourmaster | Stop it. Rotate its signing key. **Verify the current roster's chain independently before trusting any approval made during the window** ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)), and review rehearsal volume per principal for signs of an extraction oracle. Every marque signed after the suspected time is suspect — revoke them. **Also review fast-path invocations**: it could have invoked genuine standing orders as principals of its choosing where `invokers` names a group ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | Any database access; a marque for any statement shape no human had already signed |
 | A Pilot | Stop it; rotate the credentials it could dereference; audit its ledger against the logbook | Authority to create marques; other Pilots' targets |
 | An approver's device key | Suspend the person in the identity provider; revoke marques bearing their signature since the suspected time; re-enrol | Validity on its own — a marque also needs the countersignature |
 | An agent | `marque agent suspend`; revoke its marques; review its declared-versus-used scope history | A credential; approval authority; anything outside the intersection |
@@ -178,6 +188,10 @@ Honest predictions, so they are recognised rather than debugged from scratch:
   arrives as a disk alert rather than as anything mentioning Marque.
 - **Approver availability.** The first time the queue takes four hours, someone will ask for a
   standing credential "just for now". The answer is a delegation with an expiry.
+- **A write-set abort on a delegation that used to work**, because the relation gained a cascading
+  child. That is a finding about the delegation, not about the operator: look at what the relation is
+  attached to before widening anything
+  ([EDR-0033](../../edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
 - **A Tier-B delegation that should have been Tier A.** Written vaguely, compiled partially, surveyed
   on every request forever. The compilation report says so; someone has to read it.
 - **Clock skew on a Pilot** in a corner of the estate nobody looks at.

@@ -15,7 +15,7 @@ aliases: []
 ## TL;DR
 
 Every statement, from every surface, moves through a named pipeline. Configured **providers** may
-join two of its stages:
+join four of its stages — two that can change an outcome:
 
 - **`transform`** — rewrite the statement. Inject a constraint, rename a column or table, synthesise
   a value, add a cast.
@@ -93,7 +93,8 @@ flowchart TB
 | `normalise` | — | canonicalise, take the digest |
 | `scope` | — | unconditional containment check |
 | **`verify`** | veto, **asynchronously** | the request may sit in `verifying`; deadlines apply |
-| `rehearse`, `analyse` | — | [EDR-0010](./0010-rehearse-before-you-sign.md), [EDR-0009](./0009-the-leadsman-is-advisory.md) |
+| `rehearse` | — | [EDR-0010](./0010-rehearse-before-you-sign.md) |
+| **`analyse`** | contribute evidence — no transform, no veto, no route | [EDR-0009](./0009-the-leadsman-is-advisory.md); a failure here never blocks |
 | **`pre_execute`** | veto only | last look at the bound statement, after approval; **cannot transform** |
 | **`observe`** | nothing | post-outcome notification; a veto here would be a lie, it already ran |
 
@@ -143,8 +144,8 @@ the pipeline honest and lets deployments substitute their own:
 
 | Today | Becomes |
 |---|---|
-| The Leadsman's analysis ([EDR-0009](./0009-the-leadsman-is-advisory.md)) | an `analyse` provider — already authority-free, so nothing is lost |
-| The Surveyor's conformance judgment ([EDR-0017](./0017-conformance-matching-may-route-never-widen.md)) | a `verify` provider whose two outcomes are exactly `veto`/`refer` — it already fits the contract |
+| The Leadsman's analysis ([EDR-0009](./0009-the-leadsman-is-advisory.md)) | an `analyse` provider. `analyse` is therefore a **fourth** provider-joinable stage, contributing evidence only: it cannot transform, veto or route, and its failure never blocks a request |
+| The Surveyor's conformance judgment ([EDR-0017](./0017-conformance-matching-may-route-never-widen.md)) | a **routing** provider at `verify`, whose outcomes are `conforms`/`refer`. It selects a route inside a human-signed bound; it **cannot deny** — denial is a human act. This is narrowing in the record's sense (it can only send work *to* a human, never past one), not the `veto` outcome defined below |
 | Change-freeze, ticket linkage, data classification | `verify` providers |
 
 **Never moves onto it.** These are the design, and a pluggable version of any one is a disableable
@@ -217,3 +218,4 @@ matter — a provider is precisely the thing that should read as ordinary and re
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after an expert-panel review found the "what moves onto the SPI" table mis-describing both records it cites. The Surveyor was listed as a `verify` provider with outcomes `veto`/`refer`; its outcomes are `conforms`/`refer`, and `veto` is precisely the power [EDR-0017](./0017-conformance-matching-may-route-never-widen.md) states it must never have — an implementer building from that row would have shipped a Surveyor that can deny. Restated as a routing provider. Also reconciled the `analyse` stage, which the table used and the stage table omitted, and corrected the TL;DR's stage count.

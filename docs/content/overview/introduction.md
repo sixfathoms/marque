@@ -117,7 +117,7 @@ Six properties the design gives other things up to keep:
 
 | Commitment | Why it holds |
 |---|---|
-| A control-plane compromise grants no database access | It holds no target credential ([EDR-0005](../../edrs/0005-control-plane-holds-no-credentials.md)) and cannot sign a marque alone ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)) |
+| A control-plane compromise grants no credential and cannot commit a change | It holds no target credential ([EDR-0005](../../edrs/0005-control-plane-holds-no-credentials.md)) and cannot sign a marque alone ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)). A bounded, quota'd, target-visible read channel remains ([EDR-0034](../../edrs/0034-the-pilot-api-has-one-authorisation-model.md)) |
 | An issued marque works while the control plane is down | The Pilot verifies it by computation, not by asking ([EDR-0004](../../edrs/0004-marques-are-signed-leases.md)) |
 | No standing access, anywhere | Marques, standing orders and delegations all expire ([ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/)) |
 | No anonymous actor | Every principal is federated, including the machine ones ([EDR-0003](../../edrs/0003-federated-identity-and-sender-constrained-tokens.md)) |

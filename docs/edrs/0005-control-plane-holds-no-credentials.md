@@ -23,8 +23,11 @@ value never leaves the process. Preferred order: **native identity-based auth** 
 authentication, Cloud SQL IAM, `pg_ident`) first; a short-lived minted credential second; a
 long-lived stored secret only as a documented carve-out with an owner and a review date.
 
-The consequence that matters: **an attacker who owns the entire Harbourmaster gets no database
-access.** They can read requests and approvals. They cannot connect to anything.
+The consequence that matters: **an attacker who owns the entire Harbourmaster obtains no credential
+and no ability to commit a change.** They can read requests and approvals, and — because the control
+plane legitimately relays rehearsals — they can relay *operator-signed* reads, so a bounded, quota'd,
+target-visible read channel remains ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)).
+They cannot connect to anything themselves.
 
 ## Context
 

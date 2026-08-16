@@ -112,29 +112,61 @@ operator who does not know why they are queueing will assume the tool is broken.
 The fence never rewrites the operator's statement. The Pilot executes, in one transaction:
 
 ```sql
-BEGIN;
+BEGIN ISOLATION LEVEL REPEATABLE READ;
 SET LOCAL statement_timeout = …;
+SET LOCAL lock_timeout      = …;
 
 -- (a) pre-check: would this touch anything outside the fence?
+--     NOTE: `IS NOT TRUE`, never `NOT (…)`. A row whose fence expression is
+--     UNKNOWN is OUTSIDE the fence.
 SELECT count(*) FROM public.accounts
- WHERE (<the statement's own predicate>) AND NOT (tier = 'sandbox');
+ WHERE (<the statement's own predicate>) AND (tier = 'sandbox') IS NOT TRUE;
 --   > 0  →  ROLLBACK, and report the count
 
 -- (b) the operator's statement, unmodified, with RETURNING added
 UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
 -- (c) post-assert: did any affected row end up outside the fence?
---     catches an update that moves a row out of scope
--- (d) affected rows <= max_rows
+--     same TRUE-only rule; catches an update that moves a row out of scope
+-- (d) affected rows <= max_rows            (of the NAMED RELATION only)
+-- (e) write-set assert                      (EDR-0033)
 
 COMMIT;
 ```
 
 - **(a)** is possible precisely because the grammar in step 1 guarantees the predicate is extractable.
+  The statement's own parameter values are **bound as parameters**, never spliced into this text.
 - **(c)** exists because an `UPDATE` can satisfy the fence before and violate it after — setting
   `tier = 'production'` on a sandbox row is exactly the escape a naive check misses.
-- Any of (a), (c) or (d) failing rolls the transaction back. **Nothing is partially applied**, and the
+- Any of (a) through (e) failing rolls the transaction back. **Nothing is partially applied**, and the
   operator is told which check failed and by how much.
+
+Three rules govern how those checks are written, and each closes a way the fence would otherwise fail
+**open**:
+
+1. **A row is inside the fence only when the fence predicate evaluates TRUE. UNKNOWN is outside.**
+   Written as `NOT (tier = 'sandbox')`, a row with `tier IS NULL` yields `NOT NULL` = `NULL`, `WHERE`
+   admits only TRUE, and the row is silently *not counted* — so a NULL-fenced row passes the
+   pre-check, the post-assert and the row count with no concurrency involved at all. Every fence
+   comparison is therefore written `(<fence>) IS NOT TRUE`, and every future engine binding inherits
+   this rule ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)).
+2. **The execution transaction runs at REPEATABLE READ or stricter.** At READ COMMITTED, (a) and (b)
+   take different snapshots, and because the fence is deliberately *not* conjoined into the `WHERE`,
+   PostgreSQL's `EvalPlanQual` re-check never re-evaluates it — so a concurrent update that moves a
+   row into the statement's predicate escapes the pre-check. A `40001` serialization failure is
+   **provably not applied** and is therefore retryable under the same nonce, rather than
+   `indeterminate` ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md)). On MySQL, InnoDB's
+   repeatable read uses current reads for writes, so the locking pre-select in
+   [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) is what applies instead.
+3. **`max_rows` bounds the named relation only.** Everything the engine writes on the statement's
+   behalf — cascades, triggers, rewritten targets — is bounded by the write-set assertion in
+   [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md), not by this count.
+
+Additional exclusions from the checkable subset, for shapes whose predicate is not extractable as (a)
+assumes: **multi-relation DML** (`UPDATE … FROM`, `DELETE … USING`), subqueries carrying `LIMIT`,
+`FOR UPDATE` or `SKIP LOCKED`, and `INSERT … ON CONFLICT DO UPDATE` — whose `DO UPDATE` arm touches
+rows no pre-check can see. A target relation carrying a non-default rewrite rule is excluded as well
+([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
 
 ### 3. Magnitude
 
@@ -191,3 +223,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after an expert-panel review found the worked fence SQL unsound in two independent ways. The decision is unchanged — three checks, abort loudly, never narrow — but the encoding was wrong: `NOT (fence)` let a row with a NULL fence column pass every check, so the rule is now TRUE-only (`IS NOT TRUE`); and no isolation level was named, so `BEGIN` got READ COMMITTED and the pre-check and the statement took different snapshots. Also added the parameter-binding rule, further subset exclusions (multi-relation DML, locking subqueries, `ON CONFLICT DO UPDATE`), and a pointer to [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) for writes outside the named relation.
