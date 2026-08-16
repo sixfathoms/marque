@@ -173,6 +173,16 @@ a commit message.
 - **A request reference is an identifier, not a capability.** People paste them into shared channels;
   resolving one must still require entitlement, and must 404 rather than 403 so the reference does not
   confirm its own existence (EDR-0038).
+- **One parser, and it is PostgreSQL's own.** `libpg_query` in every component that parses a
+  statement, never a re-implementation, and never a second grammar for the client (EDR-0039).
+  The consequence that will be undone by accident: **a `pg_query_go` upgrade is a reviewed change on
+  the order of a schema migration, not a dependency bump.** A newer grammar parses statements the
+  previous one refused, which silently widens the checkable subset — and therefore widens what an
+  already-signed delegation permits, which EDR-0007 forbids. An upgrade re-runs the conformance
+  corpus, and any changed verdict bumps the subset version so old delegations stay pinned to the
+  subset they were signed against. Dependabot must not auto-merge it. Relatedly, a target whose
+  `server_version_num` is outside the declared supported range gets **no fast path** — its statements
+  take the human route rather than being proved against a grammar that may not match its server.
 
 ## Naming
 
