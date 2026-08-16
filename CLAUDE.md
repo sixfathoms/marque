@@ -63,9 +63,18 @@ directory that is not a sidebar category; a changelog page missing its `<!-- @en
 Load-bearing, and easy to undo by accident. A change that weakens one needs a superseding record, not
 a commit message.
 
-- **A marque carries two signatures** — the approver's device key and the control plane's. Neither
-  alone is valid. Reducing this to one signature collapses the entire security argument, because a
-  compromised control plane could then manufacture authority (EDR-0004).
+- **A marque carries two signatures** — an approver limb and the control plane's. Neither alone is
+  valid. Reducing this to one signature collapses the entire security argument, because a compromised
+  control plane could then manufacture authority (EDR-0004). On a **fast path** (standing order,
+  delegation match, Surveyor `conforms`) no human is present at mint time, so the approver limb is
+  satisfied by the **human-signed artefact** that authorised the shape — it travels with the marque
+  and the Pilot verifies it offline (EDR-0029). The accurate form of the compromise boundary is
+  therefore "cannot cause a statement to execute **whose shape no human signed**", not the
+  unqualified version; say it the accurate way.
+- **A marque states its own approval requirement inside the signed payload** (`approvals.required`,
+  `eligible`, `chain`). JWS signature entries are independent, so "at least one approver signature"
+  would let a two-approver marque be stripped to one and still verify — silently unenforcing a
+  two-person rule in exactly the offline case the design prizes (EDR-0030).
 - **The control plane holds no target credential**, and has no target database driver linked in. Any
   feature that needs a connection is a Pilot API, not a Harbourmaster one (EDR-0005).
 - **A delegated row scope is a fence that aborts, never a rewrite.** Conjoining the predicate into the

@@ -161,3 +161,4 @@ what someone is already permitted to do.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after review: the signed compilation supplies the approver limb of a marque minted by a delegation match, and travels with it so a Pilot can verify offline that a human signed the scope ([EDR-0029](./0029-the-fast-path-authority-chain.md)).

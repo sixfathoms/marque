@@ -90,9 +90,21 @@ parameter protocol. Marque never builds a statement by string substitution, and 
 carried inside the signed payload so the executed shape is the approved shape.
 
 **Invocation mints a marque.** The result is an ordinary marque with a short window and a budget of
-one, referencing the standing order's identifier as its authority instead of an interactive approval.
-Everything downstream — fencing, magnitude assertions, the logbook — is unchanged. **A standing order
-is a way to skip the queue, not a way to skip the record.**
+one, whose `auth` block names this standing order and its digest instead of an interactive approval
+([EDR-0029](./0029-the-fast-path-authority-chain.md)). **The signed standing order itself travels
+with the marque and supplies the approver limb** — the human signed the *shape*, here, rather than
+the instance — and the Pilot verifies it offline: the order's own signatures, the digest, the
+template rebound with the supplied parameters against `req`, each parameter against its constraint,
+and that the marque's limits are within the order's. Everything downstream — fencing, magnitude
+assertions, the logbook — is unchanged. **A standing order is a way to skip the queue, not a way to
+skip the record.**
+
+**Name principals in `invokers` where offline verification matters.** Group membership is
+control-plane state, so a Pilot verifying an invocation offline cannot confirm the executing
+principal was in a group. An order whose `invokers` are groups is therefore verifiable as to its
+*shape* but not as to *who invoked it*: a compromised control plane could invoke a genuine order as a
+principal of its choosing, bounded to that order's approved statement shape, parameter constraints,
+budget and rate limits. Orders on `critical` targets must name principals directly.
 
 **Rate limits are enforced at ingress** ([ZFN-18](https://zrz.io/zfn/18-enforce-quotas-at-ingress/)),
 per invoker and in total, with a `Retry-After`. An unlimited standing order is one compromised
@@ -140,3 +152,4 @@ Renewal is a re-approval, which is the moment someone re-reads it — the whole 
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after review: the signed standing order supplies the approver limb of a marque minted by invocation, and travels with it for offline verification ([EDR-0029](./0029-the-fast-path-authority-chain.md)). Added the residual that group-named `invokers` are not offline-verifiable, and the rule that `critical` targets must name principals.

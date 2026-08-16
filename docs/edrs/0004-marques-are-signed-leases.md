@@ -94,9 +94,22 @@ be moved to a different statement, because the statement is what it names.
 signed payload, so "the approver saw a report that said this was 3 rows" is provable after the fact,
 and a later re-analysis cannot quietly replace what they read.
 
-**Verification is local.** Given the deployment's JWKS and the current time, the Pilot checks both
+**Verification is local.** Given the deployment's JWKS and the current time, the Pilot checks the
 signatures, the window, the subject against the authenticated caller, and the statement it was handed
 against `req`. It does not ask the Harbourmaster anything.
+
+> [!NOTE]
+> Two later records complete this payload and this rule, and both were written after review found
+> them missing:
+>
+> - **[EDR-0029](./0029-the-fast-path-authority-chain.md)** adds `auth`, naming the artefact that
+>   authorised a marque minted with no human present — a standing order or a compiled delegation,
+>   each already human-signed. On those paths the approver limb is satisfied by that artefact, which
+>   travels with the marque and is verified offline. **The human signed the shape, not the instance.**
+> - **[EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)** adds `approvals`, so the
+>   payload states how many distinct approvers are required and who was eligible. "At least one
+>   approver signature" was not sufficient: JWS signature entries are independent, so a two-approver
+>   marque could be stripped to one and still verify.
 
 **Revocation is a pull, not a question.** The Harbourmaster publishes a signed revocation list of
 marque identifiers, bounded by the maximum marque lifetime — nothing needs to stay on it longer than
@@ -164,3 +177,9 @@ the statement affects more rows than were approved.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after an expert-panel review found two gaps in this record's payload and
+  verification rule. The decision is unchanged — a marque still requires an approver limb and an
+  authority limb, and neither party can produce one alone — but *how* the approver limb is satisfied
+  on a fast path was never stated ([EDR-0029](./0029-the-fast-path-authority-chain.md)), and the
+  "at least one approver signature" rule could not detect a stripped signature
+  ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)). A note above points at both.

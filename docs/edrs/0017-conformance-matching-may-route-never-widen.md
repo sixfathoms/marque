@@ -166,3 +166,4 @@ the Surveyor by only ever choosing between two paths that both end in a human-gr
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after review: a `surveyed` marque names the human-signed outer bound in its `auth` block, and the Pilot verifies **that bound** rather than the judgment ([EDR-0029](./0029-the-fast-path-authority-chain.md)). A control plane skipping the Surveyor is equivalent to one that answered `conforms`, and both are contained by the signed bound — which is what this record claimed, now stated as a verification property rather than an intention.

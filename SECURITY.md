@@ -22,7 +22,8 @@ issue, not a documentation issue:
 
 | Claim | Where |
 |---|---|
-| A compromised control plane cannot cause any statement to execute | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md), [EDR-0005](docs/edrs/0005-control-plane-holds-no-credentials.md) |
+| A compromised control plane cannot cause a statement to execute **whose shape no human signed** — it holds no target credential, cannot produce an approver signature, and a fast-path marque must carry the human-signed artefact that authorised it | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md), [EDR-0005](docs/edrs/0005-control-plane-holds-no-credentials.md), [EDR-0029](docs/edrs/0029-the-fast-path-authority-chain.md) |
+| A marque cannot be stripped of approver signatures to weaken its approval requirement | [EDR-0030](docs/edrs/0030-a-marque-states-its-own-approval-requirement.md) |
 | A compromised Pilot cannot create authority it was not given | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md) |
 | A statement cannot affect rows outside a delegation's fence without the transaction aborting | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | A standing order's parameters cannot alter the shape of its statement | [EDR-0008](docs/edrs/0008-standing-orders.md) |

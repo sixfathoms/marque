@@ -161,7 +161,7 @@ pre-issued break-glass marques for a `critical` target are worth holding *before
 
 | Compromised | Immediate action | What it did not get |
 |---|---|---|
-| Harbourmaster | Stop it. Rotate its signing key. Every marque signed after the suspected time is suspect — revoke them | Any database access; it cannot sign a marque alone |
+| Harbourmaster | Stop it. Rotate its signing key. Every marque signed after the suspected time is suspect — revoke them. **Also review fast-path invocations**: it could have invoked genuine standing orders as principals of its choosing where `invokers` names a group ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | Any database access; a marque for any statement shape no human had already signed |
 | A Pilot | Stop it; rotate the credentials it could dereference; audit its ledger against the logbook | Authority to create marques; other Pilots' targets |
 | An approver's device key | Suspend the person in the identity provider; revoke marques bearing their signature since the suspected time; re-enrol | Validity on its own — a marque also needs the countersignature |
 | An agent | `marque agent suspend`; revoke its marques; review its declared-versus-used scope history | A credential; approval authority; anything outside the intersection |

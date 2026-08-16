@@ -150,3 +150,4 @@ the agent's own reply to its caller.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended after review: the chain's freeze at submission is now load-bearing for [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md), which binds the required approval count, the eligible approvers and the chain digest into the signed payload. Loosening the freeze would break that record's verification.

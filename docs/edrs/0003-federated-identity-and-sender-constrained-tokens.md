@@ -80,10 +80,18 @@ submitter, expressed as an RFC 8693 `act` claim chain. Every artefact it writes 
 with one name is a bug, not a shorthand.
 
 **Freshness.** Two operations require an authentication no older than a deployment-configured
-interval (default five minutes): **signing a marque**, and **executing** one against a target marked
-`critical`. The client re-runs the interactive flow; the token carries `auth_time` and the server
-checks it. A workload principal cannot satisfy a freshness requirement at all, which is the intended
-answer — a machine may not approve.
+interval (default five minutes): **producing a human approver signature**, and **executing** against
+a target marked `critical`. The client re-runs the interactive flow; the token carries `auth_time`
+and the server checks it. A workload principal cannot satisfy a freshness requirement at all, which
+is the intended answer — a machine may not approve.
+
+**Freshness is a property of signing, not of minting.** A fast-path marque — from a standing order,
+a delegation match, or a Surveyor `conforms` — is not signed by a human at the moment it is minted.
+Its human signature was made earlier, interactively and freshly, over the *artefact* that authorises
+the shape ([EDR-0029](./0029-the-fast-path-authority-chain.md)). Assembling a reference to a
+signature that already exists is not signing, so no freshness check applies at mint time and none is
+skipped. This paragraph resolves what was, until review found it, a direct contradiction with
+[EDR-0008](./0008-standing-orders.md).
 
 ## Consequences
 
@@ -130,3 +138,4 @@ answer — a machine may not approve.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-15**: Amended to scope the freshness rule to *producing a human approver signature*, resolving a contradiction with [EDR-0008](./0008-standing-orders.md) that an expert-panel review found. See [EDR-0029](./0029-the-fast-path-authority-chain.md). The decision is unchanged.
