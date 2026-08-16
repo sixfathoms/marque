@@ -78,16 +78,38 @@ The console shows which tier a delegation is, because it is the most important t
 delegation that could have been Tier A but was written vaguely should be rewritten, and the
 compilation report says so.
 
-**The outer bound is mandatory for Tier B.** A delegation with an unexpressible clause and no
-compiled bound cannot be signed. "Fix typos in customer names" must still resolve to at least
-`UPDATE public.customers(name)`, a row fence or a `max_rows`, and an expiry. The unexpressible clause
-*narrows* that bound; it never replaces it.
+**The outer bound is mandatory for Tier B, and must include a row fence.** A delegation with an
+unexpressible clause and no compiled bound cannot be signed. "Fix typos in customer names" must
+resolve to at least `UPDATE public.customers(name)`, **a row fence** — not merely a `max_rows` — and
+an expiry. `max_rows` alone bounds how much damage each invocation does, not *which rows* are
+reachable, and it is the row scope that the unexpressible clause was supposed to narrow.
 
-**The panel.** A conformance judgment is not one call. `n` independent judgments (default 3) run with
-distinct framings — one asked to certify, one asked to *refute* conformance, one given only the
+**The signing ceremony states the fallback authority.** When a grantor signs a Tier-B delegation the
+console shows, in one sentence: *if a conformance judgment is wrong, this permits …* — the outer
+bound, in plain language. That is what they are actually granting, because the model's judgment is
+the part that can fail.
+
+**The panel.** A conformance judgment is not one call. `n` **separately-framed** judgments (floor of
+3, set by `surveyor.jurors` in [EDR-0015](./0015-policy-is-reviewed-configuration.md)) run with three
+**mandatory** framings — one asked to certify, one asked to *refute* conformance, one given only the
 compiled bound and the statement with the sentence withheld. **Unanimity is required for
-`conforms`.** Any disagreement is a `refer`. Disagreement rate is a monitored metric, and a
-delegation whose panel disagrees often is a delegation that needs rewriting.
+`conforms`.** Any disagreement is a `refer`. Dissent is tracked **per framing**, since a framing that
+never dissents is not contributing.
+
+**"Independent" would be a lie, and the word is not used.** Three calls to one model are correlated:
+the panel narrows **careless error**, not **correlated injection** — a prompt that fools one juror
+will often fool its siblings. What holds against injection is the deterministic outer bound, not the
+vote count.
+
+**Provider diversity where it exists, degraded loudly where it does not.** Where a deployment has more
+than one model provider configured, jurors **must** come from distinct providers. Where only one is
+available, Tier B still runs, and:
+
+- the delegation is **visibly marked as running a correlated panel**, in the console and in the
+  logbook entry for every judgment;
+- its **audit sampling rate is raised** above the deployment default.
+
+A weaker panel is allowed to exist and is not allowed to look like a stronger one.
 
 **Untrusted input handling.** The statement, and any text in it, is untrusted. The compiled bound and
 the delegation sentence come from the signed delegation, never from the request. The Surveyor's
@@ -97,7 +119,12 @@ through the deployment's egress path
 ([ZFN-11](https://zrz.io/zfn/11-outbound-http-egress-proxy/)).
 
 **Sampled audit, after the fact.** A configurable proportion of `conforms` decisions (default 10%,
-minimum one per delegation per day) is queued for human review *after* execution. A reviewer marking
+minimum one per delegation per day) is queued for human review *after* execution. The reviewer is
+given a named evidence set — the statement **as submitted and as signed**, the delegation sentence,
+the compiled bound, the **per-juror verdicts**, and the rehearsal report — and **a residual clause
+must be auditable from that set before Tier B may be enabled for it.** A clause whose correctness a
+reviewer cannot judge from the evidence is a clause the audit cannot correct, which makes the whole
+mechanism decorative for that delegation. A reviewer marking
 one wrong produces a logbook finding, notifies the grantor, and — above a threshold — automatically
 suspends the delegation's fast path back to `refer` for everything. **This is what makes the design
 correctable rather than merely bounded**, and it is not optional.
@@ -109,8 +136,16 @@ volume safe.
 **The switch is polled state, not an environment variable.** Turning Tier B off must take effect in
 seconds, everywhere, without an apply and a deploy. It defaults off.
 
+**A prompt-bundle change is a fleet-wide semantic change, and is deliberately not pinned.** Pinning a
+delegation to the bundle it was signed under would freeze known-vulnerable prompts in place for the
+delegation's whole life, which is worse. The compensating controls are the release gate (the
+regression suite), the sampled audit, and the delegation's own expiry. The bundle version **in force
+at signing** is recorded as provenance, so "what was this judged under" stays answerable even though
+it is not what is used.
+
 **Recorded as a decision, not a fact.** Every judgment is a logbook entry naming the Surveyor's
-identity, model, prompt-bundle version, the panel's individual verdicts, and the delegation. A marque
+identity, model, provider, prompt-bundle version, the panel's individual verdicts and their framings,
+and the delegation. A marque
 minted on the fast path names the judgment in its payload, so "why did this run without a human?" is
 answerable exactly.
 
@@ -167,3 +202,4 @@ the Surveyor by only ever choosing between two paths that both end in a human-gr
 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: a `surveyed` marque names the human-signed outer bound in its `auth` block, and the Pilot verifies **that bound** rather than the judgment ([EDR-0029](./0029-the-fast-path-authority-chain.md)). A control plane skipping the Surveyor is equivalent to one that answered `conforms`, and both are contained by the signed bound — which is what this record claimed, now stated as a verification property rather than an intention.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: replaced "independent" with "separately-framed" and said plainly that the panel narrows careless error, not correlated injection; required provider diversity where available and a visibly-marked, more heavily sampled degraded mode where not; named the audit reviewer's evidence set; required a Tier-B bound to carry a row fence; and stated that the prompt bundle is deliberately not pinned.

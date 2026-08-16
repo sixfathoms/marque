@@ -67,7 +67,7 @@ progress is happening. Every stage therefore has a timeout, a notification, and 
     { "n": 2, "approvers": ["group:data-oncall"], "reason": "orders is a critical target",
       "timeout": "2h",  "on_timeout": "notify_only" }
   ],
-  "refuse_if_unfilled": true
+  "refuse_if_unfilled": true          // an unfillable chain ALWAYS refuses; this selects the reason
 }
 ```
 
@@ -93,6 +93,13 @@ request that ages past its total budget is refused with `expired`, and the submi
 **Self-approval within a chain** follows [EDR-0015](./0015-policy-is-reviewed-configuration.md). A
 human who is both submitter and a stage's approver satisfies that stage only where `self_approval` is
 enabled for that target; otherwise the stage requires someone else and says so.
+
+The test applies to **every human party to the request** — the submitter and each principal in the
+`act` chain, not merely whoever pressed submit — and **a principal satisfies at most one stage**.
+[EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) already makes such a marque
+unmintable, since distinctness there is by principal rather than by key; stating it here is what
+makes the Harbourmaster **refuse cleanly** rather than wait forever for a stage that cannot be
+filled.
 
 **The marque names the agent, not the approver.** When Sam approves an agent's request, the marque's
 `sub` is the **agent** — it is the agent that will execute — with the `act` chain naming Sam and the
@@ -151,3 +158,4 @@ the agent's own reply to its caller.
 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: the chain's freeze at submission is now load-bearing for [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md), which binds the required approval count, the eligible approvers and the chain digest into the signed payload. Loosening the freeze would break that record's verification.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: defined `refuse_if_unfilled` and stated that the self-approval and distinctness tests apply to every human party to a request, so an unfillable chain refuses cleanly instead of deadlocking.

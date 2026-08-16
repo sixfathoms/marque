@@ -101,9 +101,30 @@ statements are approved and executed in one transaction
 ([EDR-0007](./0007-delegation-by-containment-proof.md)). Every statement over the proxy is therefore
 its own implicit transaction, with the same fence and assertions as any other execution.
 
-Also refused, with a specific message rather than a protocol error: `COPY` in either direction, and
-anything outside the checkable statement grammar. `SET` is accepted for a small allowlist of session
-settings that cannot affect authorisation, and refused otherwise.
+Also refused, with a specific message rather than a protocol error: `COPY` in either direction, and a
+**multi-statement simple `Query`** (`psql -c "A; B"`), which is a request, not a session — it points
+at `marque submit`.
+
+**Out-of-grammar is not the same as unsupported.** A statement the grammar cannot bound follows the
+submit-and-`42501` path like any other out-of-scope statement, so it can be approved and re-run.
+A flat refusal is reserved for things Marque genuinely does not do, and the message says which
+category applies — an operator who cannot tell "ask someone" from "never going to work" will assume
+the latter.
+
+**`SET` is accepted for an enumerated allowlist** of session settings that cannot affect
+authorisation, containment, attribution **or statement semantics** — so `search_path`,
+`role`, `session_authorization`, `statement_timeout` and the transaction-characteristics settings are
+all refused, and `application_name` is reserved by Marque
+([EDR-0021](./0021-connections-identity-and-read-routing.md)). Accepted settings are held proxy-side
+and re-applied as `SET LOCAL` inside each fenced transaction, never left on a pooled connection.
+
+**Transport details that clients actually exercise:** `SSLRequest` is refused, which libpq's default
+`sslmode=prefer` handles by continuing in cleartext over loopback — `sslmode=require` will fail, so
+the documented conninfo carries `sslmode=disable`. `GSSENCRequest` is refused the same way. A
+`CancelRequest` cancels the in-flight statement, which aborts the fenced transaction: the nonce
+remains claimed and the outcome is recorded `indeterminate`
+([EDR-0011](./0011-execution-is-idempotent-and-fenced.md)), because a cancelled write is precisely the
+case where nobody can say whether it applied.
 
 **Result bounds.** Rows and bytes are capped per statement, configurable and defaulted low. Exceeding
 the cap ends the result set with a notice saying so rather than truncating silently. A proxy is a
@@ -184,3 +205,4 @@ case, and because it needs no local port at all.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: added the multi-statement `Query` refusal, separated out-of-grammar (which escalates) from unsupported (which refuses), enumerated the `SET` allowlist criterion, and specified `SSLRequest`, `GSSENCRequest` and `CancelRequest` behaviour.

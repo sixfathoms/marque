@@ -91,14 +91,23 @@ is pasted into a prompt.
 }
 ```
 
+- **`on_behalf_of` is not the agent's to choose freely.** It must name a human who holds an active
+  delegation to this agent, or the agent's enrolled owner; anything else is refused. The named human is
+  **notified at task open**, with a one-action disown — otherwise "its human" is an assertion by the
+  party being supervised.
 - The declaration is **attenuating only** — it can never exceed the human's delegation, which can
   never exceed operator policy. The intersection is computed and stored at task open, so the
   effective scope is fixed for the task's life.
 - **It cannot be widened.** A statement outside it escalates
   ([EDR-0019](./0019-escalation-is-a-chain.md)) even if the human's delegation would have permitted
   it, because the agent said it would not need to.
-- Tasks expire. An agent that stops mid-task leaves no standing authority
-  ([ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/)).
+- Tasks expire. `expires_in` is bounded by the delegation's own `not_after` and by a policy
+  `max_task_ttl`, and policy also caps **concurrent open tasks** and **tasks opened per hour** — a task
+  is cheap to open, and without a ceiling "declare narrowly" is satisfied by declaring narrowly many
+  times ([ZFN-37](https://zrz.io/zfn/37-every-lock-is-a-lease/)).
+- **Only the agent's own declaration is frozen for the task.** The delegation and policy terms are
+  evaluated live at every mint, so revoking a delegation takes effect immediately rather than at the
+  end of an open task.
 
 **Submission and execution.** Within the effective scope, the agent submits and executes exactly as a
 human would: same fence, same rehearsal, same magnitude assertions, same idempotency nonce, same
@@ -119,13 +128,17 @@ owner's ability to work, and a per-agent limit is the crudest and most reliable 
 
 **Surgical revocation.** Revoking an agent's delegation, or killing a task, touches neither the
 human's credentials nor the agent's other grants. There is a one-action stop for a single agent, and
-one for all agents on a target.
+one for all agents on a target. `marque agent suspend` **revokes outstanding marques by default**, and
+`marque revoke --principal <agent>` does it directly. **Containment is not instantaneous**: revocation
+propagates within the Pilots' revocation-refresh interval
+([EDR-0004](./0004-marques-are-signed-leases.md)), so an agent holding a live marque may still execute
+inside that window.
 
 **Anomaly signals**, recorded and alertable, because they are cheap and only exist in this design:
 
 | Signal | Why it matters |
 |---|---|
-| declared scope ≫ what the task actually used | badly built or compromised agent |
+| declared scope ≫ what the task actually used | badly built or compromised agent. **This bounds accidental blast radius; it is not a compromise detector** — an agent under an attacker's control declares narrowly and looks exemplary |
 | escalation rate rising for one agent | its delegation no longer matches its job |
 | submissions outside declared scope, repeatedly | the agent is probing, or its task model is wrong |
 | a task re-opened many times in quick succession | widening by attrition |
@@ -174,3 +187,4 @@ one for all agents on a target.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: constrained `on_behalf_of` and notified the named human at task open, bounded task TTL and rate, stated that only the agent's own declaration is frozen, and made explicit that the declared-scope signal bounds accidental blast radius rather than detecting compromise.

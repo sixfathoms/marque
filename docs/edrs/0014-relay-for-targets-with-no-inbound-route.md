@@ -70,9 +70,19 @@ flowchart TB
 ```
 
 **Registration.** A Pilot starts, authenticates to the Tender with its workload identity, and
-registers the targets it can serve. The Tender records `pilot-id → connection` and reports the Pilot
-as reachable. A Pilot with no registered connection is reported unreachable, and requests for its
-targets fail fast with that reason rather than timing out.
+registers the targets it can serve. **A registration is validated against the configured
+target→Pilot map** ([EDR-0015](./0015-policy-is-reviewed-configuration.md)): a Pilot claiming a target
+it was not assigned is refused and reported, since a self-asserted claim would let a Pilot volunteer
+for someone else's database.
+
+**Relay selection and failover.** A Pilot is given an ordered list of relay addresses from the
+bootstrap document's `relays` block ([EDR-0002](./0002-bootstrap-discovery-document.md)), dials them in
+order, and fails over with **jittered** backoff — an unjittered herd reconnecting after a relay
+restart is its own outage. Each Pilot reports which relay it is attached to.
+
+The Tender records `pilot-id → connection` and reports the Pilot as reachable. A Pilot with no
+registered connection is reported unreachable, and requests for its targets fail fast with that
+reason rather than timing out.
 
 **The relay is a pipe, not a proxy.**
 
@@ -147,3 +157,4 @@ initiate a connection inward.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: a Pilot's registration is validated against the configured target→Pilot map rather than self-asserted, and relay selection and jittered failover are specified.

@@ -15,9 +15,10 @@ aliases: []
 ## TL;DR
 
 `marque login https://marque.example.com` is the whole of client setup. The server publishes a
-signed configuration document at `/.well-known/marque-configuration`, and everything else — which
-identity providers to use, what audience to ask for, where the Pilots are, which relay reaches which
-target, what the deployment supports — is read from it and cached.
+configuration document at `/.well-known/marque-configuration`, and everything else — which identity
+providers to use, what audience to ask for, where the Pilots and relays are, where the revocation
+list lives, what the deployment supports — is read from it and cached. The document is **served over
+TLS and unauthenticated**: every field in it is a pointer, never a secret.
 
 Clients hold exactly one piece of configuration: the bootstrap URL. There are no per-environment
 client flags, no shipped defaults for issuers or endpoints, and no client release needed to move a
@@ -70,6 +71,8 @@ A Marque deployment serves an unauthenticated document at
       "relay": { "kind": "tender", "id": "tender-eu-1" } }
   ],
   "capabilities": ["standing-orders", "delegation", "rehearsal", "offline-execution"],
+  "revocation_uri": "https://marque.example.com/.well-known/revocations",
+  "relays": [ { "id": "tender-eu-1", "addresses": ["https://tender-eu-1.marque.example.com"] } ],
   "jwks_uri": "https://marque.example.com/.well-known/jwks.json",
   "min_client_version": "0.4.0"
 }
@@ -130,3 +133,4 @@ Rules:
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: resolved a contradiction between the TL;DR ("signed") and the Decision ("unauthenticated"), and added `revocation_uri` and a `relays` block.

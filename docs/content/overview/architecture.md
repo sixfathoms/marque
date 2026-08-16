@@ -341,7 +341,7 @@ cloud is special, and no cloud-specific connectivity primitive is required.
 
 | Down | Effect |
 |---|---|
-| Harbourmaster | No new submissions or approvals. **Existing marques still execute** — the Pilot verifies locally. Revocation lists go stale, so `required`-policy marques stop after the refresh interval. |
+| Harbourmaster | No new submissions or approvals. **Existing marques still execute** — the Pilot verifies locally — **until the revocation list goes stale**, after which only `revocation.policy: grace` marques run. That window is the honest bound on the offline property, and `max_grace_seconds` ([EDR-0015](../../edrs/0015-policy-is-reviewed-configuration.md)) caps how far an approver may extend it. |
 | Pilot | Its targets are unreachable, and requests for them fail fast with that reason. Other Pilots are unaffected. |
 | Leadsman | Requests queue normally with deterministic facts attached and a visible "no summary produced" note. Never blocks. |
 | Surveyor | Tier-B delegations fall back to referring everything to a human. Tier-A delegations are unaffected, because no model was in their path. |

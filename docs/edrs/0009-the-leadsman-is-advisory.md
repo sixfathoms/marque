@@ -73,9 +73,20 @@ delegation from the submitter grants exactly: read this request, read schema met
 request a rehearsal, write one analysis. It cannot read other requests, other targets, or the
 logbook's approval records.
 
-**Untrusted input, treated as such.** Statement text is untrusted. It is passed to the model inside a
-clearly delimited region, the model's output is consumed only as text placed in a display field, and
-nothing the model emits is ever parsed as an instruction, a policy decision, or a control character
+**Untrusted input, treated as such — and it is not only the statement.** Every attacker-controlled
+input is delimited and marked: **statement text, its comments and its literals, the agent's declared
+`purpose`, the submitter's stated reason, and schema evidence**. An implementer who delimits only the
+statement has protected the obvious half and left the reason field, which is free prose from whoever
+submitted, wide open.
+
+**The analysis distinguishes an assertion from a fact.** It may say *"the request states this is for
+ticket ACME-4471"*; it may not say *"this is for ticket ACME-4471"*. A claim found in untrusted text
+is never restated as fact — including claims of prior authorisation, which is the injection that
+matters here because it is aimed directly at the approver's judgement. The console renders
+submitter- and agent-supplied prose **as a quotation from an untrusted party**, visually distinct
+from Marque's own text.
+
+Nothing the model emits is ever parsed as an instruction, a policy decision, or a control character
 in Marque's own protocol. Egress from the analyst to a model provider goes through the deployment's
 egress path, not directly ([ZFN-11](https://zrz.io/zfn/11-outbound-http-egress-proxy/)).
 
@@ -127,7 +138,9 @@ none at all, the Surveyor by choosing only between two paths that both end in a 
 **New obligations.**
 
 - Prompt bundles are versioned source, reviewed like code, with a regression suite over known
-  statements. A prompt change that makes the analyser miss an unbounded `DELETE` must fail a test.
+  statements. A prompt change that makes the analyser miss an unbounded `DELETE` must fail a test —
+  and so must one that lets **text claiming prior authorisation** reach the summary as an assertion
+  rather than as a quoted claim.
 - The analyst's delegation is asserted in tests: a change that gives it any additional permission
   should fail the build, not a review.
 
@@ -150,3 +163,4 @@ none at all, the Surveyor by choosing only between two paths that both end in a 
   rather than every model in the system, and to point at
   [EDR-0017](./0017-conformance-matching-may-route-never-widen.md). The decision is unchanged: the
   analyst still holds no authority, produces no verdict, and is read by nothing in the approval path.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: enumerated every attacker-controlled input rather than only statement text, and required the analysis to distinguish "the request asserts X" from "X is true".

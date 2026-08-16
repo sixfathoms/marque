@@ -28,11 +28,14 @@ never holds a credential, can never approve anything, and gets no shortcut throu
 
 Four properties the design gives other things up to keep:
 
-- **A control-plane compromise grants no database access.** The control plane holds no target
-  credential, and a marque needs the approver's own key as well as the server's — so an attacker who
-  owns the server can ask for things, and nothing more.
-- **An issued marque works while the control plane is down.** The Pilot verifies it by computation,
-  offline. The tool stays usable during exactly the incidents it exists for.
+- **A control-plane compromise grants no credential and cannot commit a change.** The control plane
+  holds no target credential, cannot produce an approver signature, and does not decide which keys
+  count as approvers — that roster is anchored outside it. A bounded, quota'd, target-visible read
+  channel remains, and that is stated rather than glossed.
+- **An issued marque works while the control plane is down** — the Pilot verifies it by computation,
+  offline, for as long as its revocation list is fresh, and past that only under
+  `revocation.policy: grace`. The tool stays usable during exactly the incidents it exists for, and
+  the bound is stated rather than implied.
 - **Nothing is silently narrowed.** A statement that would touch rows outside your delegated scope
   aborts and tells you how many. A partially-applied change nobody reviewed is worse than a refusal.
 - **No model creates authority.** A model may compile a delegation you then read and sign, and may

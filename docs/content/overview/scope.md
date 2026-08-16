@@ -18,7 +18,9 @@ What Marque is for, what it will not do, what ships in which phase, and what alr
    everything else to that human rather than failing. This is a primary use case, not an adaptation.
 4. **Make the record complete and hard to alter.** Who asked, who approved, what they were shown,
    what changed — appended, chained, and beyond the reach of Marque's own database role.
-5. **Survive its own outage.** A grant already issued executes while the control plane is down.
+5. **Survive its own outage.** A grant already issued executes while the control plane is down, for
+   as long as the Pilot's revocation list is fresh — and past that only where an approver explicitly
+   granted `grace`.
 6. **Reach the databases that actually exist**, including ones with no inbound route, in a different
    cloud from the control plane.
 7. **Be adoptable by a team that did not write it.** One bootstrap URL, no per-client configuration,
@@ -86,6 +88,8 @@ writes; reads routed to replicas under a freshness bound
 | Deferred | Until |
 |---|---|
 | MySQL, then others | PostgreSQL has met real traffic and the parser boundary has settled. Not a driver swap: MySQL has no `RETURNING` for the fence post-assert, no statement timeout for writes, and non-transactional DDL — so it ships with a published capability matrix or not at all ([EDR-0026](../../edrs/0026-a-second-engine-is-a-capability-matrix.md)) |
+| Bulk data movement (`COPY`, `\copy`) | Nothing brokers it, so whatever moves bulk data today keeps whatever credential it has — a hole Marque does not yet close, and worth naming rather than implying full coverage ([EDR-0022](../../edrs/0022-local-proxy-brokers-every-statement.md)) |
+| Non-transactional statements (DDL, `VACUUM`, anything with an implicit commit) | The fence is a transaction; a statement that cannot be rolled back cannot be fenced or rehearsed |
 | Explicit client transactions over the proxy (`BEGIN`) | A marque authorises a statement set decided in advance; an open transaction is a client deciding what to do next from what it just saw ([EDR-0022](../../edrs/0022-local-proxy-brokers-every-statement.md)) |
 | **Tier-B surveyed delegations** | Tier-A compilation has met real sentences, so the residual is known rather than assumed. It ships **off by default** and stays off until the sampled-audit loop and its suspension threshold are proven ([EDR-0017](../../edrs/0017-conformance-matching-may-route-never-widen.md)) |
 | **Non-SQL operations** (agent tool calls, cloud APIs) | The SQL engine's scope grammar, fence and rehearsal have settled. Each engine is a parser, a fence mechanism and a rehearsal story — not a configuration flag |
@@ -127,9 +131,14 @@ Marque is not a new category. What follows is what exists and where it lands dif
 "why build" argument, and [ZFN-31](https://zrz.io/zfn/31-own-your-components/) is clear that owning a
 component is only justified when you genuinely understand the domain.
 
-- **Bytebase** — database DevOps with schema review and change workflows. Strong on migrations and
-  review; the centre of gravity is the change pipeline rather than a signed, expiring grant for an
-  ad-hoc statement.
+- **Bytebase** — database DevOps with schema review and change workflows. It **does** have an ad-hoc
+  query path with approval and expiry, so the honest delta is narrower than "it only does migrations":
+  the centre of gravity is the change pipeline, and the approval is a workflow state rather than a
+  signed artefact a data-plane component verifies offline.
+- **Dynamic credential brokers** (HashiCorp Vault database secrets, cloud IAM database auth) — issue
+  short-lived credentials on demand, which removes standing access. The unit is a **credential**, not
+  a statement: once issued, what you do with it is unconstrained and unrecorded beyond the target's
+  own logs.
 - **Teleport / StrongDM / Boundary** — identity-aware access proxies. Excellent at *reaching* a
   database as yourself, with session recording. The unit is a **session**, not a statement: they
   answer "who connected", where Marque answers "who approved this exact statement".
@@ -174,15 +183,16 @@ If an existing product grew those six properties, the honest answer would be to 
 
 Phase 3 is a success if, in the deployment that adopts it first:
 
-- **No standing production database credential is held by a person.** The bypass path is closed, not
-  merely discouraged.
+- **No standing production database credential is held by a person**, for the statement classes
+  Marque brokers. The bypass path is closed, not merely discouraged. Bulk movement and DDL are out of
+  scope for the first release and keep whatever credential they have today.
 - **The median routine request never reaches a human**, via a standing order or a delegation.
 - **The 95th-percentile time from submission to executable marque, for a request that does need a
   human, is under ten minutes** during working hours. Slower than that and people route around it.
 - **A randomly chosen production change from three months ago can be fully reconstructed** — statement,
   approver, what they were shown, what changed — in one query.
 - **One incident has been worked with the control plane unavailable**, using a marque issued before
-  it went down.
+  it went down — within the revocation-refresh window, or under an explicitly-granted `grace`.
 - **At least one agent runs against production with a scope its owner can state in a sentence**, and
   its escalations are answered in minutes rather than accumulating.
 

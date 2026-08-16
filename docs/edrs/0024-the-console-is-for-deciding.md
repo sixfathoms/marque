@@ -30,8 +30,11 @@ whole job, and everything else is deliberately absent:
   and no third-party origin. The client is generated from the same schema as everything else
   ([EDR-0020](./0020-one-schema-generates-every-client.md)).
 
-It is otherwise read-mostly: every mutating action is a signed act, and there are exactly four of
-them — sign a marque, refuse a request, grant or revoke a delegation, suspend an agent.
+It is otherwise read-mostly: **every mutating action is a signed act** — signing a marque, refusing a
+request, granting or revoking a delegation, suspending an agent, enrolling or retiring a key, and
+recording a Tier-B audit verdict (which is signed, because it can suspend a delegation's fast path).
+The list is deliberately not given as a count: an enumeration with a numeral in front of it goes stale
+the first time a record adds one.
 
 ## Context
 
@@ -75,7 +78,11 @@ Signing raises the authenticator prompt. There is no way to sign without it, and
 this session".
 
 **Editing before approval is supported**, and produces a different statement digest and therefore a
-different marque; the console shows submitted-versus-signed side by side, because an approver quietly
+different marque. An edited statement is **re-rehearsed and re-analysed before signing** — otherwise
+the `analysis` digest bound into the marque describes a statement that no longer exists. And the
+**executing client refuses a marque whose `req` differs from the digest it submitted** until the
+operator confirms a rendered diff, so an approver's edit cannot run unnoticed. The console shows
+submitted-versus-signed side by side, because an approver quietly
 changing what someone asked for is exactly the thing a record must capture
 ([EDR-0004](./0004-marques-are-signed-leases.md)).
 
@@ -159,3 +166,4 @@ usability decision rather than the last line of defence.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: dropped the stale numeral from the mutating-action list, and required an edited statement to be re-rehearsed and the executing client to confirm a digest change.

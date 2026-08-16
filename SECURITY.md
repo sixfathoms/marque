@@ -28,6 +28,9 @@ issue, not a documentation issue:
 | A statement cannot write to a relation outside the delegation's declared object scope without the transaction aborting — including via cascades, triggers and rewritten targets | [EDR-0033](docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md) |
 | A row whose fence expression is NULL is treated as outside the fence, not inside it | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | Every Pilot method verifies a submitter signature — the control plane relays, it does not authorise | [EDR-0034](docs/edrs/0034-the-pilot-api-has-one-authorisation-model.md) |
+| A stolen session cannot enrol an approver key or otherwise become approval authority | [EDR-0023](docs/edrs/0023-approver-keys-enrolment-and-recovery.md), [EDR-0031](docs/edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md) |
+| Cross-tenant confusion cannot produce a valid marque — a Pilot trusts only its own tenant's keys | [EDR-0025](docs/edrs/0025-tenants-are-partitioned-from-day-one.md), [EDR-0032](docs/edrs/0032-a-marque-binds-its-executor-tenant-and-pilot.md) |
+| The local proxy forwards no bytes and brokers every statement that crosses it | [EDR-0022](docs/edrs/0022-local-proxy-brokers-every-statement.md) |
 | A compromised Pilot cannot create authority it was not given | [EDR-0004](docs/edrs/0004-marques-are-signed-leases.md) |
 | A statement cannot affect rows outside a delegation's fence without the transaction aborting | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | A standing order's parameters cannot alter the shape of its statement | [EDR-0008](docs/edrs/0008-standing-orders.md) |

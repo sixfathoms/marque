@@ -72,7 +72,7 @@ error under `ON_ERROR_STOP`.
 |---|---|
 | `\copy`, `COPY` | bulk data movement is not brokered in the first release ([EDR-0022](./0022-local-proxy-brokers-every-statement.md)) |
 | `-1` / `--single-transaction`, `BEGIN` | a marque authorises a statement set decided in advance |
-| `\e`, `\!` | shelling out from a brokering client is a surprising amount of authority |
+| `\e`, `\!`, and the `\|command` argument form of `\o` / `\g` / `\w` | shelling out from a brokering client is a surprising amount of authority. Stated as a **capability** — the client contains no code path that spawns a process — rather than as a list of meta-command names, because a list goes stale |
 | `.psqlrc` | read only with `-X` semantics inverted: it is **not** read by default, because a file that silently issues statements at startup is the wrong default here. `--rcfile` opts in |
 
 That last one is a deliberate deviation from psql and will surprise someone; it is called out in
@@ -83,14 +83,23 @@ That last one is a deliberate deviation from psql and will surprise someone; it 
 A statement is **introspection** when all of the following hold:
 
 - it is read-only, and inside the checkable grammar
-  ([EDR-0007](./0007-delegation-by-containment-proof.md));
+  ([EDR-0007](./0007-delegation-by-containment-proof.md)) — with **one exemption**: its relations may
+  be allowlisted catalog *views*, notwithstanding that record's base-table rule, which the allowlist
+  itself discharges;
 - every relation it reads is on the engine's allowlist of catalog and information-schema views;
 - every function it calls is on the purity allowlist.
 
 Introspection then:
 
-- **runs under the role, with no marque and no approval.** It is bounded by the role's own privileges
-  ([EDR-0006](./0006-every-statement-names-a-role.md)) — the database decides what the catalog shows.
+- **runs under the role, with no marque and no approval.** But note what actually bounds it: on
+  PostgreSQL the role's privileges **do not** meaningfully restrict catalog reads — most of
+  `pg_catalog` is world-readable, so "the database decides what the catalog shows" does no work here.
+  **The reviewed allowlist is the control**, not the role. Where a meta-command has an
+  `information_schema` equivalent, Marque prefers it, since those views *are* privilege-filtered; and
+  where it does not, Marque conjoins `has_table_privilege` / `has_column_privilege` into the query it
+  composes, so the answer reflects what this role may actually see.
+- **The allowlist is column-aware.** `pg_proc.prosrc` is excluded — function bodies are source code
+  and frequently contain embedded credentials — as is anything else whose value is not metadata.
 - **is logged in aggregate**: a per-session rollup naming the principal, the target, the role, the
   count and the distinct relations touched. One entry per `\d` would drown the logbook and make the
   entries that matter harder to find ([EDR-0012](./0012-the-logbook-is-append-only.md)).
@@ -161,3 +170,4 @@ surfacing what it already knows.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: corrected the reasoning behind catalog introspection — on PostgreSQL the role does not bound catalog reads, so the reviewed allowlist is the control — made the allowlist column-aware, and restated the shell-out refusal as a capability.

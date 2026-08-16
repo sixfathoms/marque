@@ -77,6 +77,10 @@ approval; there is no in-place amendment.
 
 Rules on constraints:
 
+- **Every write standing order must carry `max_rows`**, or an explicit acknowledgement field naming
+  who accepted the risk — the shape [EDR-0015](./0015-policy-is-reviewed-configuration.md) already
+  uses for `self_approval`. It appears in the worked example above and was never stated as required,
+  which is how it would have been omitted.
 - **Every parameter must carry at least one constraint.** An unconstrained parameter is refused at
   approval time. This is deliberate friction: the unconstrained case is the one that turns a standing
   order into a general-purpose write.
@@ -84,6 +88,9 @@ Rules on constraints:
   unanchored pattern is a constraint that matches a substring of an attacker-chosen value, which is
   no constraint at all.
 - `from_query` runs against the same target under the same role, read-only, with a statement timeout.
+  Its text is **inside the checkable subset and covered by the order's signature**, it takes no
+  invoker-supplied input beyond the value under test, and it is logged and quota'd like any other read
+  — otherwise it would be an unreviewed query that runs on every invocation.
 
 **Binding is by value.** The Pilot prepares the statement and binds parameters through the driver's
 parameter protocol. Marque never builds a statement by string substitution, and the template is
@@ -95,8 +102,8 @@ one, whose `auth` block names this standing order and its digest instead of an i
 with the marque and supplies the approver limb** — the human signed the *shape*, here, rather than
 the instance — and the Pilot verifies it offline: the order's own signatures, the digest, the
 template rebound with the supplied parameters against `req`, each parameter against its constraint,
-and that the marque's limits are within the order's. Everything downstream — fencing, magnitude
-assertions, the logbook — is unchanged. **A standing order is a way to skip the queue, not a way to
+and that the marque's limits are within the order's. Everything downstream — the magnitude assertion, the write-set assertion, the execution nonce and
+budget, and the logbook — is unchanged. **A standing order is a way to skip the queue, not a way to
 skip the record.**
 
 **Name principals in `invokers` where offline verification matters.** Group membership is
@@ -153,3 +160,4 @@ Renewal is a re-approval, which is the moment someone re-reads it — the whole 
 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: the signed standing order supplies the approver limb of a marque minted by invocation, and travels with it for offline verification ([EDR-0029](./0029-the-fast-path-authority-chain.md)). Added the residual that group-named `invokers` are not offline-verifiable, and the rule that `critical` targets must name principals.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: required `max_rows` on every write standing order (or an explicit acknowledgement), specified `from_query`'s own constraints, and corrected the "unchanged" list, which named fencing rather than the assertions that actually apply.

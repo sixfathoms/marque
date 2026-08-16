@@ -110,10 +110,35 @@ policy permits — never beyond.
 hold. The check in [EDR-0007](./0007-delegation-by-containment-proof.md) runs against the compiled
 scope exactly as if it had been written by hand.
 
-**Schema evidence is required for an inference.** The compiler is given the target's schema — column
-names, types, and for low-cardinality columns their distinct values — through the Pilot, read-only.
-An inference with no schema evidence behind it (`tier = 'sandbox'` where no `tier` column exists) is
-a refusal, not a guess.
+**Schema evidence is required for an inference.** The compiler is given the target's schema through
+the Pilot, read-only. An inference with no schema evidence behind it (`tier = 'sandbox'` where no
+`tier` column exists) is a refusal, not a guess.
+
+**Distinct values are sent only for columns classified non-sensitive.** This is the only path by
+which production **data** reaches a model whose output becomes a candidate authority artefact, so it
+is gated rather than merely bounded by cardinality:
+
+- A column must be explicitly classified non-sensitive in target configuration
+  ([EDR-0015](./0015-policy-is-reviewed-configuration.md)) before its distinct values are sent.
+- Everywhere else the compiler receives **names and types only**, cannot ground a value inference, and
+  **refuses** — the grantor writes the predicate themselves.
+- A low-cardinality column is not automatically harmless: a status naming a legal hold, or a tier
+  naming one customer, is disclosure. Cardinality is a performance heuristic, not a privacy one.
+
+Compilation quality therefore degrades exactly where the data is sensitive, which is the right place
+for it to degrade.
+
+**Schema evidence is untrusted input, on the same terms as statement text.** Column names and values
+come from a database that operators and customers write to. They are passed as a **length-bounded,
+escaped data block, never in an instruction position**, and the compiler's *output* is constrained
+rather than its input trusted:
+
+- every literal in an emitted fence predicate must come from the supplied distinct-value set;
+- every named column must exist in the supplied schema;
+- the predicate must parse under [EDR-0007](./0007-delegation-by-containment-proof.md)'s grammar.
+
+A compilation failing any of those is refused. That is what makes data-borne injection a refusal
+rather than a wider delegation.
 
 **Recompilation is a new delegation.** Editing the sentence produces a new compilation requiring a
 new signature. An existing delegation is never re-derived, so improving the compiler cannot change
@@ -145,8 +170,9 @@ what someone is already permitted to do.
 **New obligations.**
 
 - The compiler's test suite includes adversarial sentences — ones that try to compile to more than
-  they appear to say, and ones with injected instructions in the text — and a failure to refuse is a
-  build failure.
+  they appear to say, and ones with injected instructions in the text — **and adversarial schema
+  evidence**: a column value containing an instruction, a column named to read as one. A failure to
+  refuse is a build failure.
 - Compiled delegations are reviewed at renewal against their sentence, which is when a drifted
   compilation is caught.
 
@@ -162,3 +188,4 @@ what someone is already permitted to do.
 
 - **2026-08-15**: Accepted.
 - **2026-08-15**: Amended after review: the signed compilation supplies the approver limb of a marque minted by a delegation match, and travels with it so a Pilot can verify offline that a human signed the scope ([EDR-0029](./0029-the-fast-path-authority-chain.md)).
+- **2026-08-16**: Amended after the expert panel's should-fix pass: gated distinct values to columns classified non-sensitive — this is the only path by which production data reaches a model whose output becomes a candidate authority artefact — and declared schema evidence untrusted input with the compiler's output constrained rather than its input trusted.

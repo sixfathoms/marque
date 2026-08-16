@@ -80,8 +80,9 @@ a commit message.
 - **A delegated row scope is a fence that aborts, never a rewrite.** Conjoining the predicate into the
   operator's `WHERE` is sound and silently narrows the statement, which produces a partially-applied
   change nobody reviewed. The pre-check, the post-assert and the row-count assert are three separate
-  checks and all three are needed — the post-assert is the one that catches an `UPDATE` moving a row
-  *out* of scope (EDR-0007).
+  checks and all are needed — the post-assert catches an `UPDATE` moving a row *out* of scope, and a
+  fourth, the write-set assertion, catches everything the engine writes on the statement's behalf
+  (EDR-0007, EDR-0033). Both comparisons are **TRUE-only** and the transaction is REPEATABLE READ.
 - **The analyser has no authority, and no setting grants it any.** No risk score, no recommendation,
   no auto-approval — those are the shapes that get automated against. Pre-authorised automation is
   standing orders and delegation, where a human granted it in advance (EDR-0009).
@@ -110,6 +111,30 @@ a commit message.
   workload principal can satisfy, and that mechanical impossibility is asserted by a test.
 - **Escalation stage 1 for an agent is always its own principal**, every stage is a human, and **a
   timeout never satisfies a stage** (EDR-0019).
+- **Every method declares `safe` / `keyed` / `unsafe`**, and generated clients honour it — an
+  unannotated method fails the build, because the default must be a decision (EDR-0020).
+- **Transparent driver retry is OFF for writes.** A wrapper that replays a write after failover
+  applies a statement outside the nonce's accounting; failover surfaces as `indeterminate` (EDR-0021).
+- **The proxy forwards no bytes.** It terminates the wire protocol and constructs its own requests.
+  "Just pass reads through" turns it into the tunnel the design refuses (EDR-0022).
+- **Enrolling an approver key needs a second enrolled approver**, and the roster the Pilot trusts is
+  **co-signed and anchored outside the control plane** — a Pilot must never learn who may approve from
+  the Harbourmaster (EDR-0023, EDR-0031).
+- **The console has no bulk approve**, and every mutating action is a signed act (EDR-0024).
+- **The tenant comes from the authenticated principal, never a request field**, and each tenant has
+  its own chain and signing key (EDR-0025).
+- **An engine declares what it can enforce**; a control it cannot support is marked unavailable, never
+  silently weakened (EDR-0026).
+- **Catalog introspection is bounded by the reviewed allowlist, not by the role** — most of
+  `pg_catalog` is world-readable, so the role does no work there (EDR-0027).
+- **A pipeline provider may narrow or veto, never widen, permit or replace a check.** The digest is
+  taken after transformation; scope and fence re-run on the transformed statement (EDR-0028).
+- **The fence is TRUE-only and runs at REPEATABLE READ.** `NOT (fence)` lets a NULL-fenced row through
+  every check; READ COMMITTED lets the pre-check and the statement see different snapshots (EDR-0007).
+- **The write-set assertion bounds everything the engine writes on the statement's behalf.**
+  `max_rows` bounds the named relation only; a cascade is invisible to `RETURNING` (EDR-0033).
+- **Every Pilot method verifies a submitter signature.** The control plane relays, it does not
+  authorise (EDR-0034).
 
 ## Naming
 

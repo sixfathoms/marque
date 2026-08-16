@@ -62,7 +62,10 @@ being unsure whether it is current. With the repository as the source, the answe
                  "approvers": ["group:data-oncall"],
                  "min_approvals": 1, "self_approval": false,
                  "may_delegate": ["group:data-oncall"],
-                 "max_marque_ttl": "1h", "default_budget": { "executions": 1 } } ],
+                 "max_marque_ttl": "1h", "max_grace_seconds": 0,
+                 "require_envelope": "webauthn",
+                 "surveyor": { "jurors": 3 },
+                 "default_budget": { "executions": 1 } } ],
   "standing_orders": [ … ]
 }
 ```
@@ -79,6 +82,17 @@ being unsure whether it is current. With the repository as the source, the answe
   carries multiple.
 - **`max_marque_ttl` is a ceiling on what an approver may grant**, not a default. An approver cannot
   sign a longer window than policy permits.
+- **`max_grace_seconds` is the same ceiling for revocation grace**, and defaults to **zero**. Without
+  it, one approver could mint a marque whose `grace` covers its entire life, which is a standing
+  credential wearing a lease. Raising it above zero requires the same explicit acknowledgement field
+  `self_approval` needs ([EDR-0004](./0004-marques-are-signed-leases.md)).
+- **`require_envelope` names which approver-signature envelope is acceptable**
+  ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)). A `critical` target **defaults to
+  `webauthn`** — hardware-backed, user-verified per signature — so a file-backed platform key cannot
+  approve the highest-consequence changes. Relaxing it on a `critical` target requires the
+  acknowledgement field.
+- **`surveyor.jurors` sets the Tier-B panel size**, with a floor of 3
+  ([EDR-0017](./0017-conformance-matching-may-route-never-widen.md)).
 - **`may_delegate` bounds who can create delegations**, and a delegation may never exceed the
   delegator's own policy grant.
 
@@ -97,6 +111,14 @@ second is an outage.
 it: requires two authenticated principals present, sets an automatic expiry after which the previous
 version is restored unless the change has been merged, and posts to the deployment's notification
 channel immediately. The emergency path is not blocked; it is made impossible to use invisibly.
+
+**Reversion is an apply, not a restore.** The automatic reversion runs the **same validation** as an
+ordinary apply, including the refusal rules above. If the previous version no longer validates — a
+group has since emptied, a target has gone — the reversion **does not proceed**: the break-glass
+version is held in place and the deployment is alerted loudly. Silently restoring a policy that
+cannot be applied would be the worst of both outcomes. Notification goes out **before** expiry as
+well as at it, and **both the attempted reversion and its outcome are recorded in the logbook** — a
+reversion that did not happen is otherwise indistinguishable from one that did.
 
 ## Consequences
 
@@ -138,3 +160,4 @@ channel immediately. The emergency path is not blocked; it is made impossible to
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: added `max_grace_seconds`, `require_envelope` (hardware on `critical` by default) and `surveyor.jurors`, and specified break-glass reversion as an apply that can refuse rather than a silent restore.

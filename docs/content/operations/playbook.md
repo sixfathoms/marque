@@ -29,7 +29,9 @@ Marque deliberately cannot give anybody these — group membership comes from th
 
 Most of Marque's failure modes are quiet. A working deployment and a broken one look identical from
 the outside, because the visible output of both is "requests get approved". These are the signals
-that separate them, and **the first three are the ones that will actually bite**.
+that separate them. **The ranking is phase-dependent**: for a Phase 1–3 deployment — no agents, no
+Tier B — the three that will actually bite are the **replication slot**, **Pilot reachability** and
+**Pilot clock skew**. The agent and surveying signals matter once those features are on.
 
 | Signal | Healthy | Why it is the one that bites |
 |---|---|---|
@@ -77,6 +79,21 @@ alters a compilation or flips a near-miss statement to `conforms` fails the buil
 release blocker rather than a warning.
 
 ## Procedures
+
+### Add a target
+
+1. Add the target, its roles and their credential references to the policy repository
+   ([EDR-0015](../../edrs/0015-policy-is-reviewed-configuration.md)); set its `criticality`.
+2. Assign it to a Pilot in the target→Pilot map — a Pilot cannot volunteer for a target it was not
+   assigned ([EDR-0014](../../edrs/0014-relay-for-targets-with-no-inbound-route.md)).
+3. Provision the database roles and, for `per_operator` identity, the per-operator users. Marque never
+   issues `GRANT` ([EDR-0021](../../edrs/0021-connections-identity-and-read-routing.md)).
+4. Classify columns: `displayable_columns` for rehearsal samples, and the non-sensitive set the
+   delegation compiler may see distinct values for
+   ([EDR-0016](../../edrs/0016-natural-language-delegations-are-compiled.md)). **The default is
+   redacted and ungrounded**, so a target added without this step works and compiles poorly.
+5. Apply, then **verify positively**: exercise a read and confirm the session's actual database user
+   on the target. A lazily-initialised pool hides broken authentication indefinitely.
 
 ### Grant a delegation
 
@@ -165,13 +182,16 @@ no fresh interactive authentication even on a `critical` target
 a fresh revocation check, and each one should be reviewed afterwards.
 
 There is no way to mint a new marque with the control plane down. That is deliberate, and it is why
-pre-issued break-glass marques for a `critical` target are worth holding *before* you need them.
+pre-issued break-glass marques for a `critical` target are worth holding *before* you need them —
+noting that break-glass **without** a control plane is itself deferred
+([scope](../overview/scope.md)), so what exists today is a pre-issued `grace` marque and nothing more
+automatic.
 
 ### Suspected compromise
 
 | Compromised | Immediate action | What it did not get |
 |---|---|---|
-| Harbourmaster | Stop it. Rotate its signing key. **Verify the current roster's chain independently before trusting any approval made during the window** ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)), and review rehearsal volume per principal for signs of an extraction oracle. Every marque signed after the suspected time is suspect — revoke them. **Also review fast-path invocations**: it could have invoked genuine standing orders as principals of its choosing where `invokers` names a group ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | Any database access; a marque for any statement shape no human had already signed |
+| Harbourmaster | **Revoke first, then stop it** — stopping it removes the revocation-list refresh, which is what makes `required`-policy marques stop, so the order matters. Note that **rotating the signing key does not invalidate outstanding marques**; revocation does. Then rotate. **Verify the current roster's chain independently before trusting any approval made during the window** ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)), and review rehearsal volume per principal for signs of an extraction oracle. Every marque signed after the suspected time is suspect — revoke them. **Also review fast-path invocations**: it could have invoked genuine standing orders as principals of its choosing where `invokers` names a group ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)) | Any database access; a marque for any statement shape no human had already signed |
 | A Pilot | Stop it; rotate the credentials it could dereference; audit its ledger against the logbook | Authority to create marques; other Pilots' targets |
 | An approver's device key | Suspend the person in the identity provider; revoke marques bearing their signature since the suspected time; re-enrol | Validity on its own — a marque also needs the countersignature |
 | An agent | `marque agent suspend`; revoke its marques; review its declared-versus-used scope history | A credential; approval authority; anything outside the intersection |
@@ -179,6 +199,15 @@ pre-issued break-glass marques for a `critical` target are worth holding *before
 
 In every case the logbook is the ground truth, and it is the thing to verify first: run the chain
 verification and compare against the external anchor before drawing conclusions from it.
+
+**But be precise about what that proves.** Chain plus anchor prove **no rewrite** of entries up to the
+last anchored head. They do not prove **no fabrication**: entries after that head are
+attacker-influenced in *both* directions — invented as well as omitted. So for the window since the
+last anchor, verify each `marque.signed` approver signature directly against the roster
+([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)), and reconcile
+`execution.*` entries against the Pilots' own ledgers and the target's own audit
+([EDR-0021](../../edrs/0021-connections-identity-and-read-routing.md)). Three sources that must agree
+is the actual control.
 
 ## Things that will go wrong first
 

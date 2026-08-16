@@ -69,10 +69,19 @@ and can recompute the chain, and this record does not claim otherwise.
 }
 ```
 
-Kinds cover the whole lifecycle: `request.submitted`, `request.amended`, `analysis.written`,
-`rehearsal.completed`, `marque.signed`, `marque.refused`, `marque.revoked`, `execution.claimed`,
-`execution.committed`, `execution.rolled_back`, `execution.indeterminate`, `standing_order.approved`,
-`standing_order.invoked`, `delegation.granted`, `delegation.revoked`, `policy.changed`.
+Kinds cover the lifecycle. **This list is illustrative, not closed** — later records add to it, and a
+list presented as complete goes stale the moment one does:
+
+`request.submitted`, `request.amended`, `analysis.written`, `rehearsal.completed`, `marque.signed`,
+`marque.refused`, `marque.revoked`, `marque.expired`, `execution.claimed`, `execution.committed`,
+`execution.rolled_back`, `execution.indeterminate`, `standing_order.approved`,
+`standing_order.invoked`, `delegation.granted`, `delegation.revoked`, `policy.changed`,
+`policy.reverted`, `surveyor.judged`, `audit.reviewed`, `key.enrolled`, `key.retired`,
+`roster.published`, `task.opened`, `task.closed`, `agent.suspended`, `introspection.summarised`.
+
+The **registry** of kinds lives with the schema ([EDR-0020](./0020-one-schema-generates-every-client.md)),
+so adding one is a wire-contract change that a reviewer sees — which is the only way this stays
+honest.
 
 **Statement text is stored verbatim**, both as submitted and as signed. The digest is the identity;
 the text is the evidence. Neither is truncated.
@@ -137,3 +146,4 @@ third attempt. Nothing about the old request changes.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: the kind list was presented as complete and had gone stale against four later records; it is now explicitly illustrative, with the registry living with the schema.

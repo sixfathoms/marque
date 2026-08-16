@@ -96,7 +96,15 @@ The checkable-statement grammar forbids `SET ROLE` and unrecognised function cal
 but it is a defence in Marque's parser rather than in the database, and that is the wrong place for
 one ([EDR-0006](./0006-every-statement-names-a-role.md) exists precisely to avoid relying on it).
 Use it for high-volume standing-order traffic where per-operator pools are impractical, and record
-the choice.
+the choice. Note also that a **human-approved out-of-grammar statement** — one that reached a person
+precisely because the parser could not bound it — may reset the role, degrading the session to the
+`shared` baseline for its duration. Attribution, not containment, is what is lost; the role's grants
+still bound it.
+
+**A `per_operator` user holds no privilege beyond the role it maps to** — ideally by being a member of
+that role and nothing else. Otherwise per-operator identity quietly becomes per-operator *authority*,
+and the role stops being the outer bound ([EDR-0006](./0006-every-statement-names-a-role.md), whose
+role introspection extends to these derived users).
 
 **Provisioning is not Marque's job.** Marque never issues `GRANT` or creates database users. A
 `per_operator` role names the mapping from federated subject to database user; if the user does not
@@ -125,9 +133,12 @@ attempt, no error, quiet logs, and the first symptom arrives during an incident.
 
 A statement the parser establishes as read-only may be served by a reader endpoint. Two constraints:
 
-- **Read-your-writes within a task.** After a write, Marque captures the writer's commit position and
-  any subsequent read in that task either goes to the writer or waits for a replica that has applied
-  it. Silently serving a stale read after a write an operator just made is how somebody concludes
+- **Read-your-writes, carried by a client-supplied version token.** After a write, the Pilot returns
+  the writer's commit position on the response; the client presents it on subsequent reads, which then
+  go to the writer or wait for a replica that has applied it. The token lives in the request/response
+  shape ([EDR-0020](./0020-one-schema-generates-every-client.md)), so it works identically for an
+  agent task, a `marque psql` session and a one-shot execution — none of which share a server-side
+  session. Silently serving a stale read after a write an operator just made is how somebody concludes
   their change did not work and applies it again
   ([ZFN-25](https://zrz.io/zfn/25-read-your-writes-version-token/)).
 - **Staleness is reported, never hidden.** A result served from a replica says so, with the observed
@@ -148,9 +159,12 @@ can trace to an approval in one query.
 
 **Easier.**
 
-- Attribution stops depending solely on Marque. Under `per_operator`, the database's own audit is an
-  independent witness — the thing you want when the question is whether Marque itself was tampered
-  with.
+- Attribution stops depending solely on Marque. Under `per_operator`, the database's own audit is a
+  witness **independent of the control plane** — the thing you want when the question is whether the
+  Harbourmaster was tampered with. It is **not** independent of the Pilot: the Pilot chooses which
+  operator's token to mint, so a compromised Pilot can attribute its own activity to any operator it
+  can mint for. The cross-check is the logbook, and a reconciliation job that diffs the target's audit
+  against it.
 - Least privilege can be genuinely per-person where it matters, enforced by the database rather than
   by policy.
 - No stored database passwords in the common deployment, and rotation is invisible.
@@ -197,3 +211,4 @@ can trace to an approval in one query.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: bounded the "independent witness" claim to independence *of the control plane*, required a per-operator user to hold no privilege beyond its role, and named the read-your-writes carrier as a client-supplied version token.

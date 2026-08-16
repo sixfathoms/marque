@@ -68,13 +68,20 @@ The `approver` signature on a marque carries a header naming how it was made:
 
 For `webauthn`, the assertion's `authenticatorData` and `clientDataJSON` travel in the signature's
 unprotected header so a verifier can reconstruct exactly what was signed and confirm the challenge
-matches the payload digest. **Verifiers implement both**, and the envelope is part of the signed
+equals **the digest of the JWS signing input** — the same quantity named in the table above, stated
+once rather than twice in two different ways. **Verifiers implement both**, and the envelope is part of the signed
 header so it cannot be swapped after the fact.
 
 This is genuinely more complexity than one envelope would be. The alternative — a software key in the
 browser — trades a hardware guarantee for implementation convenience in the one component most
 exposed to script execution, and that is the wrong trade
 ([ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/)).
+
+**Policy may require an envelope.** `require_envelope`
+([EDR-0015](./0015-policy-is-reviewed-configuration.md)) names which envelope a target accepts, and a
+`critical` target defaults to `webauthn` — so the file-backed fallback below cannot approve the
+highest-consequence changes. Relaxing that needs the same explicit acknowledgement `self_approval`
+does.
 
 For `webauthn`, `userVerification` is **required**, and the verifier checks the UV flag. An assertion
 without it is rejected: user presence alone is a tap, and approving a production change should cost a
@@ -181,3 +188,4 @@ executed is a hope, and this one will be reached for on the worst day
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: stated the WebAuthn challenge binding once rather than twice inconsistently, and added the `require_envelope` policy hook.

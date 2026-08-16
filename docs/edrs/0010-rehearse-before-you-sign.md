@@ -20,8 +20,11 @@ took 41 ms, and used an index scan"* rather than being asked to imagine it.
 
 The rehearsal is defence-in-depth, not a control:
 
-- It runs under a **rehearsal identity** with a read-mostly grant, a hard `statement_timeout`, and a
-  connection whose transaction can only ever be rolled back.
+- It runs **under the request's own role** — not a separate "rehearsal identity" — because a rehearsal
+  under a read-mostly grant could not measure a write, which is the entire point. What makes it safe
+  is the connection discipline below, not a narrower database user. Identity modes are
+  [EDR-0021](./0021-connections-identity-and-read-routing.md)'s; who may ask for a rehearsal at all is
+  [EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)'s.
 - Its results are **advice** ([EDR-0009](./0009-the-leadsman-is-advisory.md)). The binding limits are
   the assertions inside the real transaction ([EDR-0007](./0007-delegation-by-containment-proof.md)).
 - **A rehearsal is not a promise.** Data moves between rehearsal and execution, and the real
@@ -45,8 +48,9 @@ routinely wrong by orders of magnitude — which is worse than no number, becaus
 presented confidently is what gets approved.
 
 The cost is that rehearsing means *actually running* an unapproved statement. That is the thing to
-design carefully, and it is why the rehearsal has its own identity and its own connection discipline
-rather than reusing the execution path with a flag.
+design carefully, and it is why the rehearsal has its own connection discipline — a transaction that
+cannot commit — rather than reusing the execution path with a flag. It does **not** get a narrower
+database identity: under a read-mostly grant it could not measure a write at all.
 
 ## Decision
 
@@ -68,9 +72,14 @@ ROLLBACK;
 - **The rollback is structural.** The rehearsal code path contains no commit; the connection is
   returned to the pool only after a rollback is confirmed, and a connection whose state is uncertain
   is destroyed rather than reused. There is no flag whose wrong value commits a rehearsal.
-- **`lock_timeout` is short on purpose.** A rehearsal that blocks behind a lock, or holds one, is a
-  production incident caused by the tool that exists to prevent them. It fails fast and reports "not
-  rehearsed: could not acquire lock".
+- **`lock_timeout` is short on purpose** — but it bounds how long the rehearsal **waits** for a lock,
+  not how long it **holds** one. A rehearsal that acquires a row lock and then runs a slow second
+  statement blocks production writers for the difference. So the transaction also carries a **total
+  budget**, enforced two ways: `statement_timeout` per statement and
+  `idle_in_transaction_session_timeout` for the gaps, plus an **out-of-band watchdog that terminates
+  the backend** if the whole rehearsal transaction exceeds its budget. A rehearsal that blocks
+  production is a production incident caused by the tool that exists to prevent them, and one timeout
+  does not bound it.
 - **Rehearsal is refused on replicas that would be promoted**, and preferred against a reader
   endpoint where the engine and the workload allow it.
 
@@ -141,3 +150,4 @@ reads like a zero.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: removed the undefined "rehearsal identity" — a rehearsal runs under the request's own role, since a read-mostly grant could not measure a write — and bounded how long it *holds* a lock, not only how long it waits for one.

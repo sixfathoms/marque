@@ -82,8 +82,13 @@ Two signatures are required, and the Pilot rejects a marque carrying fewer:
 
 | Signature | Key | Asserts |
 |---|---|---|
-| `approver` | the approver's device key, the same hardware-backed key used for DPoP | a named human read this payload and agreed to it |
+| `approver` | the approver's enrolled device key — a WebAuthn credential in the console, a platform key from the CLI ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)). **Not necessarily the DPoP key**: in the console the two are different keys | a named human read this payload and agreed to it |
 | `authority` | the Harbourmaster's signing key, from the deployment's KMS or key store | policy permitted that approver, for that target, at that time |
+
+**Algorithms are named, not left to the key store.** `authority` is **ES256**; `approver` is ES256 in
+the `es256` envelope and the authenticator's algorithm in the `webauthn` one, restricted to ES256 or
+Ed25519. A verifier rejects any other `alg`, and the accepted set is deployment configuration with no
+"whatever the JWS header says" path — that is the classic downgrade.
 
 **`req` is the identity of the request.** It is a digest over the canonicalised statement text — not
 the request id. An approver who edits the statement produces a different digest and therefore a
@@ -111,9 +116,25 @@ against `req`. It does not ask the Harbourmaster anything.
 >   approver signature" was not sufficient: JWS signature entries are independent, so a two-approver
 >   marque could be stripped to one and still verify.
 
-**Revocation is a pull, not a question.** The Harbourmaster publishes a signed revocation list of
-marque identifiers, bounded by the maximum marque lifetime — nothing needs to stay on it longer than
-the thing it revokes. Pilots refresh it on a short interval. `revocation.policy` is per-marque:
+**Revocation is a pull, not a question.** The Harbourmaster publishes a **signed revocation list** —
+an artefact with a defined shape, because it is the single value that decides whether any marque in
+the estate is executable:
+
+```jsonc
+{ "tenant": "acme", "sequence": 9182, "issued_at": "…", "next_update": "…",
+  "revoked": ["mrq_…", …] }
+```
+
+- **Signed, sequenced and self-dating.** Staleness is measured against the **signed** `issued_at` and
+  `next_update`, cross-checked against monotonic elapsed time since fetch — never against local wall
+  clock alone. A Pilot **refuses a list whose `sequence` is lower than one it already holds**, so an
+  older signed list cannot be replayed.
+- Bounded by the maximum marque lifetime: nothing stays on it longer than the thing it revokes.
+- It is served by the control plane, so **a control-plane outage stops `required`-policy execution
+  once the list goes stale.** That asterisk on the offline property is real and is stated wherever
+  the property is claimed, rather than being quietly true only for `grace` marques.
+
+`revocation.policy` is per-marque:
 
 - `required` (the default) — the Pilot refuses if its list is older than the refresh interval.
   Security over availability, per [ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/).
@@ -147,8 +168,12 @@ the statement affects more rows than were approved.
   that person cannot approve. This is genuine friction and there is no version of the property that
   avoids it.
 - **Clock skew becomes a correctness concern.** A Pilot with a wrong clock either honours expired
-  marques or refuses valid ones. Pilots must run NTP and report their skew, and the deployment should
-  alarm on it.
+  marques or refuses valid ones. Pilots run NTP, report skew, and alarm on it — but that is
+  **self-reported**, and a Pilot in a network with blocked or hijacked time is exactly the one that
+  cannot know. The independent check is the signed revocation list: its `issued_at` and `next_update`
+  come from the control plane, so a Pilot whose local time disagrees with a freshly-fetched list by
+  more than a bounded margin refuses rather than trusting itself. Skew is therefore detected by
+  something the Pilot did not generate.
 - **Revoking is slower than deleting a row.** There is a bounded window, the refresh interval, in
   which a revoked marque may still execute. Shortening it costs traffic; `required` policy plus a
   short marque lifetime is the mitigation.
@@ -183,3 +208,4 @@ the statement affects more rows than were approved.
   on a fast path was never stated ([EDR-0029](./0029-the-fast-path-authority-chain.md)), and the
   "at least one approver signature" rule could not detect a stripped signature
   ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)). A note above points at both.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: gave the revocation list a field-level definition (signed `issued_at`, monotonic `sequence`, `next_update`, no downgrade), named the signature algorithms, corrected the claim that the approver's device key is the DPoP key (it is not, in the console), and made the revocation list the independent check on Pilot clock skew.

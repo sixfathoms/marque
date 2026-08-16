@@ -61,6 +61,18 @@ count.
 it must survive a restart or the fence is not a fence. It is small — bounded by the number of live
 marques — and entries are reaped once the marque expires.
 
+**The ledger carries an incarnation, so its loss is detectable.** A Pilot writes a durable incarnation
+identifier on first initialisation and reports it with every result. **An emptied or replaced ledger —
+a fresh volume, a node replacement, a restore — presents as a new incarnation**, which is a finding
+rather than a silent reset of every budget it was holding. Monitoring ledger *size* only measures
+reaping; continuity is what the fence actually depends on.
+
+**A claim has an owner and a lease.** `(marque_id, nonce)` is claimed by a named Pilot incarnation
+with a lease. If the process dies mid-execution, the claim does not sit in `in_progress` forever: on
+lease expiry it transitions to **`indeterminate`**, which is the truthful terminal state and the one
+a human resolves. Without an owner and a lease there is no transition out of "claimed, no outcome",
+and the operator is left with a budget spent and a request that never resolves.
+
 **Indeterminate outcomes are recorded as such.** If the Pilot cannot establish whether a transaction
 committed, the outcome is `indeterminate`, not `failed`. A retry with the same nonce returns
 `indeterminate`; a retry with a new nonce is refused if the budget is exhausted. The operator's path
@@ -70,6 +82,14 @@ truth, and is what a human needs in order to check.
 **`max_rows` is an assertion, not a limit clause.** Marque does not append `LIMIT` to a write. A
 statement that would affect more rows than approved is *wrong*, and truncating it to the approved
 count would apply a change nobody designed.
+
+**The outcome reaches the logbook by the same journal discipline as everything else.** The Pilot
+records the outcome in its own ledger first — that is the fence — and then reports it to the
+Harbourmaster, which appends the `execution.*` entry
+([EDR-0012](./0012-the-logbook-is-append-only.md)). The report is **retried until acknowledged**,
+keyed on `(marque, nonce)` so a repeat is idempotent. A Pilot holding unreported outcomes is a
+monitored signal: the ledger is the truth, and the logbook lagging it is a reconciliation problem,
+not a lost execution.
 
 **Every execution is streamed as it happens.** The CLI shows the claim, the fence pre-check, the
 statement, the assertions, and the commit as separate events. An operator watching a slow statement
@@ -116,3 +136,4 @@ thing to make an exception for and the exception would mean a read marque never 
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended after the expert panel's should-fix pass: added a ledger incarnation so its loss is detectable, an owner and lease so a claim can leave `in_progress` after a Pilot dies, and the path by which an outcome reaches the logbook.
