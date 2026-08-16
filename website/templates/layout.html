@@ -3,6 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- NOT PUBLIC-FACING YET. Marque is at design stage and this site is deliberately kept out of
+       search results and web archives. These meta directives are the ONLY lever available here: a
+       robots.txt is honoured at a domain root, and this is a project site served at a subpath, so a
+       robots.txt in this repository would land at /marque/robots.txt and be ignored. Do not remove
+       these tags until the project is deliberately made public. -->
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, nocache" />
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+  <meta name="bingbot" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+  <meta name="ia_archiver" content="noindex, noarchive" />
+  <meta name="archive.org_bot" content="noindex, noarchive" />
+  <meta name="referrer" content="no-referrer" />
   <title>{{title}}</title>
   <link rel="icon" href="{{base}}/img/favicon.svg" />
   <link rel="stylesheet" href="{{base}}/styles.css" />

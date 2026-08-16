@@ -11,7 +11,7 @@
 // GitHub, so the repository is a usable copy of the docs even with no build.
 import { readdir, readFile, writeFile, mkdir, rm, cp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, dirname, posix } from 'node:path';
+import { join, dirname, posix, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import { unified } from 'unified';
@@ -239,7 +239,7 @@ function redirectHtml(toPath) {
   const safe = escapeHtml(toPath);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="0; url=${safe}"><link rel="canonical" href="${safe}">
-<meta name="robots" content="noindex,nofollow"><title>Redirecting…</title></head>
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet"><title>Redirecting…</title></head>
 <body><p>Redirecting to <a href="${safe}">${safe}</a>…</p></body></html>\n`;
 }
 
@@ -620,9 +620,46 @@ async function main() {
     await cp(join(DIST_DIR, '404', 'index.html'), join(DIST_DIR, '404.html'));
   }
 
+  await assertNotIndexable();
+
   console.log(
     `Built landing + ${docs.length} doc page(s) + ${edrs.length} EDR(s) + ${entries.length} changelog entr${entries.length === 1 ? 'y' : 'ies'} → ${DIST_DIR}`,
   );
+}
+
+// Marque is at design stage and this site is deliberately kept out of search
+// results and web archives. A robots.txt cannot do it: robots.txt is honoured at
+// a domain ROOT, and this is a project site served at a subpath, so one in this
+// repository would land at /marque/robots.txt and be ignored. The per-page meta
+// directives in templates/layout.html are therefore the only lever — which makes
+// them exactly the kind of thing that gets dropped by an innocent template edit.
+// So the build refuses to produce a page without them.
+async function assertNotIndexable() {
+  const offenders = [];
+  const walk = async (dir) => {
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) await walk(p);
+      else if (e.name.endsWith('.html')) {
+        const html = await readFile(p, 'utf8');
+        const meta = html.match(/<meta[^>]+name="robots"[^>]*>/i)?.[0] ?? '';
+        if (!/noindex/i.test(meta) || !/noarchive/i.test(meta)) {
+          offenders.push(relative(DIST_DIR, p));
+        }
+      }
+    }
+  };
+  await walk(DIST_DIR);
+  if (offenders.length) {
+    throw new Error(
+      `${offenders.length} emitted page(s) lack a robots meta with noindex+noarchive:\n  ` +
+        offenders.slice(0, 10).join('\n  ') +
+        '\n\nThis site is deliberately not indexable while Marque is at design stage, and a\n' +
+        'robots.txt cannot enforce it from a project subpath. Restore the directives in\n' +
+        'website/templates/layout.html (and redirectHtml in this file) rather than removing\n' +
+        'this check.',
+    );
+  }
 }
 
 main().catch((err) => {

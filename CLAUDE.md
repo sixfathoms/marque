@@ -50,15 +50,20 @@ directory that is not a sidebar category; a changelog page missing its `<!-- @en
    would just move the conflicting line.
 3. **The changelog tag vocabulary is closed**, defined once in `CHANGELOG_TAGS` in
    `website/build.mjs` and documented in `docs/changelog/README.md`. Adding a tag means editing both.
-4. **Render mermaid diagrams before committing.** Nothing validates them; a broken one builds fine and
+4. **The site is deliberately not indexable or archivable.** Marque is at design stage, so
+   `website/templates/layout.html` carries `noindex, nofollow, noarchive, nosnippet, noimageindex`
+   plus per-crawler and archiver variants, and the build **fails** if any emitted page lacks them. A
+   `robots.txt` cannot do this job here: robots.txt is honoured at a domain ROOT and this is a
+   project site at a subpath, so one in this repository would land at `/marque/robots.txt` and be
+   ignored. Do not remove the tags or the guard until the project is deliberately made public.
+5. **Render mermaid diagrams before committing.** Nothing validates them; a broken one builds fine and
    renders as an error box.
-5. **Cite pull requests as links**, never a bare `#12`. Cite Field Notes as
+6. **Cite pull requests as links**, never a bare `#12`. Cite Field Notes as
    `[ZFN-N](https://zrz.io/zfn/N-slug/)`.
-6. **British spelling in prose.**
-7. **Be honest in Consequences.** A record with no "harder" section has not been thought through, and
+7. **British spelling in prose.**
+8. **Be honest in Consequences.** A record with no "harder" section has not been thought through, and
    writing one that reads like marketing copy is worse than not writing it.
-
-8. **Discharge every cross-record obligation in the same commit.** The corpus's dominant failure mode
+9. **Discharge every cross-record obligation in the same commit.** The corpus's dominant failure mode
    is a new record stating an obligation on an older one — "EDR-0010's report gains `write_set`",
    "this joins the list in EDR-0004", "EDR-0026's capability table gains…" — and the obligation never
    being carried out. Three of those shipped and were caught only by a third adversarial read. If you
