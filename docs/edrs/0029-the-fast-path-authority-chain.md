@@ -136,7 +136,11 @@ verification property rather than an intention.
 ([EDR-0015](./0015-policy-is-reviewed-configuration.md)), and group membership is control-plane
 state that an offline Pilot cannot resolve. So:
 
-- A standing order whose `invokers` are **principals** is fully offline-verifiable.
+- A standing order whose `invokers` are **principals** is fully offline-verifiable **once the
+  principal roster exists** ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)). As
+  originally written it was not: `sub` is a string the Harbourmaster wrote, and the only
+  cryptographic check was `cnf.jkt`, which had no anchored source either — so a compromised control
+  plane could name a genuine principal and supply its own key.
 - A standing order whose `invokers` are **groups** is not: a compromised Harbourmaster could invoke a
   genuine standing order naming a principal of its choosing. It remains bounded to that order's
   approved statement shape, its parameter constraints, its budget and its rate limits — it cannot
@@ -192,3 +196,4 @@ state that an offline Pilot cannot resolve. So:
 
 - **2026-08-15**: Accepted, following an expert-panel finding that no record specified what fills the
   approver limb on a fast path.
+- **2026-08-16**: Amended after a second expert panel: corrected the claim that principal-named `invokers` are fully offline-verifiable; they were not until the principal roster existed ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

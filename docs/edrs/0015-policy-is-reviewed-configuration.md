@@ -63,7 +63,7 @@ being unsure whether it is current. With the repository as the source, the answe
                  "min_approvals": 1, "self_approval": false,
                  "may_delegate": ["group:data-oncall"],
                  "max_marque_ttl": "1h", "max_grace_seconds": 0,
-                 "require_envelope": "webauthn",
+                 "require_envelope": "webauthn", "signing_surface": "local",
                  "surveyor": { "jurors": 3 },
                  "default_budget": { "executions": 1 } } ],
   "standing_orders": [ … ]
@@ -87,14 +87,27 @@ being unsure whether it is current. With the repository as the source, the answe
   credential wearing a lease. Raising it above zero requires the same explicit acknowledgement field
   `self_approval` needs ([EDR-0004](./0004-marques-are-signed-leases.md)).
 - **`require_envelope` names which approver-signature envelope is acceptable**
-  ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)). A `critical` target **defaults to
-  `webauthn`** — hardware-backed, user-verified per signature — so a file-backed platform key cannot
-  approve the highest-consequence changes. Relaxing it on a `critical` target requires the
-  acknowledgement field.
+  ([EDR-0023](./0023-approver-keys-enrolment-and-recovery.md)) — it governs the **key**. A `critical`
+  target defaults to `webauthn`, so a file-backed platform key cannot approve the highest-consequence
+  changes.
+- **`signing_surface` names where the payload is rendered and signed**, which is a *different*
+  question and was originally conflated with the one above. `local` requires locally-installed code
+  the control plane does not serve; `critical` targets **default to `local`**
+  ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)). Making `webauthn` the `critical`
+  default on its own pushed those approvals into the browser — the surface the control plane serves —
+  which was strictly worse than the file-backed key it was guarding against. Relaxing either on a
+  `critical` target requires the acknowledgement field.
 - **`surveyor.jurors` sets the Tier-B panel size**, with a floor of 3
   ([EDR-0017](./0017-conformance-matching-may-route-never-widen.md)).
 - **`may_delegate` bounds who can create delegations**, and a delegation may never exceed the
   delegator's own policy grant.
+
+**Applying produces an anchored artefact.** The applied version is co-signed by **k approver device
+keys** and epoch-chained, in the same family as the roster
+([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)), and distributed to
+Pilots — which is what lets a Pilot **recompute** an approval requirement rather than believe the one
+in a marque's payload ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)). The control plane
+transports the artefact and cannot author it.
 
 **Applying.** `marque policy apply` requires a fresh authentication, prints a **diff of authority**
 rather than a diff of text — "adds 4 people to who can approve writes on prod-primary", "widens
@@ -161,3 +174,4 @@ reversion that did not happen is otherwise indistinguishable from one that did.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: added `max_grace_seconds`, `require_envelope` (hardware on `critical` by default) and `surveyor.jurors`, and specified break-glass reversion as an apply that can refuse rather than a silent restore.
+- **2026-08-16**: Amended after a second expert panel: separated `signing_surface` from `require_envelope` — conflating them had pushed `critical` approvals into the browser, which is worse than the file-backed key it was guarding against — and made the applied policy version an anchored, co-signed artefact ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

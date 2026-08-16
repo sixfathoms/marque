@@ -123,6 +123,14 @@ Static files: no server rendering, no framework requirement, no third-party orig
 strict CSP with no `unsafe-inline`, which rules out a build that injects inline bootstrap script —
 that constraint drives the tooling choice rather than the other way round.
 
+**For `critical` targets the console does not sign.** Its assets are served by the control plane, and
+a WebAuthn challenge is an opaque digest — so a compromised server can render one payload and
+challenge over another ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)). On those targets
+the console is **review-and-hand-off**: it shows the queue, the analysis and the rehearsal, and hands
+the approver a request id to sign in the installed CLI. Below `critical` it signs as described above.
+This costs the phone-approval story on exactly the targets where escalation latency hurts most, and
+that trade is named rather than hidden.
+
 Sessions are short and are **not sufficient to approve**: signing needs the authenticator regardless,
 so a stolen cookie yields reading, not authority. That is what allows the session TTL to be a
 usability decision rather than the last line of defence.
@@ -167,3 +175,4 @@ usability decision rather than the last line of defence.
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: dropped the stale numeral from the mutating-action list, and required an edited statement to be re-rehearsed and the executing client to confirm a digest change.
+- **2026-08-16**: Amended after a second expert panel: the console no longer signs for `critical` targets — its assets are served by the control plane and a WebAuthn challenge is an opaque digest ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

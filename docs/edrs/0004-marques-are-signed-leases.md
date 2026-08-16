@@ -74,7 +74,8 @@ multiple signatures over one payload natively. The payload:
   "fence": ["tier = 'sandbox'"],        // EDR-0007, applied by the Pilot
   "revocation": { "policy": "required", "grace_seconds": 0 },
   "act": [ … ],                          // delegation chain, if any
-  "analysis": "sha256:1a7e…"            // what the approver was shown
+  "analysis": "sha256:1a7e…",           // what the approver was shown
+  "display": "…"                         // canonical rendering, shown verbatim to the signer (EDR-0036)
 }
 ```
 
@@ -209,3 +210,4 @@ the statement affects more rows than were approved.
   "at least one approver signature" rule could not detect a stripped signature
   ([EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md)). A note above points at both.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: gave the revocation list a field-level definition (signed `issued_at`, monotonic `sequence`, `next_update`, no downgrade), named the signature algorithms, corrected the claim that the approver's device key is the DPoP key (it is not, in the console), and made the revocation list the independent check on Pilot clock skew.
+- **2026-08-16**: Amended after a second expert panel: the payload gains `display`, a canonical rendering covered by every signature ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

@@ -42,7 +42,10 @@ The fix:
   so an unanchored roster is a finding even if it verifies.
 
 This also supplies the key→principal mapping
-[EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) requires and never sourced.
+[EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) requires and never sourced — and,
+per [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md), it is the **principal** roster rather
+than only the approver set: operator and agent keys ride the same artefact, so `cnf.jkt` resolves
+against something anchored too.
 
 ## Context
 
@@ -82,6 +85,7 @@ channel is part of the trust boundary, not plumbing around it.
   "prev": "sha256:…",                       // the previous roster's digest; null at genesis
   "entries": [
     { "principal": "sam@acme.example", "jkt": "…", "envelope": "webauthn",
+      "capabilities": ["approver"],        // also "operator", "agent" — EDR-0036
       "enrolled_at": "…", "retired_at": null },
     …
   ],
@@ -209,3 +213,4 @@ doing it silently. So:
 
 - **2026-08-15**: Accepted, following the expert panel's most serious finding: the Pilot's trust
   anchor for approver public keys was the Harbourmaster itself.
+- **2026-08-16**: Amended after a second expert panel: extended to the **principal** roster — entries carry a capability, so operator and agent keys ride the same anchored artefact ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

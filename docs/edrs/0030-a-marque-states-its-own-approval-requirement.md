@@ -72,6 +72,14 @@ Because the escalation chain is computed at submission and recorded
 ([EDR-0019](./0019-escalation-is-a-chain.md)), `required` and `eligible` are known before anybody
 signs — so all signatures cover the same payload, as JWS requires.
 
+> [!NOTE]
+> **Binding the requirement is necessary and not sufficient.** The payload is composed by the
+> Harbourmaster before any signature exists, so the adversary this record defends against also
+> *authors* `approvals.required`. [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md) closes
+> that: policy becomes an anchored artefact and the Pilot **recomputes** the requirement, refusing a
+> marque whose payload disagrees. The block below is still what the signatures cover — that is what
+> stops stripping — it is simply no longer believed on its own.
+
 **Verification becomes:**
 
 1. exactly one valid `authority` signature;
@@ -142,3 +150,4 @@ were required but which sequence of stages produced them. It is what makes an af
 
 - **2026-08-15**: Accepted, following an expert-panel finding that a marque's signature set is
   malleable and its approval requirement was not covered by any signature.
+- **2026-08-16**: Amended after a second expert panel: noted that binding the requirement is necessary and not sufficient, since the Harbourmaster authors it; the Pilot now recomputes it from anchored policy ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

@@ -28,6 +28,8 @@ issue, not a documentation issue:
 | A statement cannot write to a relation outside the delegation's declared object scope without the transaction aborting — including via cascades, triggers and rewritten targets | [EDR-0033](docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md) |
 | A row whose fence expression is NULL is treated as outside the fence, not inside it | [EDR-0007](docs/edrs/0007-delegation-by-containment-proof.md) |
 | Every Pilot method verifies a submitter signature — the control plane relays, it does not authorise | [EDR-0034](docs/edrs/0034-the-pilot-api-has-one-authorisation-model.md) |
+| An authentic approver signature attests a payload the approver actually saw — a compromised control plane cannot render one marque and obtain a signature over another | [EDR-0036](docs/edrs/0036-what-is-signed-must-be-what-was-seen.md) |
+| The approval requirement a marque claims is recomputed by the Pilot from anchored policy, not believed from the payload | [EDR-0036](docs/edrs/0036-what-is-signed-must-be-what-was-seen.md), [EDR-0030](docs/edrs/0030-a-marque-states-its-own-approval-requirement.md) |
 | A stolen session cannot enrol an approver key or otherwise become approval authority | [EDR-0023](docs/edrs/0023-approver-keys-enrolment-and-recovery.md), [EDR-0031](docs/edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md) |
 | Cross-tenant confusion cannot produce a valid marque — a Pilot trusts only its own tenant's keys | [EDR-0025](docs/edrs/0025-tenants-are-partitioned-from-day-one.md), [EDR-0032](docs/edrs/0032-a-marque-binds-its-executor-tenant-and-pilot.md) |
 | The local proxy forwards no bytes and brokers every statement that crosses it | [EDR-0022](docs/edrs/0022-local-proxy-brokers-every-statement.md) |
@@ -71,6 +73,11 @@ discussion, but they are not surprises:
   rehearsals, returning `rows_affected` and `duration_ms` — an oracle, quota'd per principal and
   visible in the target's own logs, but an oracle
   ([EDR-0034](docs/edrs/0034-the-pilot-api-has-one-authorisation-model.md)).
+- **WebAuthn user verification proves presence, not agreement to a payload.** The challenge is an
+  opaque digest, so a compromised renderer can display one thing and challenge over another. The
+  mitigations are `signing_surface: local` for `critical` targets and the signed `display` field, and
+  neither makes a browser served by the adversary a sound signing surface
+  ([EDR-0036](docs/edrs/0036-what-is-signed-must-be-what-was-seen.md)).
 - **Infrastructure control is a trust root.** Whoever deploys Pilots sets their genesis roster root
   and therefore can define who approves. Marque bounds what that can do *silently* — the root is
   recorded, reported by each Pilot, and changing it is a re-deployment — but it does not pretend

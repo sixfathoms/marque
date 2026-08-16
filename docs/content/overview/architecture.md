@@ -141,7 +141,11 @@ signatures over one payload:
 `approver` — the human's device key, *this person agreed to this*. `authority` — the Harbourmaster's
 key, *policy permitted them to*. Both required.
 
-Four of those fields exist because a review found the design asserting properties nothing enforced.
+Five of those fields exist because review found the design asserting properties nothing enforced.
+`display` is a canonical rendering covered by every signature, because a WebAuthn challenge is an
+opaque digest and the console's assets are served by the control plane — so without it an authentic
+signature can be induced over a payload nobody saw
+([EDR-0036](../../edrs/0036-what-is-signed-must-be-what-was-seen.md)).
 `auth` names the human-signed artefact when no human is present at mint time
 ([EDR-0029](../../edrs/0029-the-fast-path-authority-chain.md)); `approvals` states the requirement
 inside what every signature covers, so a signature cannot be stripped

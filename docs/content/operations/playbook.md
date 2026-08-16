@@ -200,6 +200,11 @@ automatic.
 In every case the logbook is the ground truth, and it is the thing to verify first: run the chain
 verification and compare against the external anchor before drawing conclusions from it.
 
+**Also re-render `display`.** On a suspected control-plane compromise, re-render the canonical
+`display` for every marque signed during the window and compare it to what the logbook says the
+approver was shown ([EDR-0036](../../edrs/0036-what-is-signed-must-be-what-was-seen.md)). A
+substituted payload is authentic in every other respect; this is the check that finds it.
+
 **But be precise about what that proves.** Chain plus anchor prove **no rewrite** of entries up to the
 last anchored head. They do not prove **no fabrication**: entries after that head are
 attacker-influenced in *both* directions — invented as well as omitted. So for the window since the

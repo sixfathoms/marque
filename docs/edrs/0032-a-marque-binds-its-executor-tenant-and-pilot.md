@@ -61,6 +61,10 @@ the request, signed by the key the marque names.
 
 - The Pilot's check becomes **cryptographic and local**: does this caller hold the key this marque was
   issued to? It needs no token endpoint and no identity provider.
+- **The key→principal mapping is resolved against the anchored principal roster**
+  ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)). Without that this field proves only
+  that *some* key was used, and a compromised control plane would simply write its own thumbprint
+  into it — which is what a second review found.
 - An access token becomes an **optimisation and a second factor**, not a dependency. When the control
   plane is up, the Pilot may additionally require one; when it is down, proof of possession stands
   alone.
@@ -146,3 +150,4 @@ rather than left implicit.
 
 - **2026-08-15**: Accepted, following an expert-panel finding that three asserted bindings had no
   payload field and no verification rule.
+- **2026-08-16**: Amended after a second expert panel: stated that `cnf.jkt` resolves against the anchored principal roster; without that it proved only that *some* key was used ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

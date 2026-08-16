@@ -66,9 +66,12 @@ word for a classification is the plane split working.
 
 A request to any Pilot method carries a signature by the **submitter's own key** over the request
 digest — the same key bound into a marque as `cnf.jkt`
-([EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md)). The Pilot verifies it against
-the roster ([EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md)) or, for
-non-approver operators, against the enrolled principal set distributed with it.
+([EDR-0032](./0032-a-marque-binds-its-executor-tenant-and-pilot.md)). The Pilot verifies it against the **principal roster** — the same k-of-n, epoch-chained,
+genesis-anchored artefact that carries approver keys, extended by
+[EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md) to carry operator and agent keys with a
+capability field. An earlier draft of this record said "the enrolled principal set distributed with
+it", which had no schema, no author, no k-of-n rule and no anchor — and therefore reopened exactly
+the oracle this record closes.
 
 | Method | Requires |
 |---|---|
@@ -161,3 +164,4 @@ identity ([EDR-0021](./0021-connections-identity-and-read-routing.md)), so it is
 
 - **2026-08-15**: Accepted, following an expert-panel finding that only `Execute` had a stated caller
   check.
+- **2026-08-16**: Amended after a second expert panel: deleted "the enrolled principal set distributed with it" — an undefined artefact with no anchor, which reopened the very oracle this record closes — in favour of the principal roster ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).

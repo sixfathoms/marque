@@ -77,11 +77,16 @@ browser — trades a hardware guarantee for implementation convenience in the on
 exposed to script execution, and that is the wrong trade
 ([ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/)).
 
-**Policy may require an envelope.** `require_envelope`
+**Policy may require an envelope — and, separately, a surface.** `require_envelope`
 ([EDR-0015](./0015-policy-is-reviewed-configuration.md)) names which envelope a target accepts, and a
-`critical` target defaults to `webauthn` — so the file-backed fallback below cannot approve the
-highest-consequence changes. Relaxing that needs the same explicit acknowledgement `self_approval`
-does.
+`critical` target defaults to `webauthn`, so the file-backed fallback below cannot approve the
+highest-consequence changes.
+
+**That is a statement about the key, not about where signing happens**, and the two were originally
+conflated. An envelope requirement alone pushed `critical` approvals into the browser, whose assets
+the control plane serves; `signing_surface: local`
+([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)) is the setting that keeps the rendering
+out of the adversary's hands. A platform authenticator works from the CLI, so the two compose.
 
 For `webauthn`, `userVerification` is **required**, and the verifier checks the UV flag. An assertion
 without it is rejected: user presence alone is a tap, and approving a production change should cost a
@@ -189,3 +194,4 @@ executed is a hope, and this one will be reached for on the worst day
 
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated the WebAuthn challenge binding once rather than twice inconsistently, and added the `require_envelope` policy hook.
+- **2026-08-16**: Amended after a second expert panel: stated that `require_envelope` governs the key and `signing_surface` governs where signing happens; the two were conflated ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)).
