@@ -116,6 +116,13 @@ being unsure whether it is current. With the repository as the source, the answe
 - **`urgency_may_collapse_stages`** decides whether urgency may reduce a multi-stage chain to one,
   and defaults to **false**. On, it lets urgency manufacture authority nobody granted, which is why it
   is a deliberate per-target choice rather than a global behaviour.
+> [!NOTE]
+> **"Break glass" means exactly one thing in this corpus**, and it is
+> [EDR-0037](./0037-emergency-paths.md)'s execution capability. The emergency *policy apply* here is
+> `--unreviewed`, and a marque carrying `revocation.policy: grace` is a **grace marque**
+> ([EDR-0004](./0004-marques-are-signed-leases.md)). Three things were briefly called break-glass,
+> which is how an operator ends up reaching for the wrong one during an incident.
+
 - **`may_grant_unbounded_break_glass`** names who may issue a break-glass grant whose `scope` is
   `any`. That is the widest object in the system, so granting it is its own permission rather than a
   value someone can type ([EDR-0037](./0037-emergency-paths.md)).
@@ -144,22 +151,23 @@ combination is caught where it is configured rather than discovered at execution
 An empty approver set must never silently mean "anyone" or "no one" — the first is a hole and the
 second is an outage.
 
-**Emergency changes exist and are conspicuous.** `--break-glass` applies without a merged review, and
+**Emergency changes exist and are conspicuous.** `marque policy apply --unreviewed` applies without a
+merged review, and
 it: requires two authenticated principals present, sets an automatic expiry after which the previous
 version is restored unless the change has been merged, and posts to the deployment's notification
 channel immediately. The emergency path is not blocked; it is made impossible to use invisibly.
 
 **Both epochs are signed at apply time.** A policy version is a k-of-n co-signed artefact
 ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)), and an *automatic* reversion has no
-signers present — so the break-glass ceremony pre-signs **both** the change and its reversion, and
+signers present — so the unreviewed-apply ceremony pre-signs **both** the change and its reversion, and
 the automatic step is the publication of an already-signed artefact rather than an unsignable act.
 Its two principals must therefore be approver-key holders. Without this the reversion either ships an
-unsigned artefact no Pilot accepts, or leaves Pilots enforcing the break-glass policy while the
+unsigned artefact no Pilot accepts, or leaves Pilots enforcing the unreviewed policy while the
 control plane believes it reverted — the worst of both.
 
 **Reversion is an apply, not a restore.** The automatic reversion runs the **same validation** as an
 ordinary apply, including the refusal rules above. If the previous version no longer validates — a
-group has since emptied, a target has gone — the reversion **does not proceed**: the break-glass
+group has since emptied, a target has gone — the reversion **does not proceed**: the unreviewed
 version is held in place and the deployment is alerted loudly. Silently restoring a policy that
 cannot be applied would be the worst of both outcomes. Notification goes out **before** expiry as
 well as at it, and **both the attempted reversion and its outcome are recorded in the logbook** — a
@@ -210,3 +218,4 @@ reversion that did not happen is otherwise indistinguishable from one that did.
 - **2026-08-16**: Amended after the second panel's should-fix pass: split `require_key_backing` from `require_envelope` — the envelope was the wrong proxy, since `es256` covers both a Secure Enclave key and the file fallback — and made a `transform` provider on a target carrying standing orders a loud refusal at apply time.
 - **2026-08-16**: Amended after the second panel's synthesis: break-glass now pre-signs both epochs, since an automatic reversion has no signers and cannot produce the k-of-n artefact [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md) requires; added the per-target signing and presence fields.
 - **2026-08-16**: Amended for the emergency paths and operator surfaces: added `emergency_approvers`, `urgency_may_collapse_stages` (default false) and `may_grant_unbounded_break_glass` ([EDR-0037](./0037-emergency-paths.md)).
+- **2026-08-16**: Terminology and staleness fix: renamed the emergency policy-apply flag to `--unreviewed`. Three different things were briefly called break-glass, which is how an operator reaches for the wrong one during an incident.

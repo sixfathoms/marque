@@ -177,11 +177,11 @@ approve. **A timeout will never approve it for you**
 ([EDR-0019](../../edrs/0019-escalation-is-a-chain.md)).
 
 If the chain is empty — "nobody can approve this" — that is a policy problem, not a request problem.
-Fix the policy through review, or use break-glass.
+Fix the policy through review, or use `marque policy apply --unreviewed`.
 
-### Break-glass policy change
+### Emergency policy change (`--unreviewed`)
 
-`marque policy apply --break-glass` requires two authenticated principals, posts to the notification
+`marque policy apply --unreviewed` requires two authenticated principals, posts to the notification
 channel immediately, and **sets an automatic expiry after which the previous version is restored**
 unless the change has been merged. Merge the corresponding pull request the same day, or your change
 reverts itself at the worst possible moment
@@ -198,13 +198,13 @@ marques with `revocation.policy = required`. **Execution itself does not need th
 the caller proves possession of the key the marque names rather than presenting a token
 ([EDR-0032](../../edrs/0032-a-marque-binds-its-executor-tenant-and-pilot.md)), and execution requires
 no fresh interactive authentication even on a `critical` target
-([EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)). Marques deliberately marked break-glass carry a
-`grace` window and keep working; every such execution is flagged in the logbook as having run without
+([EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)). Marques deliberately marked with `grace` carry a
+window and keep working; every such execution is flagged in the logbook as having run without
 a fresh revocation check, and each one should be reviewed afterwards.
 
 There is no way to mint a new marque with the control plane down. That is deliberate, and it is why
-pre-issued break-glass marques for a `critical` target are worth holding *before* you need them —
-noting that break-glass **without** a control plane is itself deferred
+pre-issued **grace** marques for a `critical` target are worth holding *before* you need them —
+noting that emergency access **with the control plane unreachable** is itself deferred
 ([scope](../overview/scope.md)), so what exists today is a pre-issued `grace` marque and nothing more
 automatic.
 

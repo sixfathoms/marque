@@ -40,7 +40,7 @@ Found by the expert panel. One unamended clause contradicted three things at onc
 
 **It broke the flagship property.** `architecture.md`'s failure table says "Identity provider down →
 already-signed marques still execute". False for a critical target under the old clause. Worse, the
-playbook recommends holding pre-issued break-glass marques *specifically for critical targets* — the
+playbook recommends holding pre-issued **grace** marques *specifically for critical targets* — the
 exact class for which the requirement is unsatisfiable during the outage they are held for. The
 design's most-repeated advantage failed precisely where it was advertised hardest.
 
@@ -97,7 +97,7 @@ It also appears in the canonical `display`
 ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)), so an approver signing on the
 `signing_surface: local` path can see that presence was or was not required.
 
-**Corrections.** `architecture.md`'s failure table and the playbook's break-glass paragraph are
+**Corrections.** `architecture.md`'s failure table and the playbook's grace-marque paragraph are
 corrected: already-signed marques execute with the identity provider down, unconditionally, unless
 the target requires execution presence — in which case the operator's authenticator still works,
 because that is local.
@@ -144,3 +144,4 @@ because that is local.
 - **2026-08-15**: Accepted, following an expert-panel finding that execution freshness contradicted
   offline execution, the agent flow, and EDR-0006's criticality keying.
 - **2026-08-16**: Amended after the second panel's synthesis: `require_execution_presence` now exists in EDR-0004's payload and EDR-0015's targets, and is monotone across the two sources.
+- **2026-08-16**: Terminology and staleness fix: uses "grace marque" for the pre-issued offline case rather than "break-glass".

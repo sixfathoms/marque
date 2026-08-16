@@ -174,7 +174,8 @@ must be co-signed; the revocation list only ever removes it.
 - `required` (the default) — the Pilot refuses if its list is older than the refresh interval.
   Security over availability, per [ZFN-2](https://zrz.io/zfn/2-engineering-priority-ordering/).
 - `grace` — the Pilot may execute with a list up to `grace_seconds` stale. Reserved for marques an
-  approver has deliberately marked as break-glass, and every such execution is flagged in the
+  approver has deliberately marked with `grace` — a **grace marque**, which is *not* break glass
+  ([EDR-0037](./0037-emergency-paths.md)) — and every such execution is flagged in the
   logbook as having run without a fresh revocation check.
 
 **Expiry is server-side and automatic.** `exp` is enforced by the Pilot from its own clock, and the
@@ -248,3 +249,4 @@ the statement affects more rows than were approved.
 - **2026-08-16**: Amended after the second panel's should-fix pass: widened the revocation list's `revoked` array to a typed set — the fast path verifies *artefacts*, and a list of marque ids cannot revoke the standing order that keeps minting them — and stated plainly who signs the list and what a compromised signer can and cannot do with it.
 - **2026-08-16**: Amended after the second panel's synthesis: corrected "Verification is local", which was verbatim the construction [EDR-0031](./0031-approver-keys-are-anchored-outside-the-control-plane.md) exists to close, and added the payload fields five later records had claimed it carried.
 - **2026-08-16**: Amended for the emergency paths and operator surfaces: added `justification`, `urgent` and `stages_collapsed` to the payload — a break-glass justification is bound into what every signature covers, so it cannot be added or edited afterwards ([EDR-0037](./0037-emergency-paths.md)).
+- **2026-08-16**: Terminology and staleness fix: stopped calling a `revocation.policy: grace` marque "break-glass" — it is a **grace marque**, and break glass now means one thing only ([EDR-0037](./0037-emergency-paths.md)).

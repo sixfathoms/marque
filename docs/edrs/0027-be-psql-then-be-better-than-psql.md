@@ -127,6 +127,14 @@ that gets reviewed rather than a prefix match.
 joins an allowlisted catalog view to a user table is *not* introspection — it is an ordinary read
 against a user table, and it takes the ordinary path.
 
+### Already better than psql
+
+**Escalation is inline, in the first release.** A referred statement shows the chain, who is being
+waited on and a share link, and the prompt says when it clears
+([EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)); `\urgent` and `\breakglass` are
+available mid-session ([EDR-0037](./0037-emergency-paths.md)). This was listed below as a later
+ambition until those records shipped it.
+
 ### Better than psql, later
 
 Direction rather than commitment, recorded so it is not re-litigated:
@@ -134,10 +142,6 @@ Direction rather than commitment, recorded so it is not re-litigated:
 - **Scope shown before you run.** Marque knows your delegation and can parse as you type, so a
   statement heading outside your scope can say so before you press enter rather than after.
 - **Rehearsal on demand.** `\rehearse` returns the measured row count without submitting anything.
-- **Escalation inline.** A referred statement shows the chain, who is being waited on and a share
-  link, and the prompt tells you when it clears
-  ([EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)). `\urgent` and `\breakglass`
-  are available mid-session ([EDR-0037](./0037-emergency-paths.md)).
 - **Schema-aware completion** that reflects what your role can actually reach, rather than everything.
 
 None of this is in the first release, and none of it changes the security model — each is Marque
@@ -189,3 +193,4 @@ surfacing what it already knows.
 - **2026-08-16**: Amended after the second panel's should-fix pass: excluding `pg_proc.prosrc` was insufficient — definition-returning functions reach view bodies, defaults and check expressions — so those are excluded from the purity allowlist for this class and the read channel is stated in SECURITY.md. Also recorded that preferring `information_schema` makes `\dt` show fewer objects than real psql, which is a deliberate compatibility deviation.
 - **2026-08-16**: Amended in the second panel's should-fix pass: named `prosqlbody` and `pg_get_function_sqlbody` alongside their siblings, and restated the exclusion as a **closure invariant** — a function that can return the value of an excluded column is itself excluded — since a list goes stale.
 - **2026-08-16**: Amended for the emergency paths and operator surfaces: `\\urgent` and `\\breakglass` are available mid-session, and a referred statement shows the chain and a share link ([EDR-0037](./0037-emergency-paths.md), [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)).
+- **2026-08-16**: Terminology and staleness fix: moved inline escalation out of "later" — [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md) ships it in the first release, so listing it as an ambition was stale the day that record landed.
