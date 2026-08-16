@@ -151,6 +151,8 @@ being waited on, so you can approve it elsewhere and re-run.
 
 - [Architecture](./architecture.md) — the components, the object model, and the trust boundaries.
 - [Scope](./scope.md) — what is in, what is out, the phases, and the prior art.
+- [Implementation plan](./implementation-plan.md) — how Phase 1 gets built, in what order, and what
+  proves each step.
 - [Ideas](./ideas.md) — candidates that are not decided, and two that are already refused.
 - [Agents](../concepts/agents.md) — three intersected scopes, escalation, and what an agent never gets.
 - [The cast](../concepts/cast.md) — Harbourmaster, Pilot, Leadsman, Surveyor, Tender: what each is

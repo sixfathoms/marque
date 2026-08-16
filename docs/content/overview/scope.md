@@ -112,6 +112,9 @@ writes; reads routed to replicas under a freshness bound
 
 ## Phases
 
+Coarse, and deliberately so. [Implementation plan](./implementation-plan.md) sequences Phase 1 into
+milestones with the test that proves each one.
+
 **Phase 0 — design.** *This.* Architecture, scope, cast, decision records, docs site, changelog. Ends
 with a design review.
 
