@@ -301,8 +301,10 @@ func TestStampVariablesAreAssignedOnce(t *testing.T) {
 	text := strings.Join(codeLines(raw), "\n")
 
 	for _, name := range []string{"COMMIT", "MARQUE_DIRTY"} {
-		// Any assignment flavour: =, :=, ?=, +=, ::=.
-		found := regexp.MustCompile(`(?m)^`+name+`\s*[:?+]*=`).FindAllString(text, -1)
+		// Every assignment flavour, including `!=`, which is GNU Make 4's shell
+		// assignment. It is live on the Linux runners even where a local make is
+		// old enough to parse it as a variable named "NAME !".
+		found := regexp.MustCompile(`(?m)^`+name+`\s*[:?+!]*=`).FindAllString(text, -1)
 		if len(found) != 1 {
 			t.Errorf("the Makefile assigns %s %d times, want exactly once; make takes the last "+
 				"assignment, so a second one silently replaces the value every other check here "+

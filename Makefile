@@ -141,8 +141,10 @@ help: ## Show this help
 
 # -buildvcs=false matches the release path. It is a deliberate trade, not a
 # tidy-up: the three -X stamps carry version, commit and source date, but they
-# are program data and never appear in `go version -m`, so an SBOM generator
-# reading build settings gets nothing from either path. What it buys is that a
+# are program data, and with `-trimpath` alongside they do not appear in
+# `go version -m` either — so an SBOM generator reading build settings gets
+# nothing from either path. (Without `-trimpath` they would show up in the
+# recorded `build -ldflags=` setting; the two flags travel together here.) What it buys is that a
 # dead -X path is visible as "unknown" rather than silently backfilled, and
 # that a build inside a linked worktree stops reporting the *parent*
 # repository's HEAD as its own. Revisit before releases are enabled — see

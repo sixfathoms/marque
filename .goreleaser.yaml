@@ -47,9 +47,11 @@ builds:
       # HEAD, which is worse than no provenance because it looks like some.
       #
       # What it costs, since the benefits above are only half the story: `-X`
-      # values are program data and never appear in `go version -m`, so a
-      # released artefact's provenance is the line the binary prints and
-      # nothing machine-readable. An SBOM generator reading build settings, or
+      # values are program data, and with `-trimpath` alongside they do not
+      # appear in `go version -m` either, so a released artefact's provenance
+      # is the line the binary prints and nothing machine-readable. (Without
+      # `-trimpath` they would surface in the recorded `build -ldflags=`
+      # setting; the two travel together here.) An SBOM generator reading build settings, or
       # a `debug.ReadBuildInfo` diagnostic in production, gets nothing. That
       # bill comes due when releases are switched on, not now.
       - -buildvcs=false
