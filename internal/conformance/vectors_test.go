@@ -225,7 +225,7 @@ func TestLoadRejects(t *testing.T) {
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
 			        "scope":{"operation":"insert","schema":"public","relation":"accounts",
 			        "columns_written":["tier"],"predicate":"id = 1"}}]}`,
-			want: "has no WHERE",
+			want: "has no predicate over its target relation",
 		},
 		{
 			name: "an insert assigning no columns",
@@ -356,6 +356,14 @@ func TestLoadRejects(t *testing.T) {
 			want: "unpaired surrogate",
 		},
 		{
+			// Two leading surrogates are not a pair. Widening the low bound to
+			// 0xD800 would accept this, and nothing else would notice.
+			name: "a leading surrogate followed by another leading surrogate",
+			body: `{"subset_version":0,"vectors":[{"name":"a\ud800\ud800b","statement":"s",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+			want: "unpaired surrogate",
+		},
+		{
 			name: "a trailing surrogate escape with no leading one",
 			body: `{"subset_version":0,"vectors":[{"name":"a\udc00b","statement":"s",
 			        "verdict":"out_of_grammar","because":"b"}]}`,
@@ -442,10 +450,22 @@ func TestLoadAcceptsLegitimateEscapes(t *testing.T) {
 			        "verdict":"out_of_grammar","because":"b"}]}`,
 		},
 		{
-			// A literal backslash followed by hex digits. Reading one byte too
-			// far here finds "d800" and calls it a lone surrogate, so this is
-			// what pins the escape walk to consuming `\\` whole.
-			name: "an escaped backslash followed by hex digits",
+			// The case that pins the walk to consuming `\\` whole. A scan that
+			// restarts at every byte finds a real-looking `\u`+`d800` starting
+			// at the *second* backslash and rejects the document — while the
+			// value here is the literal characters `\ud800`, which a vector
+			// exercising PostgreSQL escape strings would carry.
+			name: "an escaped backslash before a leading-surrogate escape",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"SELECT E'\\ud800'",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+		},
+		{
+			name: "an escaped backslash before a trailing-surrogate escape",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"SELECT E'\\udc00'",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+		},
+		{
+			name: "an escaped backslash followed by hex digits and no u",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"SELECT E'\\d800'",
 			        "verdict":"out_of_grammar","because":"b"}]}`,
 		},

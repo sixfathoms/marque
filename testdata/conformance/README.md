@@ -59,7 +59,10 @@ bytes must mean the same thing to every reader.
 admitted vector, `"scope": null` on an unadmitted one, and `"columns_written": []` on a delete are all
 shapes the format does not have.
 
-An unconditional statement records `"predicate": "TRUE"` rather than omitting the field. EDR-0007's
+`predicate` is the statement's own predicate over the **target** relation. An unconditional
+statement records `"predicate": "TRUE"` rather than omitting the field; an `insert` omits it, which
+is not the same thing — an `INSERT … SELECT … WHERE` does contain a `WHERE`, but it filters the
+source relation, and recording it would give the fence a predicate over the wrong table. EDR-0007's
 subset rules do not require a `WHERE`, so a required-but-omittable predicate would put a statement
 the records admit outside the corpus; TRUE keeps the field meaningful and says what the fence is
 built from. The implementation plan narrows the *initial* M2 subset further than the records do,

@@ -60,7 +60,11 @@ const (
 	// Select reads and assigns nothing, so it carries no columns_written.
 	Select Operation = "select"
 	// Insert assigns to its column list (EDR-0007 names it alongside SET) and
-	// has no WHERE, so it carries no predicate.
+	// carries no predicate. Not because no WHERE can appear — `INSERT … SELECT
+	// … WHERE` is in the subset and has one — but because that WHERE filters
+	// the *source* relation, not the target. Recording it would hand the
+	// fence's pre-check a predicate over the wrong relation, which is a
+	// soundness bug rather than a missing field.
 	Insert Operation = "insert"
 	// Update assigns to named columns, and the scope lists them.
 	Update Operation = "update"
@@ -442,18 +446,20 @@ func (s Scope) validate(vectorKeys map[string]json.RawMessage) error {
 		}
 	}
 
-	// The predicate is what the fence is built from (EDR-0007). An
+	// The predicate is the statement's own predicate over the *target*
+	// relation, which is what the fence is built from (EDR-0007). An
 	// unconditional statement records TRUE rather than omitting it, so that
 	// requiring the field does not put a statement the records admit outside
 	// the corpus — EDR-0007's subset rules do not require a WHERE. An insert
-	// has no WHERE at all, which is a different thing from having a vacuous
-	// one.
+	// has no such predicate, which is a different thing from having a vacuous
+	// one: an `INSERT … SELECT … WHERE` does contain a WHERE, over the source.
 	switch {
 	case s.Operation.hasPredicate() && strings.TrimSpace(s.Predicate) == "":
 		return fmt.Errorf("scope.predicate is required; it is what the fence is built from, and " +
 			"an unconditional statement records TRUE rather than omitting it")
 	case !s.Operation.hasPredicate() && hasPredicate:
-		return fmt.Errorf("scope.operation %q has no WHERE, so predicate must be absent",
+		return fmt.Errorf("scope.operation %q has no predicate over its target relation, so "+
+			"predicate must be absent — a WHERE in `INSERT … SELECT` filters the source",
 			s.Operation)
 	}
 	return nil
