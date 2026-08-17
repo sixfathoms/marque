@@ -39,7 +39,11 @@ linters:
     # Generated code is reviewed as a wire-contract diff, not as Go style.
     generated: lax
     paths:
-      - gen
+      # Anchored. These entries are regular expressions rather than path
+      # prefixes, and an unanchored "gen" also matches internal/a-gen-t —
+      # a package EDR-0018 and EDR-0019 guarantee will exist — silencing every
+      # linter on it without saying so.
+      - ^gen/
     rules:
       # Table-driven tests read better with the fixtures inline, and a test's
       # own failure is its error handling.
@@ -58,4 +62,8 @@ formatters:
   exclusions:
     generated: lax
     paths:
-      - gen
+      # Anchored. These entries are regular expressions rather than path
+      # prefixes, and an unanchored "gen" also matches internal/a-gen-t —
+      # a package EDR-0018 and EDR-0019 guarantee will exist — silencing every
+      # linter on it without saying so.
+      - ^gen/

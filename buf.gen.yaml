@@ -1,0 +1,23 @@
+# Generated code is committed, not built on demand (EDR-0020). A reviewer
+# should see the wire contract change in the diff, because that is the change
+# that breaks people. `make generate` regenerates; CI fails if the result
+# differs from what is committed.
+#
+# Both plugins are built from this repository's own module, so the generator's
+# version and the runtime library's version are the same by construction. See
+# the tool directives in go.mod.
+version: v2
+
+# `clean` removes each output directory entirely before generating, not just the
+# files a plugin claims. Every `out:` below must therefore be a directory
+# nothing else lives in — `out: .` here would delete the repository.
+clean: true
+
+plugins:
+  - local: bin/tools/protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+
+  - local: bin/tools/protoc-gen-connect-go
+    out: gen
+    opt: paths=source_relative

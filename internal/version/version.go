@@ -17,9 +17,9 @@ import (
 
 // Injected with -ldflags -X; see LDFLAGS in the Makefile.
 var (
-	buildVersion string
-	buildCommit  string
-	buildDate    string
+	buildVersion    string
+	buildCommit     string
+	buildSourceDate string
 )
 
 // Unknown is what a field reports when neither the linker nor the embedded
@@ -33,8 +33,14 @@ type Info struct {
 	// Commit is the source revision, suffixed "-dirty" if the working tree
 	// had uncommitted changes at build time.
 	Commit string
-	// Date is when the binary was built, in RFC 3339.
-	Date string
+	// SourceDate is when the source this was built from was committed, in
+	// RFC 3339 — or SOURCE_DATE_EPOCH where a distribution sets it.
+	//
+	// It is the source's date rather than the build's on purpose: building the
+	// same commit twice then produces the same binary, and for a tool whose
+	// logbook entries name the software that produced them, "same source, same
+	// binary" is worth more than knowing when the artefact was made.
+	SourceDate string
 	// Go is the toolchain version.
 	Go string
 	// Platform is GOOS/GOARCH.
@@ -47,12 +53,12 @@ func Get() Info {
 	if !ok {
 		bi = nil
 	}
-	return assemble(buildVersion, buildCommit, buildDate, bi)
+	return assemble(buildVersion, buildCommit, buildSourceDate, bi)
 }
 
 // assemble is Get with its inputs passed in, so the fallback behaviour can be
 // tested without building a binary three different ways.
-func assemble(version, commit, date string, bi *debug.BuildInfo) Info {
+func assemble(version, commit, sourceDate string, bi *debug.BuildInfo) Info {
 	if bi != nil {
 		if version == "" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
 			version = bi.Main.Version
@@ -64,17 +70,17 @@ func assemble(version, commit, date string, bi *debug.BuildInfo) Info {
 				commit += "-dirty"
 			}
 		}
-		if date == "" {
-			date = settings["vcs.time"]
+		if sourceDate == "" {
+			sourceDate = settings["vcs.time"]
 		}
 	}
 
 	return Info{
-		Version:  firstNonEmpty(version, "dev"),
-		Commit:   firstNonEmpty(commit, Unknown),
-		Date:     firstNonEmpty(date, Unknown),
-		Go:       runtime.Version(),
-		Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		Version:    firstNonEmpty(version, "dev"),
+		Commit:     firstNonEmpty(commit, Unknown),
+		SourceDate: firstNonEmpty(sourceDate, Unknown),
+		Go:         runtime.Version(),
+		Platform:   runtime.GOOS + "/" + runtime.GOARCH,
 	}
 }
 
@@ -97,5 +103,5 @@ func firstNonEmpty(values ...string) string {
 
 // String renders one line: "v0.1.0 (1a2b3c4, 2026-08-16T09:00:00Z) go1.26.5 darwin/arm64".
 func (i Info) String() string {
-	return fmt.Sprintf("%s (%s, %s) %s %s", i.Version, i.Commit, i.Date, i.Go, i.Platform)
+	return fmt.Sprintf("%s (%s, %s) %s %s", i.Version, i.Commit, i.SourceDate, i.Go, i.Platform)
 }

@@ -21,8 +21,9 @@ never holds a credential, can never approve anything, and gets no shortcut throu
 [Agents](https://sixfathoms.github.io/marque/concepts/agents/).
 
 > [!NOTE]
-> **Status: design.** The decision records are published; the implementation has not started.
-> Nothing here runs in production anywhere yet.
+> **Status: design; scaffolding underway.** The decision records are published and remain the source
+> of truth. Implementation has begun at the M0 scaffolding milestone — the toolchain, the schema and
+> the build. Nothing here runs against a database yet, in production or anywhere else.
 
 ## Why it is shaped this way
 
@@ -51,6 +52,11 @@ docs/
   content/      Documentation pages
   changelog/    One file per changelog entry
 website/        The static site generator that renders all three
+proto/          The API description; one schema generates every client
+gen/            Generated Go and Connect stubs, committed on purpose
+cmd/            The three binaries — marque, harbourmaster, pilot
+internal/       Implementation packages
+tools/          A separate module pinning the developer toolchain
 ```
 
 ## Building the docs

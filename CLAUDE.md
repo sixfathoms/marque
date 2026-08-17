@@ -13,8 +13,9 @@ to a hash-chained logbook.
 schema, instance identifiers, hostnames, internal service names or customer data into examples, tests
 or fixtures. Worked examples use a neutral fictional schema (`accounts`, `settings`, `tier`).
 
-**Status: design.** There is no implementation. `docs/edrs/` is the entire substance of the project
-today.
+**Status: design; scaffolding underway.** `docs/edrs/` remains the source of truth for the design.
+Implementation has begun at M0 of `docs/content/overview/implementation-plan.md` — the toolchain, the
+schema and the build. Nothing runs against a database yet.
 
 ## Layout
 
@@ -23,6 +24,12 @@ docs/edrs/       Decision records — the source of truth for the design
 docs/content/    Documentation pages, one directory per sidebar category
 docs/changelog/  One file per changelog entry
 website/         Static site generator (build.mjs), templates, styles
+proto/           The API description; one schema generates every client (EDR-0020)
+gen/             Generated Go and Connect stubs; committed on purpose
+cmd/             The three binaries — marque, harbourmaster, pilot
+internal/        Implementation packages
+tools/           A separate module pinning buf and golangci-lint, so their
+                 dependency graphs stay out of this one's
 ```
 
 ## Commands
@@ -129,8 +136,16 @@ a commit message.
   workload principal can satisfy, and that mechanical impossibility is asserted by a test.
 - **Escalation stage 1 for an agent is always its own principal**, every stage is a human, and **a
   timeout never satisfies a stage** (EDR-0019).
-- **Every method declares `safe` / `keyed` / `unsafe`**, and generated clients honour it — an
-  unannotated method fails the build, because the default must be a decision (EDR-0020).
+- **Every method declares its behaviour** — `safe`, *or* one of `natural` / `keyed` / `unsafe`;
+  either alone is a declaration — in a single `MethodBehaviour` extension, and a method declaring
+  neither fails the build, because the default must be a decision (EDR-0020). **The declaration may only ever strengthen**: `safe` to not-safe,
+  `natural` to `keyed` or `unsafe`, `keyed` to `unsafe`, or moving the key's field, each breaks a
+  client that already compiled the old policy, so each needs a new method rather than an edit.
+  `buf breaking` does *not* see custom options, so a separate check enforces this (EDR-0040). A
+  `safe` method also carries the standard `idempotency_level = NO_SIDE_EFFECTS`, because that is what
+  a generated Connect client actually reads — beyond `safe`, honouring the declaration is an
+  interceptor that arrives with the first real client, and saying so is better than implying the loop
+  is closed.
 - **Transparent driver retry is OFF for writes.** A wrapper that replays a write after failover
   applies a statement outside the nonce's accounting; failover surfaces as `indeterminate` (EDR-0021).
 - **The proxy forwards no bytes.** It terminates the wire protocol and constructs its own requests.

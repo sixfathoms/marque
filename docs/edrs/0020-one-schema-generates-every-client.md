@@ -155,3 +155,25 @@ live on the Harbourmaster.
 ## Changelog
 
 - **2026-08-15**: Accepted.
+- **2026-08-16**: Amended as implemented, in M0 of the
+  [implementation plan](../content/overview/implementation-plan.md). The decision is unchanged —
+  one schema, generated clients, annotations that are load-bearing, and a build that rejects an
+  unannotated method — but five details above are not what shipped, and the code is right in each
+  case:
+  - **The three annotations ship as one message-typed extension**, `marque.v1.MethodBehaviour`,
+    rather than three scalar ones, and a declaration may only ever strengthen. Both are
+    [EDR-0040](./0040-a-methods-declared-behaviour-may-only-strengthen.md), which exists because
+    `buf breaking` does not compare custom method options at all.
+  - **`Idempotency` has four values, not three.** proto3 requires a zero value, so
+    `IDEMPOTENCY_UNSPECIFIED = 0` is the "no decision" state the build rejects.
+  - **Enum values ship prefixed** — `IDEMPOTENCY_KEYED`, not `KEYED`. The short spelling in the
+    Decision section above does not compile, and buf's `ENUM_VALUE_PREFIX` rule requires the prefix.
+  - **Request and response messages are named `<Method>Request` / `<Method>Response`.** The
+    `GetRequest(GetRequestReq) returns (Request)` sketch above fails the `STANDARD` lint set this
+    repository adopted; the stricter convention is the one CI can enforce.
+  - **`clients/ts/` is not generated yet**, and will not be until the console in Phase 2. Only Go
+    and Connect stubs are produced today.
+
+  One clarification rather than a correction: "every method carries two annotations" reads as though
+  both are required. One suffices — `safe = true`, or an `idempotency` other than unspecified — which
+  is what this record's own `GetRequest` example does.

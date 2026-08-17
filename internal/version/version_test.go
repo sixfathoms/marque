@@ -17,13 +17,13 @@ func TestAssemble(t *testing.T) {
 		version, commit, date   string
 		info                    *debug.BuildInfo
 		wantVersion, wantCommit string
-		wantDate                string
+		wantSourceDate          string
 	}{
 		{
 			name:    "linker values are used as given",
 			version: "v0.1.0", commit: "1a2b3c4", date: "2026-08-16T09:00:00Z",
 			info:        buildInfo(debug.BuildSetting{Key: "vcs.revision", Value: "ffffff"}),
-			wantVersion: "v0.1.0", wantCommit: "1a2b3c4", wantDate: "2026-08-16T09:00:00Z",
+			wantVersion: "v0.1.0", wantCommit: "1a2b3c4", wantSourceDate: "2026-08-16T09:00:00Z",
 		},
 		{
 			name: "build information fills in what the linker did not set",
@@ -31,7 +31,7 @@ func TestAssemble(t *testing.T) {
 				debug.BuildSetting{Key: "vcs.revision", Value: "1a2b3c4"},
 				debug.BuildSetting{Key: "vcs.time", Value: "2026-08-16T09:00:00Z"},
 			),
-			wantVersion: "dev", wantCommit: "1a2b3c4", wantDate: "2026-08-16T09:00:00Z",
+			wantVersion: "dev", wantCommit: "1a2b3c4", wantSourceDate: "2026-08-16T09:00:00Z",
 		},
 		{
 			name: "a modified working tree is reported as dirty",
@@ -39,22 +39,22 @@ func TestAssemble(t *testing.T) {
 				debug.BuildSetting{Key: "vcs.revision", Value: "1a2b3c4"},
 				debug.BuildSetting{Key: "vcs.modified", Value: "true"},
 			),
-			wantVersion: "dev", wantCommit: "1a2b3c4-dirty", wantDate: Unknown,
+			wantVersion: "dev", wantCommit: "1a2b3c4-dirty", wantSourceDate: Unknown,
 		},
 		{
 			name:        "no build information at all",
 			info:        nil,
-			wantVersion: "dev", wantCommit: Unknown, wantDate: Unknown,
+			wantVersion: "dev", wantCommit: Unknown, wantSourceDate: Unknown,
 		},
 		{
 			name:        "the placeholder module version is not a version",
 			info:        &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
-			wantVersion: "dev", wantCommit: Unknown, wantDate: Unknown,
+			wantVersion: "dev", wantCommit: Unknown, wantSourceDate: Unknown,
 		},
 		{
 			name:        "a real module version is",
 			info:        &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0"}},
-			wantVersion: "v0.2.0", wantCommit: Unknown, wantDate: Unknown,
+			wantVersion: "v0.2.0", wantCommit: Unknown, wantSourceDate: Unknown,
 		},
 	}
 
@@ -67,8 +67,8 @@ func TestAssemble(t *testing.T) {
 			if got.Commit != tt.wantCommit {
 				t.Errorf("Commit = %q, want %q", got.Commit, tt.wantCommit)
 			}
-			if got.Date != tt.wantDate {
-				t.Errorf("Date = %q, want %q", got.Date, tt.wantDate)
+			if got.SourceDate != tt.wantSourceDate {
+				t.Errorf("SourceDate = %q, want %q", got.SourceDate, tt.wantSourceDate)
 			}
 			if got.Go != runtime.Version() {
 				t.Errorf("Go = %q, want %q", got.Go, runtime.Version())
@@ -82,11 +82,11 @@ func TestAssemble(t *testing.T) {
 
 func TestInfoString(t *testing.T) {
 	got := Info{
-		Version:  "v0.1.0",
-		Commit:   "1a2b3c4",
-		Date:     "2026-08-16T09:00:00Z",
-		Go:       "go1.26.5",
-		Platform: "darwin/arm64",
+		Version:    "v0.1.0",
+		Commit:     "1a2b3c4",
+		SourceDate: "2026-08-16T09:00:00Z",
+		Go:         "go1.26.5",
+		Platform:   "darwin/arm64",
 	}.String()
 
 	want := "v0.1.0 (1a2b3c4, 2026-08-16T09:00:00Z) go1.26.5 darwin/arm64"

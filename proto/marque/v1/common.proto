@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package marque.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/sixfathoms/marque/gen/marque/v1;marquev1";
+
+// Idempotency states what happens if a call is made twice.
+//
+// It is load-bearing rather than documentation. Most APIs treat retry policy as
+// client configuration; here, retrying the wrong method applies a production
+// change twice. Declaring it on the method means an integrator cannot get it
+// wrong by omission, which is the way they would get it wrong (EDR-0020).
+enum Idempotency {
+  // Never valid. A method that leaves this unset fails the build, because the
+  // default has to be a decision rather than an accident.
+  IDEMPOTENCY_UNSPECIFIED = 0;
+
+  // Repeating the call is inherently harmless: it carries no key and needs
+  // none, because a second identical call has the same effect as the first.
+  IDEMPOTENCY_NATURAL = 1;
+
+  // The caller supplies a key, named by `idempotency_field`, and a retry
+  // carries the same one. Execute is the case this exists for, and its key is
+  // the execution nonce (EDR-0011).
+  IDEMPOTENCY_KEYED = 2;
+
+  // Must not be retried automatically. A generated client surfaces the
+  // ambiguity to its caller instead of guessing — a second signature is a
+  // second grant.
+  IDEMPOTENCY_UNSAFE = 3;
+}
+
+// MethodBehaviour is what a method declares about being called twice.
+//
+// The three fields travel as one message rather than as three separate
+// extensions for two reasons. They cannot then be half-set — an idempotency
+// without its key field is a single malformed value rather than two annotations
+// that disagree. And extension numbers in the 50000-99999 range are reserved
+// for use *within one organisation* and are explicitly not globally unique, so
+// an adopter who imports this file alongside their own options collides on a
+// number and the Go runtime panics at registration. One extension is one
+// chance to collide instead of three (EDR-0040).
+message MethodBehaviour {
+  // safe marks a method read-only, so it may be retried freely and served from
+  // a replica. A safe method must also carry the standard
+  // `idempotency_level = NO_SIDE_EFFECTS`, which is what Connect's own
+  // generator reads; the build rejects one without the other.
+  bool safe = 1;
+
+  // idempotency states whether repeating this method is safe, and how.
+  Idempotency idempotency = 2;
+
+  // idempotency_field names the request field carrying the key. Required when
+  // idempotency is IDEMPOTENCY_KEYED, and meaningless otherwise. The field it
+  // names must be a singular string or bytes, because that is what a generated
+  // client can actually carry through a retry.
+  string idempotency_field = 3;
+}
+
+extend google.protobuf.MethodOptions {
+  // behaviour is what this method declares about being called twice. Every
+  // method carries it; one that does not fails the build.
+  //
+  // The number is deliberately not near the bottom of the in-house range,
+  // where numbering by convention starts and where a collision is therefore
+  // most likely. It is still not globally unique: before Marque is imported by
+  // anyone outside this repository, a unique range should be requested from
+  // the protobuf global extension registry (EDR-0040).
+  MethodBehaviour behaviour = 74180;
+}
