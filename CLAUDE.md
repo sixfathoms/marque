@@ -28,6 +28,7 @@ proto/           The API description; one schema generates every client (EDR-002
 gen/             Generated Go and Connect stubs; committed on purpose
 cmd/             The three binaries — marque, harbourmaster, pilot
 internal/        Implementation packages
+testdata/        Normative conformance vectors, language-neutral
 tools/           A separate module pinning buf and golangci-lint, so their
                  dependency graphs stay out of this one's
 ```

@@ -56,6 +56,7 @@ proto/          The API description; one schema generates every client
 gen/            Generated Go and Connect stubs, committed on purpose
 cmd/            The three binaries — marque, harbourmaster, pilot
 internal/       Implementation packages
+testdata/       Normative conformance vectors
 tools/          A separate module pinning the developer toolchain
 ```
 

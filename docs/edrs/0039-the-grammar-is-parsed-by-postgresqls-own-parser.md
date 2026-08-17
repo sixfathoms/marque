@@ -4,7 +4,7 @@ title: "The checkable grammar is parsed by PostgreSQL's own parser"
 summary: "Every component that parses a statement uses libpg_query — PostgreSQL's real grammar — not a re-implementation. cgo is accepted in every binary, including the CLI, rather than maintain a second grammar that can disagree with the server."
 status: accepted
 implementation: none
-implementation_note: "The consequences are staged for it — the Makefile exports CGO_ENABLED=1 for every target and CI builds on two operating systems because of this record — but libpg_query is not linked in, there is no internal/grammar, and no conformance corpus exists to pin a subset version against."
+implementation_note: "The consequences are staged for it — the Makefile exports CGO_ENABLED=1 for every target, CI builds on four platforms, and the conformance corpus at testdata/conformance/ has its format, its validator and its subset_version field, though it holds no vectors yet. Nothing that decides anything exists: libpg_query is not linked in, there is no internal/grammar, and nothing reads a statement."
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
@@ -167,3 +167,8 @@ is stated in the installation instructions rather than discovered.
 ## Changelog
 
 - **2026-08-16**: Accepted.
+- **2026-08-17**: The conformance corpus this record relies on now exists as a format and a
+  validator at `testdata/conformance/`, loaded by `internal/conformance`, with the vectors and the
+  grammar that runs them still to come in M2. `implementation` stays `none` — nothing here parses a
+  statement or decides anything — and the note is corrected, since it said no corpus existed. The
+  decision is unchanged.
