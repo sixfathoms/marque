@@ -39,8 +39,10 @@ builds:
       # No VCS stamping. Two reasons, both found by mutation-testing the guard
       # in `make snapshot-check`. It removes internal/version's fallback to
       # debug.ReadBuildInfo, so a `-X` path that stops resolving yields
-      # "unknown" and the guard notices, instead of silently reading a
-      # vcs.time identical to the value the Makefile stamps. And in a linked
+      # "unknown" — visible, rather than silently backfilled with a vcs.time
+      # identical to the value the Makefile stamps. What notices it is
+      # TestBuildConfigsStampEveryVariable; `make snapshot-check` only sees it
+      # when the two paths disagree, or via its explicit unknown check. And in a linked
       # git worktree the embedded vcs.revision is the *parent* repository's
       # HEAD, which is worse than no provenance because it looks like some.
       #
@@ -51,7 +53,7 @@ builds:
       # a `debug.ReadBuildInfo` diagnostic in production, gets nothing. That
       # bill comes due when releases are switched on, not now.
       - -buildvcs=false
-    # .Env.DIRTY comes from the Makefile, which can see the working tree where
+    # .Env.MARQUE_DIRTY comes from the Makefile, which can see the working tree where
     # goreleaser cannot: --snapshot skips its repository validation, so without
     # this it would compile uncommitted changes and stamp them with HEAD's clean
     # commit. goreleaser fails if the variable is unset, which is the behaviour
@@ -63,7 +65,7 @@ builds:
     # builds a real binary with these flags and asserts the values arrive.
     ldflags:
       - -X github.com/sixfathoms/marque/internal/version.buildVersion={{ .Version }}
-      - -X github.com/sixfathoms/marque/internal/version.buildCommit={{ .ShortCommit }}{{ .Env.DIRTY }}
+      - -X github.com/sixfathoms/marque/internal/version.buildCommit={{ .ShortCommit }}{{ .Env.MARQUE_DIRTY }}
       - -X github.com/sixfathoms/marque/internal/version.buildSourceDate={{ .Env.SOURCE_DATE }}
     # The source's timestamp, not the build's, for the same reason the Makefile
     # stamps a source date: the same commit should produce the same artefact.

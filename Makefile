@@ -64,11 +64,20 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
 # "modified": two concatenated $(shell)s once produced "unknown-dirty" from a
 # source archive with no .git, because both commands failed and the second
 # failure looked like a modification.
-DIRTY := $(shell git rev-parse --git-dir >/dev/null 2>&1 && \
-                 { test -z "$$(git status --porcelain 2>/dev/null)" || printf -- '-dirty'; })
-export DIRTY
+# --untracked-files=normal is passed explicitly because status.showUntrackedFiles=no
+# is a common developer setting and would otherwise switch off the untracked
+# counting that is the whole point of this variable. The flag overrides the config.
+#
+# A status that *fails* is not clean. It was not dirty either, so it says neither:
+# claiming clean would put HEAD's commit on an artefact whose contents nobody
+# could verify, which is the one direction that lies.
+MARQUE_DIRTY := $(shell git rev-parse --git-dir >/dev/null 2>&1 || exit 0; \
+                  status=$$(git status --porcelain --untracked-files=normal 2>/dev/null) \
+                    || { printf -- '-unverified'; exit 0; }; \
+                  test -z "$$status" || printf -- '-dirty')
+export MARQUE_DIRTY
 
-COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf 'unknown')$(DIRTY)
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf 'unknown')$(MARQUE_DIRTY)
 #
 # The epoch is validated before either date(1) is tried, because `date -r`
 # also accepts a *filename* and reports its mtime — on GNU that is all it
@@ -237,10 +246,14 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 # A shared source is a stronger guarantee than two sources that agree, but it
 # does mean the comparison is no longer evidence about the date itself.
 #
-# What it still proves, and what nothing else does: that both paths' -X stamps
-# reached the binary at all (a dead path yields "unknown", since -buildvcs=false
-# removes the fallback), that they agree about the tree being dirty, and that
-# the artefact this platform produced actually executes here.
+# What it still proves, stated only as far as it goes. Agreement alone does not
+# show a stamp arrived — delete a -X from both configs and both sides say
+# "unknown" and agree, which is why the unknown check below exists and why
+# TestBuildConfigsStampEveryVariable, not this, is what catches a missing -X.
+# What is uniquely enforced here is that the artefact this platform produced
+# actually executes here, and that the two paths were handed the same tree
+# state — though CI always checks out clean, so the dirty half of that is
+# asserted statically in internal/version instead.
 #
 # The commit *is* compared, now that DIRTY reaches both sides. Leaving it out
 # was how a dirty tree could produce a goreleaser binary stamped with a clean
@@ -253,17 +266,26 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 snapshot-check: platform-check build snapshot ## Fail if make and goreleaser disagree about a build
 	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*(\(.*\)) go.*/\1/'); \
 	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
-	if [ -z "$$theirs" ]; then echo "no snapshot binary was produced"; exit 1; fi; \
+	if [ -z "$$theirs" ]; then \
+		echo "the snapshot binary produced no version line — it is missing, or it did not run"; \
+		exit 1; \
+	fi; \
 	if [ "$$mine" != "$$theirs" ]; then \
 		echo "make and goreleaser disagree about what they built:"; \
 		echo "  make:       $$mine"; \
 		echo "  goreleaser: $$theirs"; \
 		exit 1; \
 	fi; \
+	case "$$mine" in *unknown*) \
+		echo "both paths report $$mine, so they agree about a stamp that never arrived."; \
+		echo "a -X path stopped resolving; agreement is not arrival."; \
+		exit 1;; \
+	esac; \
 	echo "  commit and source date agree across both build paths: $$mine"
 
-# Asserted before anything is built, so a mislabelled runner fails in a second
-# rather than after a full cgo build. EXPECT_PLATFORM is unset for local use;
+# Ordered before `build snapshot`, so under serial make — what CI runs — a
+# mislabelled runner fails in a second rather than after a full cgo build.
+# `make -j` may start a build first; the assertion still fails the target. EXPECT_PLATFORM is unset for local use;
 # CI requires it, and checks that it required it — see .github/workflows/ci.yml.
 platform-check: ## Fail if this host is not the platform EXPECT_PLATFORM names
 	@if [ -n "$$EXPECT_PLATFORM" ]; then \

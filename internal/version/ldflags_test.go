@@ -6,11 +6,10 @@ package version_test
 //
 //   - TestGetReportsSomething cannot, because firstNonEmpty guarantees a
 //     non-empty Version whether the stamp applied or not;
-//   - `make snapshot-check` cannot, because it compares two values and
-//     internal/version falls back to debug.ReadBuildInfo's vcs.time, which in
-//     a git checkout is byte-identical to the date the Makefile stamps. A
-//     mutation pass renamed the variable so that *both* stamps were dead, and
-//     that check still passed.
+//   - `make snapshot-check` cannot, because it compares two values: delete a
+//     -X from both configs and both sides report "unknown" and agree. It now
+//     rejects "unknown" explicitly, but agreement was never arrival, and a
+//     mutation pass proved it by killing a stamp on both paths at once.
 //
 // So the only way to know is to build a binary with the flags and run it. This
 // test is what the Makefile's LDFLAGS and .goreleaser.yaml's ldflags are
@@ -118,16 +117,19 @@ func TestBuildConfigsStampEveryVariable(t *testing.T) {
 			// The Makefile writes the import path through a make variable, so
 			// it is expanded before comparison rather than matched loosely —
 			// a typo in the literal half must still fail.
-			// Comment lines are dropped first. Both files are comment-dense
-			// and both write `-X` in prose; matching those would fail the
-			// build over an explanation. They escape today only because the
-			// prose happens to put a backtick straight after the X, which is
-			// luck rather than a property worth relying on.
+			// Comments are dropped first — whole lines and trailing ones
+			// alike. Both files are comment-dense and both write `-X` in
+			// prose, and stripping only line-leading comments failed in both
+			// directions: a trailing `# -X …buildDate=x` failed the build over
+			// an explanation, and a trailing mention of a `-X` line that had
+			// been *deleted* kept this test green while the release binary
+			// printed "unknown".
 			var code []string
 			for _, line := range strings.Split(string(raw), "\n") {
-				if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-					code = append(code, line)
+				if i := strings.Index(line, "#"); i >= 0 {
+					line = line[:i]
 				}
+				code = append(code, line)
 			}
 			text := strings.ReplaceAll(strings.Join(code, "\n"), "$(MODULE)", module)
 
@@ -225,4 +227,26 @@ func makeVariable(t *testing.T, name string) string {
 		t.Fatalf("no %s assignment in the Makefile", name)
 	}
 	return string(m[1])
+}
+
+// TestGoreleaserStampsTheWorkingTreeState asserts statically what CI structurally
+// cannot observe.
+//
+// The Makefile computes whether the tree differs from HEAD and exports it, so
+// that goreleaser — which cannot see the working tree, because --snapshot skips
+// its repository validation — stamps the same thing. `make snapshot-check`
+// catches it going missing only when run on a *dirty* tree, and CI always
+// checks out clean. So without this, removing the template reference is a
+// regression that merges green on every runner.
+func TestGoreleaserStampsTheWorkingTreeState(t *testing.T) {
+	raw, err := os.ReadFile("../../.goreleaser.yaml")
+	if err != nil {
+		t.Fatalf("reading .goreleaser.yaml: %v", err)
+	}
+
+	const marker = "{{ .Env.MARQUE_DIRTY }}"
+	if !strings.Contains(string(raw), marker) {
+		t.Errorf(".goreleaser.yaml does not stamp %s, so a snapshot built over uncommitted "+
+			"changes would carry a commit that does not contain them", marker)
+	}
 }
