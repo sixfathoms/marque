@@ -160,6 +160,15 @@ func checkMethod(method *descriptorpb.MethodDescriptorProto, messages map[string
 // must never appear on a method declared UNSAFE — which is the pairing that
 // would otherwise let a method Marque says must not be retried advertise
 // itself to the retry interceptor as one that may.
+// safeNeedsNoSideEffects is shared by the two branches that can reach it, so
+// that the `safe` direction of the rule cannot be implemented in one and
+// forgotten in the other — which is exactly how it was lost once already, when
+// this switch was restructured around the level and the direction survived only
+// in the unset case.
+const safeNeedsNoSideEffects = "is marked safe but does not set " +
+	"`option idempotency_level = NO_SIDE_EFFECTS`, which is the option a generated Connect " +
+	"client reads to treat a method as read-only."
+
 func checkIdempotencyLevel(
 	method *descriptorpb.MethodDescriptorProto,
 	safe bool,
@@ -177,6 +186,10 @@ func checkIdempotencyLevel(
 				"repository does not")
 		}
 	case descriptorpb.MethodOptions_IDEMPOTENT:
+		if safe {
+			reasons = append(reasons, safeNeedsNoSideEffects+
+				" It sets IDEMPOTENT instead, which claims only that repeating it is harmless")
+		}
 		if idempotency == marquev1.Idempotency_IDEMPOTENCY_UNSAFE {
 			reasons = append(reasons, "sets `option idempotency_level = IDEMPOTENT` while declaring "+
 				"IDEMPOTENCY_UNSAFE; a generated client would advertise to its interceptors that "+
@@ -184,9 +197,7 @@ func checkIdempotencyLevel(
 		}
 	case descriptorpb.MethodOptions_IDEMPOTENCY_UNKNOWN:
 		if safe {
-			reasons = append(reasons, "is marked safe but does not set "+
-				"`option idempotency_level = NO_SIDE_EFFECTS`, which is the option a generated "+
-				"Connect client reads")
+			reasons = append(reasons, safeNeedsNoSideEffects+" It sets no level at all")
 		}
 	}
 

@@ -40,12 +40,27 @@ BASE_REF ?= origin/main
 # is named source_date, so the name and the value agree.
 #
 # SOURCE_DATE_EPOCH wins where a distribution sets it, which is the whole point
-# of that convention; otherwise the commit date is used. Both are normalised to
-# UTC, so two builders in different timezones agree. Left empty outside a git
-# checkout, which lets internal/version fall back to Go's embedded VCS stamp
+# of that convention; otherwise the commit date is used. Left empty outside a
+# git checkout, which lets internal/version fall back to Go's embedded VCS stamp
 # rather than inventing a date.
+#
+# The format string is explicit rather than `--date=iso-strict-local`, which
+# renders a UTC offset as "Z" on git 2.50 and as "+00:00" on git 2.39 — the same
+# instant, a different string, and therefore a different binary from the same
+# commit on two machines. Normalising the value is not enough; the
+# representation has to be pinned too.
 VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
+# The dirty suffix is decided inside the same shell that resolved the revision.
+# Two separate $(shell)s concatenated produced "unknown-dirty" from a source
+# archive with no .git, because both commands failed and the second failure
+# reads as "modified".
+COMMIT ?= $(shell \
+            if rev=$$(git rev-parse --short HEAD 2>/dev/null); then \
+              git diff --quiet HEAD 2>/dev/null || rev="$$rev-dirty"; \
+              printf '%s' "$$rev"; \
+            else \
+              printf 'unknown'; \
+            fi)
 #
 # $(strip) is load-bearing: make joins the continuation lines below with a
 # space, and a leading space inside an -X linker flag is a build failure with an
@@ -53,7 +68,15 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shel
 SOURCE_DATE ?= $(strip $(if $(SOURCE_DATE_EPOCH),\
                  $(shell date -u -d "@$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
                       || date -u -r "$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null),\
-                 $(shell TZ=UTC git log -1 --date=iso-strict-local --format=%cd 2>/dev/null)))
+                 $(shell TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd 2>/dev/null)))
+
+# A distribution that sets SOURCE_DATE_EPOCH has asked for a reproducible date.
+# Silently falling back to something else is the one response it must not get.
+ifdef SOURCE_DATE_EPOCH
+ifeq ($(SOURCE_DATE),)
+$(error SOURCE_DATE_EPOCH is set to '$(SOURCE_DATE_EPOCH)', which date(1) here cannot convert)
+endif
+endif
 
 LDFLAGS := -X $(MODULE)/internal/version.buildVersion=$(VERSION) \
            -X $(MODULE)/internal/version.buildCommit=$(COMMIT) \
@@ -123,6 +146,14 @@ schema-check: $(BUF) ## Fail if a method's retry declaration is missing or malfo
 # The remaining escape is for bootstrapping only: main genuinely has no schema
 # until this lands. Delete it in the next change; keeping it means that
 # deleting buf.yaml from main silently disables the check.
+#
+# The `&&` is load-bearing and was not there at first. Make runs a recipe under
+# sh without -e, so a multi-command `if` block exits with the status of its
+# *last* command: `buf breaking` could report an incompatible change, the shell
+# would carry on to `make compat`, and a passing compat check would hand back a
+# zero exit status for the whole target. That defect could not fire while the
+# bootstrap branch was the one being taken, and would have armed itself on the
+# merge that made this target live.
 breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 	@git rev-parse -q --verify '$(BASE_REF)^{commit}' >/dev/null || { \
 		echo "$(BASE_REF) is not in this clone, so the wire contract cannot be compared."; \
@@ -130,8 +161,8 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 		exit 1; \
 	}
 	@if git cat-file -e '$(BASE_REF):buf.yaml' 2>/dev/null; then \
-		$(BUF) breaking --against '.git#ref=$(BASE_REF)'; \
-		$(MAKE) --no-print-directory compat; \
+		$(BUF) breaking --against '.git#ref=$(BASE_REF)' \
+			&& $(MAKE) --no-print-directory compat; \
 	else \
 		echo "NOTE: $(BASE_REF) carries no schema, so there is nothing to compare against."; \
 		echo "This is true only while bootstrapping the schema; remove this branch once it lands."; \

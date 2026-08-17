@@ -89,11 +89,17 @@ the one that acts.
 | `idempotency_level` | Must pair with | Because |
 |---|---|---|
 | `NO_SIDE_EFFECTS` | `safe` | It is the read-only claim, and it is what enables a GET |
-| `IDEMPOTENT` | not `IDEMPOTENCY_UNSAFE` | It is the "repeating is harmless" claim, and a method that must never be retried must not advertise the opposite to the retry interceptor |
+| `IDEMPOTENT` | not `safe`, and not `IDEMPOTENCY_UNSAFE` | It claims only that repeating is harmless — weaker than `safe`, and the opposite of `unsafe` |
 | unset | not `safe` | A `safe` method with nothing set is a claim no generated client can act on |
 
-The middle row is the one that bites: without it a method could declare `IDEMPOTENCY_UNSAFE` here and
-`IDEMPOTENT` there, and the client would believe the second.
+Read the table as a biconditional: `safe` requires `NO_SIDE_EFFECTS`, **and** `NO_SIDE_EFFECTS`
+requires `safe`. Stating only the second is a live defect rather than an incomplete one, and it is
+the mistake that was actually made here — a first implementation restructured this check around the
+level and kept the `safe` direction in only one of its three branches, so `safe` with `IDEMPOTENT`
+passed for a while.
+
+The `IDEMPOTENT`-with-`unsafe` row is the dangerous one: without it a method could declare
+`IDEMPOTENCY_UNSAFE` here and `IDEMPOTENT` there, and the generated client would believe the second.
 
 **Scope.** This record covers the declaration and its stability. It does not cover client-side retry
 *behaviour* beyond what `idempotency_level` already gives — an interceptor honouring `keyed` and

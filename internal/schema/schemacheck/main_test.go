@@ -118,12 +118,12 @@ func TestRunRejectsAnUnannotatedMethod(t *testing.T) {
 
 // The guard the package comment is proudest of: files present, methods zero.
 func TestRunRejectsASchemaWithNoMethods(t *testing.T) {
-	_, _, err := runWith(t, noMethods())
+	_, stderr, err := runWith(t, noMethods())
 	if err == nil {
 		t.Fatal("run() = nil, want an error; a check that inspects nothing is not a check")
 	}
-	if !strings.Contains(err.Error(), "declares no methods") {
-		t.Errorf("error = %v, want it to say nothing was checked", err)
+	if !strings.Contains(stderr, "declares no methods") {
+		t.Errorf("stderr = %q, want it to say nothing was checked", stderr)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestRunAcceptsAnUnchangedDeclarationAndSaysWhatItCompared(t *testing.T) {
 	if err := run([]string{"-owned", after, "-all", after, "-before", before}, &stdout, &stderr); err != nil {
 		t.Fatalf("run() error = %v, want nil", err)
 	}
-	if !strings.Contains(stdout.String(), "1 compared against the previous schema") {
+	if !strings.Contains(stdout.String(), "1 of 1 compared against the previous schema") {
 		t.Errorf("stdout = %q, want the compared count", stdout.String())
 	}
 }
@@ -168,8 +168,8 @@ func TestRunRejectsAComparisonThatMatchedNothing(t *testing.T) {
 	if err == nil {
 		t.Fatal("run() = nil, want an error; zero pairs compared is not a pass")
 	}
-	if !strings.Contains(err.Error(), "matched a method here by name") {
-		t.Errorf("error = %v, want it to say nothing was compared", err)
+	if !strings.Contains(stderr.String(), "matched a method here by name") {
+		t.Errorf("stderr = %q, want it to say nothing was compared", stderr.String())
 	}
 }
 
@@ -202,6 +202,9 @@ func TestRunRejectsAProtoTheSchemaDoesNotCover(t *testing.T) {
 	}
 }
 
+// Asserting only that an error came back is not enough: with the flag guard
+// removed, run still errors — from trying to read the file "" — and the test
+// passes having proved nothing. It has to be *this* error.
 func TestRunRequiresItsFlags(t *testing.T) {
 	tests := []struct {
 		name string
@@ -215,10 +218,151 @@ func TestRunRequiresItsFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			if err := run(tt.args, &stdout, &stderr); err == nil {
-				t.Error("run() = nil, want an error for missing flags")
+			err := run(tt.args, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("run() = nil, want an error for missing flags")
+			}
+			if !strings.Contains(err.Error(), "both -owned and -all are required") {
+				t.Errorf("error = %v, want the missing-flag error rather than a read failure", err)
 			}
 		})
+	}
+}
+
+// The evidence line has to report what was *compared*, not what was available.
+// Deleting a method is legal, so the two numbers legitimately differ — and with
+// only one method in every fixture, a count that printed the wrong one would
+// look identical.
+func TestRunReportsHowManyPairsItCompared(t *testing.T) {
+	dir := t.TempDir()
+
+	twoMethods := declared("ProbeService", "Kept", natural())
+	svc := twoMethods.File[0].Service[0]
+	gone := declared("ProbeService", "Gone", natural()).File[0].Service[0].Method[0]
+	svc.Method = append(svc.Method, gone)
+
+	before := write(t, dir, "before.binpb", twoMethods)
+	after := write(t, dir, "after.binpb", declared("ProbeService", "Kept", natural()))
+
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"-owned", after, "-all", after, "-before", before}, &stdout, &stderr); err != nil {
+		t.Fatalf("run() error = %v, want nil; deleting a method is legal", err)
+	}
+	if !strings.Contains(stdout.String(), "1 of 2 compared") {
+		t.Errorf("stdout = %q, want it to report 1 of 2 compared", stdout.String())
+	}
+}
+
+// The two descriptor sets are not interchangeable, and nothing exercised the
+// difference through run() — every other fixture passes the same file as both.
+// Methods must come from `owned` only; messages must resolve from `all`.
+func TestRunDistinguishesTheOwnedSetFromTheFullOne(t *testing.T) {
+	dir := t.TempDir()
+
+	// An imported file declaring an unannotated service. It is ours to resolve
+	// against, never ours to annotate.
+	imported := &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("google/longrunning/operations.proto"),
+		Package: proto.String("google.longrunning"),
+		Syntax:  proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("GetOperationRequest")},
+			{Name: proto.String("Operation")},
+		},
+		Service: []*descriptorpb.ServiceDescriptorProto{{
+			Name: proto.String("Operations"),
+			Method: []*descriptorpb.MethodDescriptorProto{{
+				Name:       proto.String("GetOperation"),
+				InputType:  proto.String(".google.longrunning.GetOperationRequest"),
+				OutputType: proto.String(".google.longrunning.Operation"),
+			}},
+		}},
+	}
+
+	owned := declared("ProbeService", "M", natural())
+	full := declared("ProbeService", "M", natural())
+	full.File = append(full.File, imported)
+
+	ownedPath := write(t, dir, "owned.binpb", owned)
+	allPath := write(t, dir, "all.binpb", full)
+
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"-owned", ownedPath, "-all", allPath}, &stdout, &stderr); err != nil {
+		t.Fatalf("run() error = %v, want nil; an imported service is not ours to annotate", err)
+	}
+	if !strings.Contains(stdout.String(), "1 method(s) checked") {
+		t.Errorf("stdout = %q, want only the owned method counted", stdout.String())
+	}
+
+	// Swapping them is the mutation this guards: the imported service would
+	// then be walked and rejected.
+	stdout.Reset()
+	stderr.Reset()
+	if err := run([]string{"-owned", allPath, "-all", ownedPath}, &stdout, &stderr); err == nil {
+		t.Error("run() = nil with the sets swapped, want the imported service to be rejected")
+	}
+}
+
+// Coverage is resolved against the owned set, not the full one: a file present
+// only as an import must not count as covered for the module's own tree.
+func TestRunResolvesCoverageAgainstTheOwnedSet(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "marque", "v1"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"probe.proto", "extra.proto"} {
+		if err := os.WriteFile(filepath.Join(root, "marque", "v1", name),
+			[]byte("syntax = \"proto3\";\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dir := t.TempDir()
+	owned := declared("ProbeService", "M", natural())
+
+	// `all` also carries marque/v1/extra.proto. If coverage were resolved
+	// against it, the uncovered file would look covered.
+	full := declared("ProbeService", "M", natural())
+	full.File = append(full.File, &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("marque/v1/extra.proto"),
+		Package: proto.String("marque.v1"),
+		Syntax:  proto.String("proto3"),
+	})
+
+	ownedPath := write(t, dir, "owned.binpb", owned)
+	allPath := write(t, dir, "all.binpb", full)
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"-owned", ownedPath, "-all", allPath, "-proto-root", root}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run() = nil, want extra.proto reported as uncovered")
+	}
+	if !strings.Contains(stderr.String(), "extra.proto") {
+		t.Errorf("stderr = %q, want the uncovered file named", stderr.String())
+	}
+}
+
+// Everything wrong is reported in one run. An operator who has to fix problems
+// one build at a time is an operator who stops reading the output.
+func TestRunReportsViolationsAndFatalsTogether(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "marque", "v1"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "marque", "v1", "hidden.proto"),
+		[]byte("syntax = \"proto3\";\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, stderr, err := runWith(t, noMethods(), "-proto-root", root)
+	if err == nil {
+		t.Fatal("run() = nil, want an error")
+	}
+	if !strings.Contains(stderr, "hidden.proto") {
+		t.Errorf("stderr = %q, want the uncovered file reported", stderr)
+	}
+	if !strings.Contains(stderr, "declares no methods") {
+		t.Errorf("stderr = %q, want the vacuity problem reported in the same run", stderr)
 	}
 }
 

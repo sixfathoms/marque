@@ -71,12 +71,18 @@ func run(args []string, stdout, stderr io.Writer) error {
 	report := schema.CheckAnnotations(owned, all)
 	violations = append(violations, report.Violations...)
 
+	// Conditions that make the run itself untrustworthy, as opposed to a
+	// violation within it. They are collected rather than returned on sight so
+	// that one run reports everything wrong — an operator who fixes the schema
+	// serially, one error per build, is an operator who stops reading.
+	var fatal []string
+
 	// A guard that inspects nothing is the failure worth fearing here: one
 	// service file deleted, a buf.yaml `excludes:` entry, or a `--path`
 	// narrowing all produce a green run over zero methods.
 	if report.MethodsChecked == 0 {
-		return fmt.Errorf("%s declares no methods, so nothing was checked; "+
-			"a check that inspects nothing is not a check", cfg.owned)
+		fatal = append(fatal, fmt.Sprintf("%s declares no methods, so nothing was checked; "+
+			"a check that inspects nothing is not a check", cfg.owned))
 	}
 
 	compared := ""
@@ -94,21 +100,35 @@ func run(args []string, stdout, stderr io.Writer) error {
 		// whose vacuous case is indistinguishable from its passing case is
 		// exactly what this command exists not to be.
 		if compat.MethodsBefore > 0 && compat.MethodsCompared == 0 {
-			return fmt.Errorf("none of the %d method(s) in %s matched a method here by name, "+
-				"so no declaration was compared; a service or method was renamed",
-				compat.MethodsBefore, cfg.before)
+			fatal = append(fatal, fmt.Sprintf(
+				"none of the %d method(s) in %s matched a method here by name, "+
+					"so no declaration was compared; a service or method was renamed",
+				compat.MethodsBefore, cfg.before))
 		}
-		compared = fmt.Sprintf(", %d compared against the previous schema", compat.MethodsCompared)
+		// Deleting a method is legal, so a partial match is accepted — it is
+		// indistinguishable from a rename under name matching, and buf breaking
+		// is what catches the rename. This count is the only signal an operator
+		// gets that fewer pairs were compared than existed, which is why it
+		// reports what was compared rather than what was available.
+		compared = fmt.Sprintf(", %d of %d compared against the previous schema",
+			compat.MethodsCompared, compat.MethodsBefore)
 	}
 
-	if len(violations) > 0 {
-		var report strings.Builder
+	if len(violations) > 0 || len(fatal) > 0 {
+		var written strings.Builder
 		for _, v := range violations {
-			report.WriteString(v.String())
-			report.WriteByte('\n')
+			written.WriteString(v.String())
+			written.WriteByte('\n')
 		}
-		if _, err := io.WriteString(stderr, report.String()); err != nil {
+		for _, f := range fatal {
+			written.WriteString(f)
+			written.WriteByte('\n')
+		}
+		if _, err := io.WriteString(stderr, written.String()); err != nil {
 			return fmt.Errorf("writing report: %w", err)
+		}
+		if len(violations) == 0 {
+			return fmt.Errorf("%d problem(s) with the schema check itself", len(fatal))
 		}
 		return fmt.Errorf("%d schema violation(s); see EDR-0020 and EDR-0040", len(violations))
 	}

@@ -270,6 +270,21 @@ func TestCheckAnnotationsRejects(t *testing.T) {
 				descriptorpb.MethodOptions_IDEMPOTENT)),
 			want: "would advertise to its interceptors that repeating this is harmless",
 		},
+		{
+			// A regression once shipped and caught by a mutation pass: the rule
+			// was restructured around the level, and the `safe` half survived
+			// only in the branch for an unset level.
+			name: "safe with IDEMPOTENT rather than NO_SIDE_EFFECTS",
+			fds: probe(method("M", behaviour(true, marquev1.Idempotency_IDEMPOTENCY_NATURAL, ""),
+				descriptorpb.MethodOptions_IDEMPOTENT)),
+			want: "It sets IDEMPOTENT instead",
+		},
+		{
+			name: "safe with IDEMPOTENT and no idempotency of its own",
+			fds: probe(method("M", behaviour(true, marquev1.Idempotency_IDEMPOTENCY_UNSPECIFIED, ""),
+				descriptorpb.MethodOptions_IDEMPOTENT)),
+			want: "is marked safe but does not set",
+		},
 	}
 
 	for _, tt := range tests {

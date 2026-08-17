@@ -82,10 +82,12 @@ func compareBehaviour(was, now *marquev1.MethodBehaviour) []string {
 	var reasons []string
 
 	// The previous schema never passed through CheckAnnotations, so this is the
-	// one place an idempotency value the build does not know can appear —
-	// a base ref whose enum has since shrunk. Rejecting it keeps this side
-	// failing closed, as the annotation rules do; falling through to the
-	// switch below would silently allow every transition out of it.
+	// one place an idempotency value the build does not know can appear — a base
+	// ref whose enum has since shrunk. Without this check the value matches no
+	// case in weakened() and every transition out of it is silently allowed,
+	// which is this side failing open where the annotation rules fail closed.
+	// (The early return below is only to avoid following one confusing message
+	// with another; it is the check itself that does the work.)
 	for label, value := range map[string]marquev1.Idempotency{"was": was.GetIdempotency(), "is now": now.GetIdempotency()} {
 		if _, known := marquev1.Idempotency_name[int32(value)]; !known {
 			reasons = append(reasons, fmt.Sprintf(
