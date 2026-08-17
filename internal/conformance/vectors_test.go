@@ -219,8 +219,8 @@ func TestLoadRejects(t *testing.T) {
 			want: "scope.operation is",
 		},
 		{
-			// An insert has no WHERE at all, which is different from an
-			// unconditional statement whose predicate is TRUE.
+			// An insert has no predicate over its target relation, which is
+			// different from an unconditional statement whose predicate is TRUE.
 			name: "an insert carrying a predicate",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
 			        "scope":{"operation":"insert","schema":"public","relation":"accounts",
@@ -523,8 +523,8 @@ func TestPopulatedCorpusRoundTrips(t *testing.T) {
 //
 // The rules come from EDR-0007 — "assigned columns (SET, INSERT column list)"
 // is what `columns_written` records, so a select and a delete assign none — and
-// from SQL: an insert has no WHERE, while an unconditional statement has the
-// predicate TRUE. Three review rounds each found a shape the format could not
+// from what the fence is built over: an insert has no predicate over its target
+// relation, while an unconditional statement has the predicate TRUE. Three review rounds each found a shape the format could not
 // express, so the shape is stated here in full rather than inferred from the
 // rules that produce it.
 func TestScopeShapeMatrix(t *testing.T) {

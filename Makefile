@@ -4,10 +4,16 @@
 # a clean checkout with nothing installed but Go, and pnpm for the docs.
 #
 # CGO_ENABLED=1 is exported once here rather than set per-target, deliberately.
-# The grammar parses statements with PostgreSQL's own parser via libpg_query,
-# which is C (EDR-0039), so every build, test and release of every component is
-# a cgo build. A target that quietly dropped the flag would produce a binary
-# that cannot parse anything, and would do it at the worst possible moment.
+# The grammar *will* parse statements with PostgreSQL's own parser via
+# libpg_query, which is C (EDR-0039), and from then on every build, test and
+# release of every component is a cgo build. A target that quietly dropped the
+# flag would produce a binary that cannot parse anything, and would do it at the
+# worst possible moment.
+#
+# Today nothing in the dependency graph has a cgo file, so the flag changes no
+# binary yet — the same fact .goreleaser.yaml and the implementation plan state.
+# It is set now because retrofitting it across every target later is how one
+# gets missed.
 export CGO_ENABLED := 1
 
 MODULE   := github.com/sixfathoms/marque
