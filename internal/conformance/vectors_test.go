@@ -41,6 +41,28 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	      }
 	    },
 	    {
+	      "name": "an insert, which names its columns and has no WHERE",
+	      "statement": "INSERT INTO public.settings (account_id, tier) VALUES (42, 'pro')",
+	      "verdict": "in_subset",
+	      "scope": {
+	        "operation": "insert",
+	        "schema": "public",
+	        "relation": "settings",
+	        "columns_written": ["account_id", "tier"]
+	      }
+	    },
+	    {
+	      "name": "a select, which reads and assigns nothing",
+	      "statement": "SELECT tier FROM public.accounts WHERE id = 42",
+	      "verdict": "in_subset",
+	      "scope": {
+	        "operation": "select",
+	        "schema": "public",
+	        "relation": "accounts",
+	        "predicate": "id = 42"
+	      }
+	    },
+	    {
 	      "name": "single-relation delete, which assigns to no column",
 	      "statement": "DELETE FROM public.settings WHERE account_id = 42",
 	      "verdict": "in_subset",
@@ -71,8 +93,8 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	if corpus.SubsetVersion != 3 {
 		t.Errorf("SubsetVersion = %d, want 3", corpus.SubsetVersion)
 	}
-	if len(corpus.Vectors) != 4 {
-		t.Fatalf("loaded %d vectors, want 4", len(corpus.Vectors))
+	if len(corpus.Vectors) != 6 {
+		t.Fatalf("loaded %d vectors, want 6", len(corpus.Vectors))
 	}
 	if got := corpus.Vectors[0].Scope.ColumnsWritten; len(got) != 1 || got[0] != "tier" {
 		t.Errorf("columns_written = %v, want [tier]", got)
@@ -155,7 +177,7 @@ func TestLoadRejects(t *testing.T) {
 			name: "a scope that writes nothing",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
 			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":[],"predicate":"id = 1"}}]}`,
-			want: "requires columns_written",
+			want: "assigns columns, so columns_written is required",
 		},
 		{
 			name: "a nameless vector",
@@ -191,9 +213,43 @@ func TestLoadRejects(t *testing.T) {
 		{
 			name: "an operation outside the closed set",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"insert","schema":"public","relation":"accounts",
+			        "scope":{"operation":"merge","schema":"public","relation":"accounts",
 			        "columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "scope.operation is",
+		},
+		{
+			// An insert has no WHERE at all, which is different from an
+			// unconditional statement whose predicate is TRUE.
+			name: "an insert carrying a predicate",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"insert","schema":"public","relation":"accounts",
+			        "columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "has no WHERE",
+		},
+		{
+			name: "an insert assigning no columns",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"insert","schema":"public","relation":"accounts"}}]}`,
+			want: "columns_written is required",
+		},
+		{
+			name: "a select carrying columns_written",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"select","schema":"public","relation":"accounts",
+			        "columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "assigns to no column",
+		},
+		{
+			// The corpus decode must reject a key that belongs to a vector,
+			// which the flat key set cannot see.
+			name: "a vector key at the corpus level",
+			body: `{"subset_version":0,"vectors":[],"verdict":"in_subset"}`,
+			want: "unknown field",
+		},
+		{
+			name: "a whole vector written outside the vectors array",
+			body: `{"subset_version":0,"vectors":[],"name":"n","statement":"s","verdict":"in_subset"}`,
+			want: "unknown field",
 		},
 		{
 			name: "a schema that is only whitespace",
@@ -291,6 +347,12 @@ func TestLoadRejects(t *testing.T) {
 			body: "{\"subset_version\":0,\"vectors\":[{\"name\":\"\xff\",\"statement\":\"s\"," +
 				"\"verdict\":\"out_of_grammar\",\"because\":\"b\"}]}",
 			want: "not valid UTF-8",
+		},
+		{
+			name: "an unpaired surrogate escape, which readers disagree about",
+			body: `{"subset_version":0,"vectors":[{"name":"a\ud800b","statement":"s",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+			want: "unpaired surrogate",
 		},
 		{
 			name: "not JSON at all",

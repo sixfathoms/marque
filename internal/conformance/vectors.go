@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -48,20 +49,38 @@ var verdicts = []Verdict{InSubset, OutOfGrammar, Unsupported}
 // Operation is the kind of statement, which decides what a scope must carry.
 type Operation string
 
+// All four operations EDR-0007 puts in the checkable subset. Which of them a
+// corpus actually uses is the subset *version*'s business, not the format's —
+// the implementation plan's M2 starts narrower than the records allow, and
+// `subset_version` exists so the admitted set can widen without invalidating a
+// delegation signed against an earlier one. Hard-coding the narrower set here
+// would make a statement the records admit inexpressible, which is the mistake
+// this format has already made twice.
 const (
+	// Select reads and assigns nothing, so it carries no columns_written.
+	Select Operation = "select"
+	// Insert assigns to its column list (EDR-0007 names it alongside SET) and
+	// has no WHERE, so it carries no predicate.
+	Insert Operation = "insert"
 	// Update assigns to named columns, and the scope lists them.
 	Update Operation = "update"
-	// Delete removes rows and assigns to no column, so a delete scope carries
-	// no columns_written. What it does remove — including anything the engine
-	// removes on its behalf — is asserted at execution by the write-set check
-	// (EDR-0033), not stated here.
+	// Delete removes rows and assigns to no column. What it does remove —
+	// including anything the engine removes on its behalf — is asserted at
+	// execution by the write-set check (EDR-0033), not stated here.
 	Delete Operation = "delete"
 )
 
-// EDR-0007 puts SELECT and INSERT in the checkable subset too. They are absent
-// here because M2's initial subset is UPDATE and DELETE, and adding an
-// operation later is additive — a vector written today stays valid.
-var operations = []Operation{Update, Delete}
+var operations = []Operation{Select, Insert, Update, Delete}
+
+// assignsColumns says whether an operation names columns it writes. EDR-0007
+// counts "SET, INSERT column list" as assigned columns; a select and a delete
+// assign to none.
+func (o Operation) assignsColumns() bool { return o == Update || o == Insert }
+
+// hasPredicate says whether the statement can carry a WHERE at all. An insert
+// has none — which is different from an unconditional update, whose predicate
+// is TRUE.
+func (o Operation) hasPredicate() bool { return o != Insert }
 
 // Scope is what the grammar must extract from a statement it admits: the
 // relation, the columns written, and the predicate the fence is built from.
@@ -187,6 +206,46 @@ func checkKeys(raw []byte) error {
 	}
 }
 
+// checkEscapes rejects a \uXXXX escape that does not form a character.
+//
+// A lone surrogate written as an escape is pure ASCII, so the byte-level UTF-8
+// check above cannot see it — and Go then substitutes U+FFFD while another
+// reader keeps the surrogate. Same bytes, two values, which is the one thing a
+// normative language-neutral file must never do.
+func checkEscapes(raw []byte) error {
+	text := string(raw)
+	for i := 0; i+6 <= len(text); i++ {
+		if text[i] != '\\' || text[i+1] != 'u' {
+			continue
+		}
+		// bitSize 16: a \uXXXX escape is four hex digits, so the value cannot
+		// exceed 0xFFFF and the conversion below cannot overflow.
+		point, err := strconv.ParseUint(text[i+2:i+6], 16, 16)
+		if err != nil {
+			continue // Not an escape the decoder would accept either.
+		}
+		r := rune(point)
+		switch {
+		case r >= 0xDC00 && r <= 0xDFFF:
+			return fmt.Errorf("the corpus contains a trailing surrogate escape \\u%04X with no "+
+				"leading one; readers disagree about what that means", r)
+		case r >= 0xD800 && r <= 0xDBFF:
+			// A leading surrogate is only meaningful paired with a trailing one.
+			paired := i+12 <= len(text) && text[i+6] == '\\' && text[i+7] == 'u'
+			if paired {
+				low, err := strconv.ParseUint(text[i+8:i+12], 16, 16)
+				paired = err == nil && low >= 0xDC00 && low <= 0xDFFF
+			}
+			if !paired {
+				return fmt.Errorf("the corpus contains an unpaired surrogate escape \\u%04X; Go "+
+					"substitutes a replacement character here and other readers do not", r)
+			}
+			i += 5
+		}
+	}
+	return nil
+}
+
 // Load reads and validates a corpus.
 //
 // Every vector is checked, and the first file to carry one gets the check —
@@ -204,6 +263,9 @@ func Load(r io.Reader) (*Corpus, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("the corpus is not valid UTF-8; Go would silently substitute a " +
 			"replacement character where another reader would reject the file")
+	}
+	if err := checkEscapes(raw); err != nil {
+		return nil, err
 	}
 	if err := checkKeys(raw); err != nil {
 		return nil, err
@@ -305,7 +367,7 @@ func (v Vector) validate(present map[string]json.RawMessage) error {
 				v.Verdict)
 		}
 		if _, ok := present["because"]; ok {
-			return fmt.Errorf("verdict %q must not carry `because`; there is nothing being refused",
+			return fmt.Errorf("verdict %q must not carry `because`; nothing needed explaining",
 				v.Verdict)
 		}
 		return v.Scope.validate(present)
@@ -327,9 +389,9 @@ func (s Scope) validate(vectorKeys map[string]json.RawMessage) error {
 	}
 	// Both halves required, because EDR-0007 puts a relation resolved through
 	// `search_path` outside the subset: an unqualified name can bind elsewhere,
-	// which is the escape the pinned search_path closes. The grammar extracts a
-	// directly-named base table, so a vector without a schema describes a
-	// statement it should have refused.
+	// which is the escape the pinned search_path closes. A vector without a
+	// schema therefore describes a statement the grammar would not have
+	// admitted — which is an escalation, not a rejection (EDR-0007).
 	if strings.TrimSpace(s.Schema) == "" {
 		return fmt.Errorf("scope.schema is required; the subset admits a directly-named base " +
 			"table, not one resolved through search_path")
@@ -337,40 +399,43 @@ func (s Scope) validate(vectorKeys map[string]json.RawMessage) error {
 	if strings.TrimSpace(s.Relation) == "" {
 		return fmt.Errorf("scope.relation is required")
 	}
-	// The predicate is what the fence is built from (EDR-0007), and is always
-	// present because an unconditional statement has the predicate TRUE rather
-	// than none. That keeps the field meaningful without making an unqualified
-	// UPDATE inexpressible — EDR-0007's subset rules do not require a WHERE, so
-	// requiring one here would put a statement the records admit outside the
-	// corpus. The implementation plan's M2 narrows the *initial* subset further
-	// than the records do, which is a matter for the vectors rather than the
-	// format. If `insert` ever joins the operation set it has no WHERE at all,
-	// and this becomes operation-dependent like columns_written below.
-	if strings.TrimSpace(s.Predicate) == "" {
-		return fmt.Errorf("scope.predicate is required; it is what the fence is built from")
+
+	// Which keys the author wrote, so a forbidden field is rejected for being
+	// present rather than for being empty.
+	var scopeKeys map[string]json.RawMessage
+	if err := json.Unmarshal(vectorKeys["scope"], &scopeKeys); err != nil {
+		return fmt.Errorf("scope: %w", err)
+	}
+	_, hasColumns := scopeKeys["columns_written"]
+	_, hasPredicate := scopeKeys["predicate"]
+
+	switch {
+	case s.Operation.assignsColumns() && len(s.ColumnsWritten) == 0:
+		return fmt.Errorf("scope.operation %q assigns columns, so columns_written is required",
+			s.Operation)
+	case !s.Operation.assignsColumns() && hasColumns:
+		return fmt.Errorf("scope.operation %q assigns to no column, so columns_written must be "+
+			"absent; what it touches is asserted at execution", s.Operation)
+	}
+	for i, c := range s.ColumnsWritten {
+		if strings.TrimSpace(c) == "" {
+			return fmt.Errorf("scope.columns_written[%d] is empty", i)
+		}
 	}
 
-	switch s.Operation {
-	case Update:
-		if len(s.ColumnsWritten) == 0 {
-			return fmt.Errorf("scope.operation %q requires columns_written", s.Operation)
-		}
-		for i, c := range s.ColumnsWritten {
-			if strings.TrimSpace(c) == "" {
-				return fmt.Errorf("scope.columns_written[%d] is empty", i)
-			}
-		}
-	case Delete:
-		// Present at all, not merely non-empty: `"columns_written": []` on a
-		// delete states an expectation the format does not have.
-		var scopeKeys map[string]json.RawMessage
-		if err := json.Unmarshal(vectorKeys["scope"], &scopeKeys); err != nil {
-			return fmt.Errorf("scope: %w", err)
-		}
-		if _, ok := scopeKeys["columns_written"]; ok {
-			return fmt.Errorf("scope.operation %q assigns to no column, so columns_written "+
-				"must be absent; the rows it removes are measured at execution", s.Operation)
-		}
+	// The predicate is what the fence is built from (EDR-0007). An
+	// unconditional statement records TRUE rather than omitting it, so that
+	// requiring the field does not put a statement the records admit outside
+	// the corpus — EDR-0007's subset rules do not require a WHERE. An insert
+	// has no WHERE at all, which is a different thing from having a vacuous
+	// one.
+	switch {
+	case s.Operation.hasPredicate() && strings.TrimSpace(s.Predicate) == "":
+		return fmt.Errorf("scope.predicate is required; it is what the fence is built from, and " +
+			"an unconditional statement records TRUE rather than omitting it")
+	case !s.Operation.hasPredicate() && hasPredicate:
+		return fmt.Errorf("scope.operation %q has no WHERE, so predicate must be absent",
+			s.Operation)
 	}
 	return nil
 }

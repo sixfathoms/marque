@@ -27,8 +27,8 @@ subquery. Each of those is a way a statement can do more than it appears to.
 
 **The corpus is empty**, deliberately. The harness, the format and the validator are M0; the vectors
 and the grammar that runs them are M2. `internal/conformance` loads and validates this file today, so
-an empty corpus and an unreadable one are not the same outcome — a missing, truncated, `null` or
-`{}` file fails the build, each with its own message. The vector count is logged under `go test -v`.
+an empty corpus and an unreadable one are not the same outcome: a truncated, `null` or `{}` file
+fails the build, and a missing one fails to open. The vector count is logged under `go test -v`.
 
 ## Format
 
@@ -86,9 +86,10 @@ A vector the grammar must **admit** carries the scope it must extract:
 }
 ```
 
-A `delete` assigns to no column, so its scope carries no `columns_written` — the rows it removes are
-the write set the fence asserts over ([EDR-0033](../../docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)),
-and they are measured at execution rather than stated here:
+A `delete` assigns to no column, so its scope carries no `columns_written`. What it removes —
+including anything the engine removes on its behalf — is asserted at execution by the write-set
+check ([EDR-0033](../../docs/edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)),
+not stated here:
 
 ```json
 {
