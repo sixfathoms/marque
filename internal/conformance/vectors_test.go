@@ -355,6 +355,12 @@ func TestLoadRejects(t *testing.T) {
 			want: "unpaired surrogate",
 		},
 		{
+			name: "a trailing surrogate escape with no leading one",
+			body: `{"subset_version":0,"vectors":[{"name":"a\udc00b","statement":"s",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+			want: "trailing surrogate",
+		},
+		{
 			name: "not JSON at all",
 			body: `UPDATE public.accounts SET tier = 'pro'`,
 			want: "parsing the corpus",
@@ -420,5 +426,73 @@ func TestLoadedCorpusRoundTrips(t *testing.T) {
 
 	if second.SubsetVersion != first.SubsetVersion || len(second.Vectors) != len(first.Vectors) {
 		t.Errorf("round trip changed the corpus: %+v then %+v", first, second)
+	}
+}
+
+// Escapes a corpus is entitled to contain, which an earlier scan rejected: a
+// non-BMP character is a *pair* of escapes, and a literal backslash before a
+// "u" is not an escape at all — the second is what a vector exercising
+// PostgreSQL escape-string behaviour would carry.
+func TestLoadAcceptsLegitimateEscapes(t *testing.T) {
+	tests := []struct{ name, body string }{
+		{
+			name: "a non-BMP character, written as a surrogate pair",
+			body: `{"subset_version":0,"vectors":[{"name":"emoji \ud83d\ude00","statement":"s",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+		},
+		{
+			// A literal backslash followed by hex digits. Reading one byte too
+			// far here finds "d800" and calls it a lone surrogate, so this is
+			// what pins the escape walk to consuming `\\` whole.
+			name: "an escaped backslash followed by hex digits",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"SELECT E'\\d800'",
+			        "verdict":"out_of_grammar","because":"b"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := conformance.Load(strings.NewReader(tt.body)); err != nil {
+				t.Errorf("Load() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+// The round trip must hold for a corpus with vectors in it, not only the empty
+// committed one. An insert carries no predicate, and a marshalled empty string
+// would be a key the loader rejects — which the empty-corpus test cannot see.
+func TestPopulatedCorpusRoundTrips(t *testing.T) {
+	const body = `{
+	  "subset_version": 1,
+	  "vectors": [
+	    {"name":"u","statement":"s","verdict":"in_subset",
+	     "scope":{"operation":"update","schema":"public","relation":"accounts",
+	              "columns_written":["tier"],"predicate":"id = 1"}},
+	    {"name":"i","statement":"s","verdict":"in_subset",
+	     "scope":{"operation":"insert","schema":"public","relation":"settings",
+	              "columns_written":["tier"]}},
+	    {"name":"d","statement":"s","verdict":"in_subset",
+	     "scope":{"operation":"delete","schema":"public","relation":"settings","predicate":"id = 1"}},
+	    {"name":"s","statement":"s","verdict":"in_subset",
+	     "scope":{"operation":"select","schema":"public","relation":"accounts","predicate":"id = 1"}},
+	    {"name":"o","statement":"s","verdict":"out_of_grammar","because":"b"}
+	  ]
+	}`
+
+	first, err := conformance.Load(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	encoded, err := json.Marshal(first)
+	if err != nil {
+		t.Fatalf("marshalling: %v", err)
+	}
+	second, err := conformance.Load(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("re-loading what Load produced: %v\n%s", err, encoded)
+	}
+	if len(second.Vectors) != len(first.Vectors) {
+		t.Errorf("round trip changed the vector count: %d then %d", len(first.Vectors), len(second.Vectors))
 	}
 }

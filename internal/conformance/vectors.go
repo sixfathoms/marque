@@ -97,7 +97,7 @@ type Scope struct {
 	Relation  string    `json:"relation"`
 	// ColumnsWritten is required for Update and must be absent for Delete.
 	ColumnsWritten []string `json:"columns_written,omitempty"`
-	Predicate      string   `json:"predicate"`
+	Predicate      string   `json:"predicate,omitempty"`
 }
 
 // Vector is one statement and the verdict the grammar must reach on it.
@@ -214,33 +214,52 @@ func checkKeys(raw []byte) error {
 // normative language-neutral file must never do.
 func checkEscapes(raw []byte) error {
 	text := string(raw)
-	for i := 0; i+6 <= len(text); i++ {
-		if text[i] != '\\' || text[i+1] != 'u' {
+	// Escapes are consumed in order, not searched for. A scan that treats every
+	// `\u` as an escape misreads two things: the literal characters `\ud800`
+	// inside a string are written `\\ud800`, which SQL vectors exercising
+	// PostgreSQL escape strings will contain; and a valid non-BMP character is
+	// a *pair* of escapes, so the second must be consumed with the first rather
+	// than met again as a lone trailing surrogate.
+	for i := 0; i < len(text); {
+		if text[i] != '\\' {
+			i++
 			continue
 		}
-		// bitSize 16: a \uXXXX escape is four hex digits, so the value cannot
-		// exceed 0xFFFF and the conversion below cannot overflow.
+		if i+1 >= len(text) {
+			break // Malformed; the decoder reports it with more context.
+		}
+		if text[i+1] != 'u' {
+			i += 2 // `\\`, `\"`, `\n` — consumed whole, so it cannot start one.
+			continue
+		}
+		if i+6 > len(text) {
+			break
+		}
 		point, err := strconv.ParseUint(text[i+2:i+6], 16, 16)
 		if err != nil {
-			continue // Not an escape the decoder would accept either.
+			i += 2
+			continue
 		}
-		r := rune(point)
-		switch {
+
+		switch r := rune(point); {
 		case r >= 0xDC00 && r <= 0xDFFF:
 			return fmt.Errorf("the corpus contains a trailing surrogate escape \\u%04X with no "+
 				"leading one; readers disagree about what that means", r)
+
 		case r >= 0xD800 && r <= 0xDBFF:
-			// A leading surrogate is only meaningful paired with a trailing one.
-			paired := i+12 <= len(text) && text[i+6] == '\\' && text[i+7] == 'u'
-			if paired {
-				low, err := strconv.ParseUint(text[i+8:i+12], 16, 16)
-				paired = err == nil && low >= 0xDC00 && low <= 0xDFFF
-			}
-			if !paired {
+			if i+12 > len(text) || text[i+6] != '\\' || text[i+7] != 'u' {
 				return fmt.Errorf("the corpus contains an unpaired surrogate escape \\u%04X; Go "+
 					"substitutes a replacement character here and other readers do not", r)
 			}
-			i += 5
+			low, err := strconv.ParseUint(text[i+8:i+12], 16, 16)
+			if err != nil || low < 0xDC00 || low > 0xDFFF {
+				return fmt.Errorf("the corpus contains an unpaired surrogate escape \\u%04X; Go "+
+					"substitutes a replacement character here and other readers do not", r)
+			}
+			i += 12 // The pair is one character.
+
+		default:
+			i += 6
 		}
 	}
 	return nil
