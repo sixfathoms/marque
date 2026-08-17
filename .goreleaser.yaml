@@ -44,13 +44,19 @@ builds:
       # git worktree the embedded vcs.revision is the *parent* repository's
       # HEAD, which is worse than no provenance because it looks like some.
       - -buildvcs=false
+    # .Env.DIRTY comes from the Makefile, which can see the working tree where
+    # goreleaser cannot: --snapshot skips its repository validation, so without
+    # this it would compile uncommitted changes and stamp them with HEAD's clean
+    # commit. goreleaser fails if the variable is unset, which is the behaviour
+    # wanted — `make snapshot` is the supported entry point.
+    #
     # These three variables are the ones internal/version reads. A `-X` path
     # that does not resolve is ignored silently — no warning, no error, just a
     # binary reporting "dev" — so TestLdflagsReachTheBinary in internal/version
     # builds a real binary with these flags and asserts the values arrive.
     ldflags:
       - -X github.com/sixfathoms/marque/internal/version.buildVersion={{ .Version }}
-      - -X github.com/sixfathoms/marque/internal/version.buildCommit={{ .ShortCommit }}
+      - -X github.com/sixfathoms/marque/internal/version.buildCommit={{ .ShortCommit }}{{ .Env.DIRTY }}
       - -X github.com/sixfathoms/marque/internal/version.buildSourceDate={{ .CommitDate }}
     # The commit's timestamp, not the build's, for the same reason the Makefile
     # stamps a source date: the same commit should produce the same artefact.

@@ -213,6 +213,15 @@ compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_RE
 # target, so one machine cannot produce the whole matrix; CI runs this on a
 # native runner per supported platform. Nothing is published — see
 # .goreleaser.yaml, where release is disabled.
+#
+# DIRTY is exported because goreleaser cannot see the working tree the way the
+# Makefile can: --snapshot skips its repository validation, so it would compile
+# uncommitted changes while stamping HEAD's clean commit and date. That is an
+# artefact labelled with a commit that does not contain it. Passing the marker
+# in makes both build paths say the same true thing.
+DIRTY := $(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
+export DIRTY
+
 snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes nothing
 	$(GORELEASER) build --snapshot --single-target --clean
 
@@ -221,24 +230,35 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 # date, one of them is lying about what a binary is, and "same commit, same
 # binary" stops being true across the two ways of building one.
 #
-# The commit field is not compared: a developer tree can be dirty, where a
-# release build never is.
+# The commit *is* compared, now that DIRTY reaches both sides. Leaving it out
+# was how a dirty tree could produce a goreleaser binary stamped with a clean
+# HEAD it does not contain, and have the check agree.
 #
 # `head -1` is safe only because `snapshot` passes --single-target, so dist
 # holds one binary per name. Drop that flag and this silently compares the
 # first of several — on Linux a foreign-arch binary produces no stdout at all,
 # so the coverage would shrink without anything failing.
 snapshot-check: build snapshot ## Fail if make and goreleaser disagree about a build
-	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*, \(.*\)) go.*/\1/'); \
-	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*, \(.*\)) go.*/\1/'); \
+	@if [ -n "$$EXPECT_PLATFORM" ]; then \
+		actual="$$(go env GOOS)/$$(go env GOARCH)"; \
+		if [ "$$actual" != "$$EXPECT_PLATFORM" ]; then \
+			echo "this runner is $$actual, but the job says it is $$EXPECT_PLATFORM."; \
+			echo "--single-target builds whatever the host is, so the matrix would report a"; \
+			echo "platform it never built. Fix the runner label or the matrix entry."; \
+			exit 1; \
+		fi; \
+		echo "  platform: $$actual"; \
+	fi
+	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*(\(.*\)) go.*/\1/'); \
+	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
 	if [ -z "$$theirs" ]; then echo "no snapshot binary was produced"; exit 1; fi; \
 	if [ "$$mine" != "$$theirs" ]; then \
-		echo "make and goreleaser disagree about this commit's source date:"; \
+		echo "make and goreleaser disagree about what they built:"; \
 		echo "  make:       $$mine"; \
 		echo "  goreleaser: $$theirs"; \
 		exit 1; \
 	fi; \
-	echo "  source date agrees across both build paths: $$mine"
+	echo "  commit and source date agree across both build paths: $$mine"
 
 docs: ## Build the documentation site — the validator for records and entries
 	cd website && pnpm install --frozen-lockfile && pnpm run build

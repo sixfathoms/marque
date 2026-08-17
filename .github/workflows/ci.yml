@@ -105,4 +105,11 @@ jobs:
           cache-dependency-path: "**/go.sum"
       # Builds the platform's own slice of the release matrix and asserts that
       # make and goreleaser agree about what they built.
-      - run: make snapshot-check
+      #
+      # EXPECT_PLATFORM is checked against `go env`, because --single-target
+      # builds whatever the host happens to be: without it, a mutable runner
+      # label that changed architecture would leave the matrix reporting four
+      # slices while building the same one twice.
+      - env:
+          EXPECT_PLATFORM: ${{ matrix.platform }}
+        run: make snapshot-check
