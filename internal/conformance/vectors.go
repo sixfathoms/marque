@@ -36,11 +36,28 @@ const (
 
 var verdicts = []Verdict{InSubset, OutOfGrammar, Unsupported}
 
+// Operation is the kind of statement, which decides what a scope must carry.
+type Operation string
+
+const (
+	// Update assigns to named columns, and the scope lists them.
+	Update Operation = "update"
+	// Delete removes rows and assigns to no column, so a delete scope carries
+	// no columns_written. The rows it removes are the write set the fence
+	// asserts over (EDR-0033), which is measured at execution rather than
+	// stated here.
+	Delete Operation = "delete"
+)
+
+var operations = []Operation{Update, Delete}
+
 // Scope is what the grammar must extract from a statement it admits: the
 // relation, the columns written, and the predicate the fence is built from.
 type Scope struct {
-	Relation       string   `json:"relation"`
-	ColumnsWritten []string `json:"columns_written"`
+	Operation Operation `json:"operation"`
+	Relation  string    `json:"relation"`
+	// ColumnsWritten is required for Update and must be absent for Delete.
+	ColumnsWritten []string `json:"columns_written,omitempty"`
 	Predicate      string   `json:"predicate"`
 }
 
@@ -76,10 +93,31 @@ func Load(r io.Reader) (*Corpus, error) {
 	// would drop a constraint the vector's author believed they had written.
 	decoder.DisallowUnknownFields()
 
-	var corpus Corpus
-	if err := decoder.Decode(&corpus); err != nil {
+	// Decoded through pointers so that an absent field is distinguishable from
+	// a zero one. `null`, `{}` and `{"vectors":[]}` all decode into a
+	// zero-valued Corpus, so without this, deleting the file's contents — or
+	// replacing the normative corpus with `null` — reads as a valid empty one.
+	var envelope struct {
+		SubsetVersion *int      `json:"subset_version"`
+		Vectors       *[]Vector `json:"vectors"`
+	}
+	if err := decoder.Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("parsing the corpus: %w", err)
 	}
+	switch {
+	case envelope.SubsetVersion == nil:
+		return nil, fmt.Errorf("subset_version is absent; every corpus states the subset it describes")
+	case envelope.Vectors == nil:
+		return nil, fmt.Errorf("vectors is absent; an empty corpus writes it as []")
+	}
+
+	// A second value after the corpus means the file was concatenated, and
+	// decoding one value would silently ignore everything past it.
+	if err := decoder.Decode(new(json.RawMessage)); err != io.EOF {
+		return nil, fmt.Errorf("the corpus is followed by more JSON; the file holds one document")
+	}
+
+	corpus := Corpus{SubsetVersion: *envelope.SubsetVersion, Vectors: *envelope.Vectors}
 	if corpus.SubsetVersion < 0 {
 		return nil, fmt.Errorf("subset_version is %d; it identifies a subset and cannot be negative",
 			corpus.SubsetVersion)
@@ -138,16 +176,33 @@ func (v Vector) validate() error {
 }
 
 func (s Scope) validate() error {
+	if !slices.Contains(operations, s.Operation) {
+		return fmt.Errorf("scope.operation is %q, want one of %v", s.Operation, operations)
+	}
 	if strings.TrimSpace(s.Relation) == "" {
 		return fmt.Errorf("scope.relation is required")
 	}
-	if len(s.ColumnsWritten) == 0 {
-		return fmt.Errorf("scope.columns_written is required; a statement in the subset writes " +
-			"something, and the write set is what the fence asserts over")
+	// The predicate is what the fence is built from (EDR-0007). The initial
+	// subset admits nothing without one, so a scope that omits it describes a
+	// statement the grammar should have refused.
+	if strings.TrimSpace(s.Predicate) == "" {
+		return fmt.Errorf("scope.predicate is required; it is what the fence is built from")
 	}
-	for i, c := range s.ColumnsWritten {
-		if strings.TrimSpace(c) == "" {
-			return fmt.Errorf("scope.columns_written[%d] is empty", i)
+
+	switch s.Operation {
+	case Update:
+		if len(s.ColumnsWritten) == 0 {
+			return fmt.Errorf("scope.operation %q requires columns_written", s.Operation)
+		}
+		for i, c := range s.ColumnsWritten {
+			if strings.TrimSpace(c) == "" {
+				return fmt.Errorf("scope.columns_written[%d] is empty", i)
+			}
+		}
+	case Delete:
+		if len(s.ColumnsWritten) != 0 {
+			return fmt.Errorf("scope.operation %q assigns to no column, so columns_written "+
+				"must be absent; the rows it removes are measured at execution", s.Operation)
 		}
 	}
 	return nil

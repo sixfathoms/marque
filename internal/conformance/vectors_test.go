@@ -31,9 +31,20 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	      "statement": "UPDATE accounts SET tier = 'pro' WHERE id = 42 AND region = 'eu'",
 	      "verdict": "in_subset",
 	      "scope": {
+	        "operation": "update",
 	        "relation": "accounts",
 	        "columns_written": ["tier"],
 	        "predicate": "id = 42 AND region = 'eu'"
+	      }
+	    },
+	    {
+	      "name": "single-relation delete, which assigns to no column",
+	      "statement": "DELETE FROM settings WHERE account_id = 42",
+	      "verdict": "in_subset",
+	      "scope": {
+	        "operation": "delete",
+	        "relation": "settings",
+	        "predicate": "account_id = 42"
 	      }
 	    },
 	    {
@@ -56,8 +67,8 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	if corpus.SubsetVersion != 3 {
 		t.Errorf("SubsetVersion = %d, want 3", corpus.SubsetVersion)
 	}
-	if len(corpus.Vectors) != 3 {
-		t.Fatalf("loaded %d vectors, want 3", len(corpus.Vectors))
+	if len(corpus.Vectors) != 4 {
+		t.Fatalf("loaded %d vectors, want 4", len(corpus.Vectors))
 	}
 	if got := corpus.Vectors[0].Scope.ColumnsWritten; len(got) != 1 || got[0] != "tier" {
 		t.Errorf("columns_written = %v, want [tier]", got)
@@ -70,59 +81,101 @@ func TestLoadRejects(t *testing.T) {
 	}{
 		{
 			name: "a verdict outside the closed set",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"probably","because":"b"}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"probably","because":"b"}]}`,
 			want: "want one of",
 		},
 		{
 			name: "an admitted statement with no scope",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"in_subset"}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset"}]}`,
 			want: "requires a scope",
 		},
 		{
 			name: "a refused statement with no reason",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar"}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar"}]}`,
 			want: "requires `because`",
 		},
 		{
 			name: "a refused statement carrying a scope",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"unsupported","because":"b",
-			        "scope":{"relation":"accounts","columns_written":["tier"]}}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"unsupported","because":"b",
+			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry a scope",
 		},
 		{
 			name: "an admitted statement carrying a reason",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"in_subset","because":"b",
-			        "scope":{"relation":"accounts","columns_written":["tier"]}}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset","because":"b",
+			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry `because`",
 		},
 		{
 			name: "a scope with no relation",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"columns_written":["tier"]}}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "scope.relation is required",
 		},
 		{
 			name: "a scope that writes nothing",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"relation":"accounts","columns_written":[]}}]}`,
-			want: "columns_written is required",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","relation":"accounts","columns_written":[],"predicate":"id = 1"}}]}`,
+			want: "requires columns_written",
 		},
 		{
 			name: "a nameless vector",
-			body: `{"vectors":[{"name":"  ","statement":"s","verdict":"out_of_grammar","because":"b"}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"  ","statement":"s","verdict":"out_of_grammar","because":"b"}]}`,
 			want: "name is required",
 		},
 		{
 			name: "a vector with no statement",
-			body: `{"vectors":[{"name":"n","statement":"","verdict":"out_of_grammar","because":"b"}]}`,
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"","verdict":"out_of_grammar","because":"b"}]}`,
 			want: "statement is required",
 		},
 		{
 			name: "two vectors sharing a name",
-			body: `{"vectors":[
+			body: `{"subset_version":0,"vectors":[
 			        {"name":"n","statement":"a","verdict":"out_of_grammar","because":"b"},
 			        {"name":"n","statement":"c","verdict":"out_of_grammar","because":"d"}]}`,
 			want: "is used twice",
+		},
+		{
+			name: "a delete carrying columns_written",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"delete","relation":"settings","columns_written":["tier"],
+			        "predicate":"id = 1"}}]}`,
+			want: "assigns to no column",
+		},
+		{
+			name: "a scope with no operation",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "scope.operation is",
+		},
+		{
+			// The predicate is what the fence is built from, and the initial
+			// subset admits nothing without one.
+			name: "an admitted scope with no predicate",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"]}}]}`,
+			want: "scope.predicate is required",
+		},
+		{
+			// Deleting the file's contents must not read as a valid empty corpus.
+			name: "a null document",
+			body: `null`,
+			want: "subset_version is absent",
+		},
+		{
+			name: "an empty object",
+			body: `{}`,
+			want: "subset_version is absent",
+		},
+		{
+			name: "a corpus with no vectors key",
+			body: `{"subset_version":0}`,
+			want: "vectors is absent",
+		},
+		{
+			name: "a file concatenated with a second document",
+			body: `{"subset_version":0,"vectors":[]}{"subset_version":9,"vectors":[]}`,
+			want: "followed by more JSON",
 		},
 		{
 			name: "a negative subset version",
@@ -133,7 +186,7 @@ func TestLoadRejects(t *testing.T) {
 			// A field nobody reads is a constraint its author believed they
 			// had written.
 			name: "a field the format does not define",
-			body: `{"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar",
 			        "because":"b","expected":"in_subset"}]}`,
 			want: "unknown field",
 		},
