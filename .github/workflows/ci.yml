@@ -93,8 +93,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # goreleaser reads the tag and commit history to derive a version;
-          # a shallow clone makes it refuse.
+          # For the tags, not for refusal. A shallow clone does not fail here
+          # — it quietly derives a version from no tags at all, so the snapshot
+          # names a lineage that is not the repository's. `fetch-tags: true`
+          # at depth 1 would do as well; full history is negligible here.
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

@@ -3,12 +3,21 @@
 # (implementation plan, M0 step 5).
 #
 # Why a native runner per platform rather than one job building everything:
-# CGO_ENABLED=1 is not optional, because the grammar parses statements with
+# CGO_ENABLED=1 is not optional, because the grammar will parse statements with
 # PostgreSQL's own parser via libpg_query, which is C (EDR-0039). A cgo build
 # needs a C toolchain for the *target*, so the usual single-job matrix build
 # does not apply. Each runner therefore builds only its own slice, with
 # `goreleaser build --snapshot --single-target`; the matrix below is the full
 # supported set, not what any one job produces.
+#
+# Be exact about what this proves today, because the reason above is written in
+# the future tense on purpose: nothing in the dependency graph contains a cgo
+# file yet — `go list -deps ./cmd/marque` finds none, and the build succeeds
+# with CC pointing at nothing. So the matrix currently proves that four runners
+# exist, that the release plumbing works on each, and that the binary it
+# produces runs there. It starts proving anything about a C toolchain the day
+# pg_query_go lands, which is exactly when it would be expensive to discover
+# that one of these platforms cannot build it.
 version: 2
 
 project_name: marque
@@ -27,10 +36,18 @@ builds:
     goarch: [amd64, arm64]
     flags:
       - -trimpath
-    # These three variables are the ones internal/version reads. If they are
-    # renamed there and not here, a released binary silently reports "dev" —
-    # the ldflags path fails quietly, which is why internal/version has a test
-    # asserting Get() returns something.
+      # No VCS stamping. Two reasons, both found by mutation-testing the guard
+      # in `make snapshot-check`. It removes internal/version's fallback to
+      # debug.ReadBuildInfo, so a `-X` path that stops resolving yields
+      # "unknown" and the guard notices, instead of silently reading a
+      # vcs.time identical to the value the Makefile stamps. And in a linked
+      # git worktree the embedded vcs.revision is the *parent* repository's
+      # HEAD, which is worse than no provenance because it looks like some.
+      - -buildvcs=false
+    # These three variables are the ones internal/version reads. A `-X` path
+    # that does not resolve is ignored silently — no warning, no error, just a
+    # binary reporting "dev" — so TestLdflagsReachTheBinary in internal/version
+    # builds a real binary with these flags and asserts the values arrive.
     ldflags:
       - -X github.com/sixfathoms/marque/internal/version.buildVersion={{ .Version }}
       - -X github.com/sixfathoms/marque/internal/version.buildCommit={{ .ShortCommit }}

@@ -223,6 +223,11 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 #
 # The commit field is not compared: a developer tree can be dirty, where a
 # release build never is.
+#
+# `head -1` is safe only because `snapshot` passes --single-target, so dist
+# holds one binary per name. Drop that flag and this silently compares the
+# first of several — on Linux a foreign-arch binary produces no stdout at all,
+# so the coverage would shrink without anything failing.
 snapshot-check: build snapshot ## Fail if make and goreleaser disagree about a build
 	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*, \(.*\)) go.*/\1/'); \
 	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*, \(.*\)) go.*/\1/'); \
@@ -248,9 +253,17 @@ clean: ## Remove build output, including what `make docs` installs
 
 tools: $(GOLANGCI) $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) $(GORELEASER) ## Build the pinned developer tools into ./bin/tools
 
-# golangci-lint and buf live in their own module so that their dependency
-# graphs — some two hundred packages between them — never enter ours. Go skips
-# nested modules when resolving ./..., so nothing else has to know.
+# golangci-lint, buf and goreleaser live in their own module so that their
+# dependency graphs — some hundreds of packages between them — never enter
+# ours. Go skips nested modules when resolving ./..., so nothing else has to
+# know.
+#
+# The isolation is from *this* module, not from each other. Adding goreleaser
+# moved the protobuf and connect versions that buf links, without buf's own
+# version changing — harmless, and verified so, but it means upgrading one tool
+# can relink another. buf builds every descriptor the schema checks run on, so
+# a `go get -u` in tools/ deserves the same suspicion as a dependency bump in
+# the main module.
 $(GOLANGCI): tools/go.mod tools/go.sum
 	@mkdir -p $(TOOL_DIR)
 	go -C tools build -o $(CURDIR)/$@ github.com/golangci/golangci-lint/v2/cmd/golangci-lint
