@@ -3,6 +3,8 @@ id: 11
 title: "Execution is idempotent, fenced, and budgeted"
 summary: "Every execution carries a caller-supplied nonce recorded before the statement runs. A repeat returns the first outcome instead of applying the change twice, and the marque's budget is consumed by the nonce, not by success."
 status: accepted
+implementation: none
+implementation_note: "The nonce appears in proto/marque/v1/common.proto only as the example of what an IDEMPOTENCY_KEYED method's key would be. Nothing claims a nonce, executes anything, or accounts for a budget."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

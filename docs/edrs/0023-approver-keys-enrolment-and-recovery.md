@@ -3,6 +3,7 @@ id: 23
 title: "Enrol approver keys in hardware, and require an existing approver to enrol the next"
 summary: "An approver signs with a non-extractable hardware key — WebAuthn in the browser, the platform key store in the CLI. Enrolling an additional key needs a second enrolled approver, so a stolen session cannot mint its own authority."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

@@ -3,6 +3,7 @@ id: 27
 title: "Be psql first, then be better than psql"
 summary: "`marque psql` accepts psql's flags, meta-commands and output formats so it can be aliased in place. Catalog introspection is a named statement class that runs under the role without approval, logged in aggregate."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

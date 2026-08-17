@@ -3,6 +3,7 @@ id: 8
 title: "Approve routine work once, as a parameterised standing order"
 summary: "A standing order is a statement template approved once, invoked with parameters that must satisfy declared constraints. Invocation mints a marque with no human in the loop, and every invocation is still logged."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

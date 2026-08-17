@@ -3,6 +3,7 @@ id: 12
 title: "The logbook is an append-only hash-chained journal"
 summary: "Every request, analysis, approval, execution and revocation is appended to a hash-chained journal that Marque's own role cannot update or delete. Resubmission cites the prior entry rather than reopening it."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

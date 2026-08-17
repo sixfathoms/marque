@@ -3,6 +3,7 @@ id: 10
 title: "Rehearse the statement in a transaction that never commits"
 summary: "Before approval, the Pilot runs the request inside a transaction it always rolls back, capturing affected rows, duration and plan. The approver sees measured numbers rather than a guess."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

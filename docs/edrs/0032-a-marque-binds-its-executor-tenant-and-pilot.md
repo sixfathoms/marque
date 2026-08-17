@@ -3,6 +3,7 @@ id: 32
 title: "Bind the executor, the tenant and the Pilot into the marque"
 summary: "Three bindings other records already assume had no payload field: the caller's key, the tenant, and the Pilot. Adding them makes offline execution work for the caller, makes tenant confusion fail closed, and makes the budget fence real."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

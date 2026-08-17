@@ -3,6 +3,7 @@ id: 25
 title: "Partition every tenant from day one, including its logbook chain and its signing key"
 summary: "Tenancy is in the model from the first migration: the tenant comes from the authenticated principal, never a request field, and each tenant gets its own hash chain and its own control-plane signing key."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

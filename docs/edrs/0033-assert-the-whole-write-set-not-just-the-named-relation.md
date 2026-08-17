@@ -3,6 +3,7 @@ id: 33
 title: "Assert the transaction's whole write set, not just the named relation"
 summary: "A cascading delete returns one row and destroys millions in a table no delegation names. A fourth fence check reads the transaction's per-relation write counts before commit and aborts if anything outside the declared scope was touched."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

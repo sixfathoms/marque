@@ -3,6 +3,7 @@ id: 4
 title: "A marque is a doubly-signed lease, verified by computation"
 summary: "A marque is a JWS carrying both the approver's signature and the control plane's, binding one statement digest to a role, a window and an execution budget. The Pilot verifies it locally; only revocations are looked up."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

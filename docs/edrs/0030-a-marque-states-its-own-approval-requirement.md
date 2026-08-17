@@ -3,6 +3,7 @@ id: 30
 title: "A marque states how many approvers it needs, inside what every signature covers"
 summary: "JWS signature entries are independent, so a two-approver marque could be stripped to one and still verify. The required count and eligible approvers move into the signed payload, making a stripped marque invalid rather than downgraded."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

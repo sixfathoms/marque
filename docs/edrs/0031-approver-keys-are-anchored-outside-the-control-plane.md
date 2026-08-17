@@ -3,6 +3,7 @@ id: 31
 title: "Anchor the approver key set outside the control plane, or the second signature is theatre"
 summary: "A Pilot must not learn which keys are approvers from the Harbourmaster. The enrolled set is a co-signed, epoch-chained roster verified back to a root configured out of band at Pilot deployment."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

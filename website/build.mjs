@@ -43,6 +43,32 @@ const GITHUB_SOURCE_BASE = `${REPO_URL}/blob/main`;
 const SITE_NAME = 'Marque';
 
 const VALID_STATUSES = new Set(['proposed', 'accepted', 'deprecated', 'superseded']);
+
+// `status` records what was DECIDED. `implementation` records what EXISTS, and
+// the two axes are orthogonal on purpose: a record is routinely `accepted` and
+// `none` at once — the decision is settled, and not a line of it is written.
+// Folding this into the status vocabulary would push every settled-but-unbuilt
+// decision back to `proposed`, which in this repository arms the
+// `proposed_until` build-failure timer.
+//
+// The vocabulary is CLOSED, and this is the only place it is written down: the
+// build validates against it and the roadmap page derives its groups, their
+// order and their blurbs from it. Each entry is [state, blurb, note-required],
+// where note-required is the phrasing of what the note must say, or null when
+// no note is compelled. Ordered most-built to least; the roadmap reverses it so
+// a reader meets the outstanding work first. Adding a state means editing this
+// array and docs/edrs/README.md together.
+const IMPLEMENTATION_STATES = [
+  ['shipped', 'Built and running — the whole decision, not the easy half.', null],
+  ['partial', 'Some of it runs, some does not.', 'saying which half is missing'],
+  ['in-flight', 'Implemented somewhere that is not the main branch.', 'naming the branch'],
+  ['none', 'Nothing implements it.', null],
+];
+const IMPLEMENTATION_STATE_NAMES = IMPLEMENTATION_STATES.map(([s]) => s);
+const IMPLEMENTATION_NOTE_REQUIRED = new Map(
+  IMPLEMENTATION_STATES.filter(([, , required]) => required).map(([s, , required]) => [s, required]),
+);
+
 const EDR_FILE_RE = /^(\d{4})-([a-z0-9][a-z0-9-]*)\.md$/;
 const ALIAS_RE = /^[a-z0-9][a-z0-9-]*$/;
 const EDR_SLUG_RE = /^\d{4}-[a-z0-9-]+$/;
@@ -78,6 +104,7 @@ const NAV = [
   { key: 'home', label: 'Overview', href: `${BASE}/` },
   { key: 'docs', label: 'Docs', href: `${BASE}/overview/introduction/` },
   { key: 'edrs', label: 'Decisions', href: `${BASE}/edrs/` },
+  { key: 'roadmap', label: 'Roadmap', href: `${BASE}/roadmap/` },
   { key: 'changelog', label: 'Changelog', href: `${BASE}/changelog/` },
   { key: 'github', label: 'GitHub', href: REPO_URL },
 ];
@@ -203,8 +230,23 @@ function renderToc(items) {
     .join('');
 }
 
+// A record shows two badges side by side, and they answer different questions:
+// what was decided, and what exists. They are drawn differently on purpose —
+// status filled, implementation outlined — so the pair is never read as one
+// badge saying one thing. Both go through this helper so the axis is announced
+// to a screen reader from one place rather than from two copies that drift;
+// "accepted / none" read aloud with no axis names is worse than either alone.
+function badge(axis, value, classes) {
+  return (
+    `<span class="badge ${classes}">` +
+    `<span class="badge-axis">${escapeHtml(axis)}: </span>${escapeHtml(value)}</span>`
+  );
+}
 function statusBadge(s) {
-  return `<span class="badge badge-${escapeHtml(s)}">${escapeHtml(s)}</span>`;
+  return badge('Status', s, `badge-${escapeHtml(s)}`);
+}
+function implementationBadge(i) {
+  return badge('Implementation', i, `badge-impl impl-${escapeHtml(i)}`);
 }
 function tagBadges(fm) {
   const t = Array.isArray(fm.tags) ? fm.tags : [];
@@ -340,6 +382,26 @@ function validateEdr(filename, fm) {
   if (!fm.status || !VALID_STATUSES.has(fm.status)) {
     errs.push(`status must be one of ${[...VALID_STATUSES].join('|')}`);
   }
+  // Required, and rejected here exactly as a missing `summary` is — for the
+  // same kind of reason. The roadmap page is derived from this field and from
+  // nothing else, so an OPTIONAL field is one that future records omit, and the
+  // page then quietly under-reports the work outstanding. A roadmap that
+  // under-reports is worse than no roadmap at all, because it is read as
+  // complete. Required is what makes the derivation trustworthy.
+  if (!fm.implementation || !IMPLEMENTATION_STATE_NAMES.includes(fm.implementation)) {
+    errs.push(
+      `implementation must be one of ${IMPLEMENTATION_STATE_NAMES.join('|')} — what EXISTS, as ` +
+        `opposed to what status records was decided (got ${JSON.stringify(fm.implementation)})`,
+    );
+  } else if (IMPLEMENTATION_NOTE_REQUIRED.has(fm.implementation) && !fm.implementation_note) {
+    errs.push(
+      `implementation: ${fm.implementation} requires implementation_note ` +
+        `${IMPLEMENTATION_NOTE_REQUIRED.get(fm.implementation)}`,
+    );
+  }
+  if (fm.implementation_note != null && typeof fm.implementation_note !== 'string') {
+    errs.push('implementation_note must be a string');
+  }
   if (!fm.date) errs.push('date is required (YYYY-MM-DD)');
   if (fm.status === 'superseded' && !fm.superseded_by) errs.push('status=superseded requires superseded_by');
   if (fm.status === 'proposed' && !fm.proposed_until) errs.push('status=proposed requires proposed_until');
@@ -406,6 +468,10 @@ async function buildEdrPage(edr, byId, layout) {
     title: escapeHtml(fm.title),
     summary: escapeHtml(fm.summary),
     status_badge: statusBadge(fm.status),
+    implementation_badge: implementationBadge(fm.implementation),
+    implementation_note: fm.implementation_note
+      ? `<p class="edr-impl-note">${escapeHtml(fm.implementation_note)}</p>`
+      : '',
     date: escapeHtml(formatDate(fm.date)),
     authors: authorNames(fm),
     tags: tagBadges(fm),
@@ -441,7 +507,7 @@ async function buildEdrIndex(edrs, layout) {
         `<li class="edr-row">` +
         `<a class="edr-num" href="${href}">${String(fm.id).padStart(4, '0')}</a>` +
         `<div class="edr-body"><p class="edr-title"><a href="${href}">${escapeHtml(fm.title)}</a>` +
-        ` ${statusBadge(fm.status)}</p>` +
+        ` ${statusBadge(fm.status)} ${implementationBadge(fm.implementation)}</p>` +
         `<p class="edr-summary">${escapeHtml(fm.summary)}</p>` +
         `<p class="edr-meta"><span class="date">${escapeHtml(formatDate(fm.date))}</span> ${tagBadges(fm)}</p>` +
         `</div></li>`
@@ -457,6 +523,77 @@ async function buildEdrIndex(edrs, layout) {
   await writePageAt(
     'edrs',
     applyLayout(layout, { title: `Decision records · ${SITE_NAME}`, nav: renderNav('edrs'), body }),
+  );
+}
+
+// ---- roadmap ------------------------------------------------------------
+// Derived from the records' own `implementation` frontmatter and from nothing
+// else. There is no manifest and no second list, for the same reason the
+// changelog has no index: a registry only moves the line that goes stale. What
+// makes the derivation trustworthy is that the field cannot be absent —
+// validateEdr rejects a record without one — so this page cannot under-report
+// by silently skipping a record that never declared its state.
+async function buildRoadmap(edrs, layout) {
+  const byState = new Map(IMPLEMENTATION_STATE_NAMES.map((s) => [s, []]));
+  for (const e of edrs) byState.get(e.frontmatter.implementation).push(e);
+
+  // Most outstanding first: a roadmap opens on the work, not on the wins.
+  const order = [...IMPLEMENTATION_STATES].reverse();
+
+  // Every state is tallied, including the empty ones — "0 in-flight" is a fact
+  // a reader wants. An empty state renders no group, though, so it is not a
+  // link: an anchor to a section that was filtered out goes nowhere.
+  const tally = order
+    .map(([state]) => {
+      const n = byState.get(state).length;
+      const inner = `<span class="roadmap-tally-count">${n}</span> ${escapeHtml(state)}`;
+      return n
+        ? `<a class="roadmap-tally-item" href="#${state}">${inner}</a>`
+        : `<span class="roadmap-tally-item is-empty">${inner}</span>`;
+    })
+    .join('\n    ');
+
+  const groups = order
+    .filter(([state]) => byState.get(state).length)
+    .map(([state, blurb]) => {
+      const rows = byState
+        .get(state)
+        .sort((a, b) => a.frontmatter.id - b.frontmatter.id)
+        .map((e) => {
+          const fm = e.frontmatter;
+          const href = edrUrl(e.slug);
+          return (
+            `<li class="edr-row">` +
+            `<a class="edr-num" href="${href}">${String(fm.id).padStart(4, '0')}</a>` +
+            `<div class="edr-body"><p class="edr-title"><a href="${href}">${escapeHtml(fm.title)}</a>` +
+            ` ${statusBadge(fm.status)}</p>` +
+            (fm.implementation_note
+              ? `<p class="edr-impl-note">${escapeHtml(fm.implementation_note)}</p>`
+              : '') +
+            `</div></li>`
+          );
+        })
+        .join('\n');
+      return (
+        `<section class="roadmap-group">\n` +
+        `<h2 id="${state}">${implementationBadge(state)}` +
+        `<span class="roadmap-count">${byState.get(state).length} of ${edrs.length}</span></h2>\n` +
+        `<p class="roadmap-blurb">${escapeHtml(blurb)}</p>\n` +
+        `<ul class="edr-list">\n${rows}\n</ul>\n</section>`
+      );
+    })
+    .join('\n');
+
+  const body = await renderTemplate('roadmap.html', {
+    count: String(edrs.length),
+    tally,
+    groups,
+    base: BASE,
+    repo_url: REPO_URL,
+  });
+  await writePageAt(
+    'roadmap',
+    applyLayout(layout, { title: `Roadmap · ${SITE_NAME}`, nav: renderNav('roadmap'), body }),
   );
 }
 
@@ -612,6 +749,7 @@ async function main() {
   const byId = new Map(edrs.map((e) => [e.frontmatter.id, e]));
   for (const edr of edrs) await buildEdrPage(edr, byId, layout);
   await buildEdrIndex(edrs, layout);
+  await buildRoadmap(edrs, layout);
 
   await buildHome(layout, edrs);
   await copyStatic();

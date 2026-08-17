@@ -3,6 +3,7 @@ id: 22
 title: "Speak the PostgreSQL wire protocol locally, and broker every statement across it"
 summary: "Marque runs a loopback proxy that emulates PostgreSQL so psql and existing tools work unchanged. It parses and brokers every statement rather than forwarding bytes — it is an interface onto the control, not a tunnel around it."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

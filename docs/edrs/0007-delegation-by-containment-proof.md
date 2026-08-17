@@ -3,6 +3,7 @@ id: 7
 title: "Prove object scope, fence row scope, and escalate anything unprovable"
 summary: "A delegation is checked in three ways: object scope by static proof over a restricted statement grammar, row scope by a transactional fence that aborts loudly rather than narrowing silently, and magnitude by an affected-row assertion."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

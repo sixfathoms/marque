@@ -3,6 +3,7 @@ id: 16
 title: "Compile a written delegation, and have the human sign the compilation"
 summary: "A delegation may be written in plain language. A model compiles it into a structured scope, the grantor reads and signs the compiled form, and enforcement runs entirely on the compilation — never on the sentence."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

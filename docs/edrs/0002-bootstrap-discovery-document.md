@@ -3,6 +3,7 @@ id: 2
 title: "One bootstrap URL is the only client configuration"
 summary: "A Marque deployment publishes its own configuration at a well-known path. A client is configured with one URL and discovers issuers, audiences, endpoints, relays and capabilities from the server."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

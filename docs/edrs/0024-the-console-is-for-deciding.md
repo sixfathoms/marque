@@ -3,6 +3,7 @@ id: 24
 title: "The console is for deciding, and it has no bulk approve"
 summary: "A static, same-origin web app for reviewing and signing marques, supervising agents and reading the logbook. It cannot author policy, cannot run ad-hoc SQL, and deliberately offers no way to approve many things at once."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

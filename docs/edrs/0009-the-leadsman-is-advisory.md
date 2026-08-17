@@ -3,6 +3,7 @@ id: 9
 title: "The Leadsman advises and can never decide"
 summary: "The analyst reads a request and reports what it touches, but has no authority to approve, deny, alter or execute anything. Its output is data attached to a request, and the approval path does not consult it."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

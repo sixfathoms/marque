@@ -3,6 +3,7 @@ id: 21
 title: "Connect as the operator where the database can, and never let a driver retry a write"
 summary: "Pilots use pooled, dynamically-credentialled connections. Where the engine allows, a session authenticates as the individual operator via IAM so the database's own audit names them; reads may route to replicas."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

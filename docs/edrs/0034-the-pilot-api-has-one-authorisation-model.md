@@ -3,6 +3,7 @@ id: 34
 title: "Give the whole Pilot API an authorisation model, not just Execute"
 summary: "Rehearse and Introspect are statement-execution paths with no stated caller check, so a compromised control plane has an exact-count oracle over every target. Every Pilot method now verifies a submitter signature."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

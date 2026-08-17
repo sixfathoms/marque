@@ -41,9 +41,11 @@ cd website && pnpm run serve     # http://localhost:8080/marque/
 ```
 
 The build **is** the test suite. It fails on: a record with a missing or over-240-character
-`summary`; a duplicate id or an id/filename mismatch; a `proposed` record past its `proposed_until`;
-a changelog entry with an unknown tag, a malformed filename, or a `## ` heading; a doc page in a
-directory that is not a sidebar category; a changelog page missing its `<!-- @entries -->` marker.
+`summary`; a record with a missing or unknown `implementation`, or a `partial` or `in-flight` one
+with no `implementation_note`; a duplicate id or an id/filename mismatch; a `proposed` record past
+its `proposed_until`; a changelog entry with an unknown tag, a malformed filename, or a `## `
+heading; a doc page in a directory that is not a sidebar category; a changelog page missing its
+`<!-- @entries -->` marker.
 
 ## Rules
 
