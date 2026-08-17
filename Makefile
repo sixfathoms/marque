@@ -28,6 +28,7 @@ DESCRIPTOR_BEFORE     := $(BIN_DIR)/descriptor-before.binpb
 # main, where origin/main is the commit being pushed and comparing against it
 # would compare the schema with itself.
 BASE_REF ?= origin/main
+export BASE_REF
 
 # Version stamps. goreleaser overrides these for a release; a developer build
 # describes the working tree instead, so a binary never claims to be a release
@@ -178,17 +179,18 @@ schema-check: $(BUF) ## Fail if a method's retry declaration is missing or malfo
 # *last* command, and a passing compat check handed back success for the whole
 # target while buf was reporting an incompatible change.
 breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
-	@git rev-parse -q --verify '$(BASE_REF)^{commit}' >/dev/null || { \
-		echo "$(BASE_REF) is not in this clone, so the wire contract cannot be compared."; \
+	@git rev-parse -q --verify "$$BASE_REF^{commit}" >/dev/null || { \
+		echo "$$BASE_REF is not in this clone, so the wire contract cannot be compared."; \
 		echo "Fetch it first; CI needs actions/checkout with fetch-depth: 0."; \
 		exit 1; \
 	}
-	@git cat-file -e '$(BASE_REF):buf.yaml' 2>/dev/null || { \
-		echo "$(BASE_REF) carries no buf.yaml, so the wire contract cannot be compared."; \
-		echo "The schema has been on the main branch since PR #2; this means something is wrong."; \
+	@git cat-file -e "$$BASE_REF:buf.yaml" 2>/dev/null || { \
+		echo "$$BASE_REF carries no buf.yaml, so the wire contract cannot be compared."; \
+		echo "The schema has been on the main branch since"; \
+		echo "https://github.com/sixfathoms/marque/pull/2 — so this means something is wrong."; \
 		exit 1; \
 	}
-	$(BUF) breaking --against '.git#ref=$(BASE_REF)'
+	$(BUF) breaking --against ".git#ref=$$BASE_REF"
 	@$(MAKE) --no-print-directory compat
 
 # What `buf breaking` cannot see. Its rules compare field numbers, names and
@@ -200,7 +202,7 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 # twice in two places.
 compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_REF)
 	@mkdir -p $(BIN_DIR)
-	$(BUF) build '.git#ref=$(BASE_REF)' --exclude-imports -o $(DESCRIPTOR_BEFORE)
+	$(BUF) build ".git#ref=$$BASE_REF" --exclude-imports -o $(DESCRIPTOR_BEFORE)
 	$(BUF) build -o $(DESCRIPTOR_ALL)
 	$(BUF) build --exclude-imports -o $(DESCRIPTOR_OWNED)
 	go run ./internal/schema/schemacheck \
