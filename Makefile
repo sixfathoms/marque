@@ -139,6 +139,14 @@ help: ## Show this help
 		| sort \
 		| awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
+# -buildvcs=false matches the release path. It is a deliberate trade, not a
+# tidy-up: the three -X stamps carry version, commit and source date, but they
+# are program data and never appear in `go version -m`, so an SBOM generator
+# reading build settings gets nothing from either path. What it buys is that a
+# dead -X path is visible as "unknown" rather than silently backfilled, and
+# that a build inside a linked worktree stops reporting the *parent*
+# repository's HEAD as its own. Revisit before releases are enabled — see
+# https://github.com/sixfathoms/marque/issues/14
 build: ## Build every binary into ./bin
 	@mkdir -p $(BIN_DIR)
 	@for b in $(BINARIES); do \

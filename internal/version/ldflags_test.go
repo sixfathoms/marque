@@ -284,3 +284,29 @@ func TestBothPathsStampTheWorkingTreeState(t *testing.T) {
 		})
 	}
 }
+
+// TestStampVariablesAreAssignedOnce closes the gap a line-anchored assertion
+// cannot: make takes the *last* assignment, so a second definition leaves every
+// checked line textually perfect while changing what is evaluated.
+//
+// It is the one mutation in this area that passes even on a dirty tree —
+// inserting `MARQUE_DIRTY :=` above the export clears the value for both build
+// paths at once, so they agree on a clean commit and `make snapshot-check` sees
+// nothing wrong.
+func TestStampVariablesAreAssignedOnce(t *testing.T) {
+	raw, err := os.ReadFile("../../Makefile")
+	if err != nil {
+		t.Fatalf("reading Makefile: %v", err)
+	}
+	text := strings.Join(codeLines(raw), "\n")
+
+	for _, name := range []string{"COMMIT", "MARQUE_DIRTY"} {
+		// Any assignment flavour: =, :=, ?=, +=, ::=.
+		found := regexp.MustCompile(`(?m)^`+name+`\s*[:?+]*=`).FindAllString(text, -1)
+		if len(found) != 1 {
+			t.Errorf("the Makefile assigns %s %d times, want exactly once; make takes the last "+
+				"assignment, so a second one silently replaces the value every other check here "+
+				"verifies by reading the first", name, len(found))
+		}
+	}
+}
