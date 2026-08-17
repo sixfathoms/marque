@@ -117,21 +117,7 @@ func TestBuildConfigsStampEveryVariable(t *testing.T) {
 			// The Makefile writes the import path through a make variable, so
 			// it is expanded before comparison rather than matched loosely —
 			// a typo in the literal half must still fail.
-			// Comments are dropped first — whole lines and trailing ones
-			// alike. Both files are comment-dense and both write `-X` in
-			// prose, and stripping only line-leading comments failed in both
-			// directions: a trailing `# -X …buildDate=x` failed the build over
-			// an explanation, and a trailing mention of a `-X` line that had
-			// been *deleted* kept this test green while the release binary
-			// printed "unknown".
-			var code []string
-			for _, line := range strings.Split(string(raw), "\n") {
-				if i := strings.Index(line, "#"); i >= 0 {
-					line = line[:i]
-				}
-				code = append(code, line)
-			}
-			text := strings.ReplaceAll(strings.Join(code, "\n"), "$(MODULE)", module)
+			text := strings.ReplaceAll(strings.Join(codeLines(raw), "\n"), "$(MODULE)", module)
 
 			got := map[string]bool{}
 			for _, m := range regexp.MustCompile(`-X\s+(\S+?)\.(\w+)=`).FindAllStringSubmatch(text, -1) {
@@ -229,24 +215,66 @@ func makeVariable(t *testing.T, name string) string {
 	return string(m[1])
 }
 
-// TestGoreleaserStampsTheWorkingTreeState asserts statically what CI structurally
+// codeLines returns the file with comments removed, whole-line and trailing
+// alike. Both build configs are comment-dense by policy and both discuss their
+// own `-X` flags and template variables in prose, so a test that matches raw
+// text is one edit away from passing on an explanation instead of on code.
+func codeLines(raw []byte) []string {
+	lines := strings.Split(string(raw), "\n")
+	for i, line := range lines {
+		if j := strings.Index(line, "#"); j >= 0 {
+			lines[i] = line[:j]
+		}
+	}
+	return lines
+}
+
+// TestBothPathsStampTheWorkingTreeState asserts statically what CI structurally
 // cannot observe.
 //
-// The Makefile computes whether the tree differs from HEAD and exports it, so
-// that goreleaser — which cannot see the working tree, because --snapshot skips
-// its repository validation — stamps the same thing. `make snapshot-check`
-// catches it going missing only when run on a *dirty* tree, and CI always
-// checks out clean. So without this, removing the template reference is a
-// regression that merges green on every runner.
-func TestGoreleaserStampsTheWorkingTreeState(t *testing.T) {
-	raw, err := os.ReadFile("../../.goreleaser.yaml")
-	if err != nil {
-		t.Fatalf("reading .goreleaser.yaml: %v", err)
+// The Makefile decides whether the tree differs from HEAD; the commit stamp
+// appends it, and goreleaser — which cannot see the working tree, because
+// --snapshot skips its repository validation — reads the same exported value.
+// `make snapshot-check` catches either side going missing only on a *dirty*
+// tree, and every CI runner checks out clean, so dropping it from either file
+// is a regression that merges green on all four.
+//
+// Both halves are asserted here. An earlier version checked only goreleaser's,
+// having reasoned out precisely why that side was unobservable and then applied
+// the reasoning once.
+func TestBothPathsStampTheWorkingTreeState(t *testing.T) {
+	tests := []struct {
+		file, anchor, marker string
+	}{
+		{"../../Makefile", "COMMIT ?=", "$(MARQUE_DIRTY)"},
+		{"../../.goreleaser.yaml", "version.buildCommit=", "{{ .Env.MARQUE_DIRTY }}"},
 	}
 
-	const marker = "{{ .Env.MARQUE_DIRTY }}"
-	if !strings.Contains(string(raw), marker) {
-		t.Errorf(".goreleaser.yaml does not stamp %s, so a snapshot built over uncommitted "+
-			"changes would carry a commit that does not contain them", marker)
+	for _, tt := range tests {
+		t.Run(filepath.Base(tt.file), func(t *testing.T) {
+			raw, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("reading %s: %v", tt.file, err)
+			}
+
+			// Anchored to the line that does the stamping, not to the file.
+			// The marker appearing anywhere — a comment, another build, a key
+			// goreleaser ignores — would satisfy a whole-file search while
+			// changing nothing about the artefact.
+			var found bool
+			for _, line := range codeLines(raw) {
+				if strings.Contains(line, tt.anchor) {
+					found = true
+					if !strings.Contains(line, tt.marker) {
+						t.Errorf("%s stamps the commit without %s, so a build over uncommitted "+
+							"changes would carry a commit that does not contain them:\n  %s",
+							tt.file, tt.marker, strings.TrimSpace(line))
+					}
+				}
+			}
+			if !found {
+				t.Errorf("no line in %s contains %q, so this test checked nothing", tt.file, tt.anchor)
+			}
+		})
 	}
 }

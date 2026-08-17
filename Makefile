@@ -247,15 +247,17 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 # does mean the comparison is no longer evidence about the date itself.
 #
 # What it still proves, stated only as far as it goes. Agreement alone does not
-# show a stamp arrived — delete a -X from both configs and both sides say
-# "unknown" and agree, which is why the unknown check below exists and why
-# TestBuildConfigsStampEveryVariable, not this, is what catches a missing -X.
+# show a stamp arrived: delete a commit or source-date -X from both configs and
+# both sides say "unknown" and agree, which is why the unknown check below
+# exists. Deleting the *version* -X does not even reach that check, because the
+# version is outside the compared string. TestBuildConfigsStampEveryVariable,
+# not this target, is what catches a missing -X.
 # What is uniquely enforced here is that the artefact this platform produced
 # actually executes here, and that the two paths were handed the same tree
 # state — though CI always checks out clean, so the dirty half of that is
 # asserted statically in internal/version instead.
 #
-# The commit *is* compared, now that DIRTY reaches both sides. Leaving it out
+# The commit *is* compared, now that MARQUE_DIRTY reaches both sides. Leaving it out
 # was how a dirty tree could produce a goreleaser binary stamped with a clean
 # HEAD it does not contain, and have the check agree.
 #
@@ -283,9 +285,10 @@ snapshot-check: platform-check build snapshot ## Fail if make and goreleaser dis
 	esac; \
 	echo "  commit and source date agree across both build paths: $$mine"
 
-# Ordered before `build snapshot`, so under serial make — what CI runs — a
-# mislabelled runner fails in a second rather than after a full cgo build.
-# `make -j` may start a build first; the assertion still fails the target. EXPECT_PLATFORM is unset for local use;
+# Ordered before `build snapshot`, so under serial make — which is what CI
+# runs — a mislabelled runner fails in a second rather than after a full cgo
+# build. Under `make -j` a build may start first; the assertion still fails
+# the target, just less cheaply. EXPECT_PLATFORM is unset for local use;
 # CI requires it, and checks that it required it — see .github/workflows/ci.yml.
 platform-check: ## Fail if this host is not the platform EXPECT_PLATFORM names
 	@if [ -n "$$EXPECT_PLATFORM" ]; then \
