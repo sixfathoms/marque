@@ -7,6 +7,8 @@ package conformance_test
 // happens.
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -285,6 +287,12 @@ func TestLoadRejects(t *testing.T) {
 			want: "unknown field",
 		},
 		{
+			name: "invalid UTF-8, which Go would quietly repair",
+			body: "{\"subset_version\":0,\"vectors\":[{\"name\":\"\xff\",\"statement\":\"s\"," +
+				"\"verdict\":\"out_of_grammar\",\"because\":\"b\"}]}",
+			want: "not valid UTF-8",
+		},
+		{
 			name: "not JSON at all",
 			body: `UPDATE public.accounts SET tier = 'pro'`,
 			want: "parsing the corpus",
@@ -320,4 +328,35 @@ func TestCommittedCorpusIsValid(t *testing.T) {
 	}
 	t.Logf("%s: subset version %d, %d vector(s)",
 		filepath.Base(corpusPath), corpus.SubsetVersion, len(corpus.Vectors))
+}
+
+// A corpus that loads must survive being written back out and read again.
+// With no vectors the slice was nil, so marshalling produced `"vectors": null`
+// — which this same loader rejects as an absent field. The committed corpus is
+// exactly that case, so the format disagreed with itself about the one file it
+// actually ships.
+func TestLoadedCorpusRoundTrips(t *testing.T) {
+	file, err := os.Open(corpusPath)
+	if err != nil {
+		t.Fatalf("opening the corpus: %v", err)
+	}
+	defer file.Close() //nolint:errcheck // read-only
+
+	first, err := conformance.Load(file)
+	if err != nil {
+		t.Fatalf("loading the corpus: %v", err)
+	}
+
+	encoded, err := json.Marshal(first)
+	if err != nil {
+		t.Fatalf("marshalling the corpus: %v", err)
+	}
+	second, err := conformance.Load(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("re-loading what Load produced: %v\n%s", err, encoded)
+	}
+
+	if second.SubsetVersion != first.SubsetVersion || len(second.Vectors) != len(first.Vectors) {
+		t.Errorf("round trip changed the corpus: %+v then %+v", first, second)
+	}
 }

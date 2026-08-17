@@ -20,6 +20,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
 // Verdict is what the grammar must decide about a statement.
@@ -196,6 +197,14 @@ func Load(r io.Reader) (*Corpus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the corpus: %w", err)
 	}
+	// Invalid UTF-8 is replaced with U+FFFD by encoding/json rather than
+	// rejected, so a corpus carrying bad bytes would load here and be refused —
+	// or read differently — by a stricter implementation. Same class as the
+	// duplicate-key and case-folding checks: the bytes must mean one thing.
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("the corpus is not valid UTF-8; Go would silently substitute a " +
+			"replacement character where another reader would reject the file")
+	}
 	if err := checkKeys(raw); err != nil {
 		return nil, err
 	}
@@ -229,7 +238,14 @@ func Load(r io.Reader) (*Corpus, error) {
 		return nil, fmt.Errorf("the corpus is followed by more JSON; the file holds one document")
 	}
 
-	corpus := Corpus{SubsetVersion: *envelope.SubsetVersion}
+	// Non-nil even when empty, so that marshalling a loaded corpus produces
+	// `"vectors": []` rather than `"vectors": null` — which this very loader
+	// rejects as an absent field. A normative format that cannot round-trip
+	// through its own reader is one that disagrees with itself.
+	corpus := Corpus{
+		SubsetVersion: *envelope.SubsetVersion,
+		Vectors:       make([]Vector, 0, len(*envelope.Vectors)),
+	}
 	if corpus.SubsetVersion < 0 {
 		return nil, fmt.Errorf("subset_version is %d; it identifies a subset and cannot be negative",
 			corpus.SubsetVersion)
