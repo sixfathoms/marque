@@ -3,6 +3,7 @@ id: 3
 title: "Every principal is federated, and every token is bound to a key"
 summary: "Marque has no local accounts and no long-lived keys. Humans authenticate through any configured OIDC issuer, workloads through their cloud's own identity, and every token is DPoP-bound so a stolen one is useless."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

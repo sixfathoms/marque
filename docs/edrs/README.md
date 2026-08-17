@@ -31,6 +31,11 @@ not a fresh opinion" — and when a record *departs* from a Field Note, it has t
      rejects a missing or oversized one; unbounded, these grow into a wall of text that makes an
      index unreadable.
    - `status` — almost always `accepted`. Merging means accepted.
+   - `implementation` — **required.** What *exists*, from the closed vocabulary below. For a new
+     record this is almost always `none`: the decision is made, and nothing is written yet.
+   - `implementation_note` — optional, and **required** for `partial` and `in-flight`. One or two
+     sentences. Worth writing on a `none` too, wherever some scaffolding exists that a reader would
+     otherwise take for the decision.
    - `date` — today, ISO `YYYY-MM-DD`.
    - `authors` — name and email per author.
    - `tags` — free-form (`identity`, `policy`, `execution`, `ops`).
@@ -51,10 +56,45 @@ not a fresh opinion" — and when a record *departs* from a Field Note, it has t
 | `deprecated` | No longer recommended, and nothing replaced it. |
 | `superseded` | Replaced by a later record. Set `superseded_by`. |
 
+## Implementation state
+
+`status` records **what was decided**. `implementation` records **what exists**. The two axes are
+orthogonal on purpose, and a record that is `accepted` and `none` at once is the normal case rather
+than a contradiction: the decision is settled, and not a line of it is written.
+
+Keeping them separate is the whole point. Folding "not built yet" into the status vocabulary would
+push every settled-but-unbuilt decision back to `proposed` — which here requires a `proposed_until`
+and *fails the build* once that date passes. A decision does not become unsettled by waiting for a
+schedule.
+
+The vocabulary is **closed**, ordered most-built to least, and defined once in
+`IMPLEMENTATION_STATES` in [`website/build.mjs`](../../website/build.mjs). Adding a state means
+editing that array and this table together.
+
+| Implementation | Meaning |
+|---|---|
+| `shipped` | Built and running — the whole decision, not the easy half. |
+| `partial` | Some of it runs, some does not. **`implementation_note` required**, saying which half is missing. |
+| `in-flight` | Implemented somewhere that is not the main branch. **`implementation_note` required**, naming the branch. |
+| `none` | Nothing implements it. A note is optional, and worth writing wherever a reader who knows some scaffolding exists would otherwise wonder. |
+
+The roadmap page on the documentation site is derived from this field and from nothing else — no
+manifest, no second list, for the same reason the changelog has no index. The build **rejects a
+missing or unknown `implementation`**, exactly as it rejects a missing `summary`, and that is what
+makes the derived page trustworthy: an optional field is one future records omit, and a roadmap that
+silently under-reports the work outstanding is worse than no roadmap, because it is read as complete.
+
+Answer it by **reading the code**, never by reading the record. A field filled in from what a record
+claims reproduces exactly the drift it exists to detect.
+
 ## Amending versus superseding
 
 - **Typo, dead link, clarification, a footnote added after implementation** → amend in place and add
   a dated line to the record's Changelog. The decision is unchanged.
+- **The code caught up with the decision** → update `implementation` and its note, and add a dated
+  Changelog line. The decision is unchanged; only the world is. This is never a reason to write a new
+  record. The line records a *change* of state, so the change that first gave every record the field
+  did not add forty of them — it has one changelog entry of its own instead.
 - **The decision itself changes** → write a *new* record with a higher number, set `supersedes: N` on
   it, and set `status: superseded` + `superseded_by: M` on the old one. Never edit the decision text
   of a superseded record: its whole value is being an accurate account of what we used to think.

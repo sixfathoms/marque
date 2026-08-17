@@ -3,6 +3,7 @@ id: 13
 title: "Async work rides the write-ahead log, not a job table"
 summary: "Notifications, analysis dispatch and reaping are emitted transactionally into PostgreSQL's WAL and consumed by a replication listener, so an event cannot exist without its state change or be lost after it."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

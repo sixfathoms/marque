@@ -3,6 +3,8 @@ id: 39
 title: "The checkable grammar is parsed by PostgreSQL's own parser"
 summary: "Every component that parses a statement uses libpg_query — PostgreSQL's real grammar — not a re-implementation. cgo is accepted in every binary, including the CLI, rather than maintain a second grammar that can disagree with the server."
 status: accepted
+implementation: none
+implementation_note: "The consequences are staged for it — the Makefile exports CGO_ENABLED=1 for every target and CI builds on two operating systems because of this record — but libpg_query is not linked in, there is no internal/grammar, and no conformance corpus exists to pin a subset version against."
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

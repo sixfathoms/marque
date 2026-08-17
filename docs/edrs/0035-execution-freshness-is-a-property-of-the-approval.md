@@ -3,6 +3,7 @@ id: 35
 title: "Execution freshness belongs to the approval, not to the executing principal"
 summary: "Requiring a fresh interactive authentication to execute against a critical target broke offline execution, locked agents out of the flow escalation exists for, and keyed on a different criticality than another record. It is resolved here."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

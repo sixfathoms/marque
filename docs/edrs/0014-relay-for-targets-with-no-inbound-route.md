@@ -3,6 +3,7 @@ id: 14
 title: "Reach isolated targets through a relay the Pilot dials out to"
 summary: "A Pilot inside a private network reaches the control plane by dialling out to a Tender relay and serving over that connection. No inbound port, no bastion credential, and the relay never terminates the session."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

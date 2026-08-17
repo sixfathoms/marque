@@ -3,6 +3,8 @@ id: 40
 title: "Declare a method's behaviour in one annotation, and never weaken it"
 summary: "A method's retry behaviour travels as a single MethodBehaviour extension rather than three, and once declared it may only strengthen. buf breaking ignores custom options, so a separate check compares every method against the base branch."
 status: accepted
+implementation: shipped
+implementation_note: "The one MethodBehaviour extension, the strengthen-only comparison (internal/schema/compat.go) and the idempotency_level agreement check all run in CI, via make lint and make breaking. The absent retry interceptor is not a missing half: this record's Scope section puts client-side retry behaviour outside it and leaves that obligation with EDR-0020."
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

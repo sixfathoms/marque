@@ -3,6 +3,8 @@ id: 18
 title: "An agent's authority is the intersection of three scopes, including its own"
 summary: "An agent submits as itself, on behalf of a named human. What it may do without asking is the intersection of operator policy, its human's delegation, and the narrower scope the agent declared for its own task."
 status: accepted
+implementation: none
+implementation_note: "The only mention in code is .golangci.yml, which anchors its gen/ exclusion so that a future agent package will not be silenced by it. No agent surface, no scope intersection, and not the test asserting an agent cannot approve."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

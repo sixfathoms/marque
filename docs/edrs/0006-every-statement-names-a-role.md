@@ -3,6 +3,7 @@ id: 6
 title: "Every statement names a role, and the role is the real limit"
 summary: "A request must name a target role, and the database's own grants on that role bound what any marque can do. Marque's policy narrows what the role could do; it never widens it."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

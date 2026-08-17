@@ -43,10 +43,11 @@ pnpm run build     # this is the validator; run it before pushing
 pnpm run serve
 ```
 
-The build fails on a record with a missing or oversized `summary`, a duplicate or mismatched id, a
-`proposed` record past its `proposed_until`, a changelog entry with an unknown tag or a malformed
-filename, and a doc page in a directory that is not a sidebar category. That is deliberate: these are
-the mistakes that otherwise ship and are noticed months later.
+The build fails on a record with a missing or oversized `summary`, a record with a missing or unknown
+`implementation`, a duplicate or mismatched id, a `proposed` record past its `proposed_until`, a
+changelog entry with an unknown tag or a malformed filename, and a doc page in a directory that is
+not a sidebar category. That is deliberate: these are the mistakes that otherwise ship and are
+noticed months later.
 
 **Render any mermaid diagram before committing.** Nothing validates them at build time — a broken
 diagram builds fine and renders as an error box on the page.

@@ -3,6 +3,7 @@ id: 28
 title: "Open the statement pipeline to providers that may narrow or veto, never widen"
 summary: "A staged pipeline lets configured out-of-process providers transform and verify a statement, possibly asynchronously. The digest is taken after transformation so a human signs what will run, and no provider can grant authority."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

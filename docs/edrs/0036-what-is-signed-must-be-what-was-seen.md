@@ -3,6 +3,7 @@ id: 36
 title: "Anchor what is signed and what it claims, not only who may sign"
 summary: "A compromised control plane can render one payload and obtain a signature over another. Policy becomes an anchored artefact, the payload carries a signed rendering, and critical signing leaves the browser."
 status: accepted
+implementation: none
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

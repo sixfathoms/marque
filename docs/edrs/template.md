@@ -3,6 +3,8 @@ id: NNNN
 title: "Short imperative title"
 summary: "One or two sentences saying what the decision is. Required, 240 characters max — it is the abstract on the decision index, so it is read far more often than the record itself."
 status: accepted
+implementation: none          # shipped | partial | in-flight | none — what EXISTS
+# implementation_note: ""     # required for partial and in-flight
 date: YYYY-MM-DD
 authors:
   - "Your Name <you@example.com>"

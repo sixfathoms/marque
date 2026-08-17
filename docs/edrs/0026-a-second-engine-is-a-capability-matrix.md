@@ -3,6 +3,7 @@ id: 26
 title: "Publish what each engine can actually enforce, and disable what it cannot"
 summary: "Adding an engine is not a driver swap: the fence, the rehearsal and the timeout are all engine-specific. Where an engine cannot support a control, that control is marked unavailable rather than silently weakened."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

@@ -3,6 +3,8 @@ id: 17
 title: "A model may choose a route, never widen a bound"
 summary: "Where a written delegation will not fully compile, a Surveyor judges whether a request conforms to it — but only inside a deterministic bound a human signed, with two possible outcomes: take the fast path, or refer to a human."
 status: accepted
+implementation: none
+implementation_note: ".golangci.yml enables the exhaustive linter and cites this record's two outcomes as the reason, so the guard is ready for the enum. There is no Surveyor, no panel and no enum."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

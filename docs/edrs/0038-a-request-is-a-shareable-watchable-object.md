@@ -3,6 +3,7 @@ id: 38
 title: "A request is a shareable, watchable object with a live status"
 summary: "Every request has a reference an operator can paste into chat, a status block naming the chain and who is being waited on, and a queue command that lists pending and approved work so it can be run without hunting."
 status: accepted
+implementation: none
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

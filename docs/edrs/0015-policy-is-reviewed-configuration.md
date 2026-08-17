@@ -3,6 +3,7 @@ id: 15
 title: "Who may approve what is reviewed configuration, not a console setting"
 summary: "Targets, roles, approval policy and standing orders live in a versioned repository, are applied by a signed change, and every applied version is recorded in the logbook. Delegation is the runtime path."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

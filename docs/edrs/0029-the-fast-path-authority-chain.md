@@ -3,6 +3,7 @@ id: 29
 title: "On a fast path the human signed the shape, and the Pilot verifies that artefact"
 summary: "A marque minted without a human present carries the standing order or compiled delegation that authorised it, with its own approver signature, so the Pilot verifies offline that some human signed the shape of what it is about to run."
 status: accepted
+implementation: none
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

@@ -3,6 +3,7 @@ id: 37
 title: "An emergency changes who is asked and how loudly, not what is checked"
 summary: "Urgency reroutes and pages without widening scope. Break-glass is a pre-granted, dormant scope that activates only on an explicit act with a bound justification, mints an ordinary fast-path marque, and is very loud."
 status: accepted
+implementation: none
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

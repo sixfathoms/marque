@@ -3,6 +3,8 @@ id: 5
 title: "The control plane never holds a target credential"
 summary: "Target credentials live only where connections are made. The Harbourmaster stores a reference; the Pilot dereferences it at connect time using its own workload identity and never returns it."
 status: accepted
+implementation: none
+implementation_note: "cmd/harbourmaster and proto/marque/v1/harbourmaster.proto cite this record and link no database driver, which is true of a binary that prints its version and exits. Nothing stores a reference, dereferences one, or connects to anything."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
