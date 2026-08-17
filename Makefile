@@ -14,7 +14,12 @@ MODULE   := github.com/sixfathoms/marque
 BINARIES := marque harbourmaster pilot
 BIN_DIR  := bin
 TOOL_DIR := $(BIN_DIR)/tools
-GOLANGCI := $(TOOL_DIR)/golangci-lint
+
+GOLANGCI              := $(TOOL_DIR)/golangci-lint
+BUF                   := $(TOOL_DIR)/buf
+PROTOC_GEN_GO         := $(TOOL_DIR)/protoc-gen-go
+PROTOC_GEN_CONNECT_GO := $(TOOL_DIR)/protoc-gen-connect-go
+DESCRIPTOR            := $(BIN_DIR)/descriptor.binpb
 
 # Version stamps. goreleaser overrides these for a release; a developer build
 # describes the working tree instead, so a binary never claims to be a release
@@ -28,7 +33,7 @@ LDFLAGS := -X $(MODULE)/internal/version.buildVersion=$(VERSION) \
            -X $(MODULE)/internal/version.buildDate=$(DATE)
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint docs dev clean tools
+.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -45,9 +50,41 @@ build: ## Build every binary into ./bin
 test: ## Run the test suite
 	go test -race -count=1 ./...
 
-lint: $(GOLANGCI) ## Check formatting and lint
+lint: $(GOLANGCI) $(BUF) ## Check formatting, and lint the schema and the Go
+	$(BUF) format --diff --exit-code
+	$(BUF) lint
+	@$(MAKE) --no-print-directory schema-check
 	$(GOLANGCI) fmt --diff
 	$(GOLANGCI) run ./...
+
+generate: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) ## Regenerate gen/ from proto/
+	$(BUF) generate
+
+generate-check: generate ## Fail if the committed generated code is out of date
+	@if [ -n "$$(git status --porcelain -- gen)" ]; then \
+		echo "gen/ does not match proto/. Run 'make generate' and commit the result:"; \
+		git status --porcelain -- gen; \
+		git --no-pager diff -- gen; \
+		exit 1; \
+	fi
+
+schema-check: $(BUF) ## Fail if any method is missing its retry annotation
+	@mkdir -p $(BIN_DIR)
+	$(BUF) build -o $(DESCRIPTOR)
+	go run ./internal/schema/schemacheck $(DESCRIPTOR)
+
+# A wire contract is a thing you cannot take back once a client has shipped, so
+# it is reviewed like a schema migration (EDR-0020).
+#
+# The guard exists only while main predates the schema; once this lands there is
+# always something to compare against, and it should be deleted. Keeping it
+# would mean that deleting buf.yaml from main silently disables the check.
+breaking: $(BUF) ## Check the schema against main for a breaking change
+	@if git cat-file -e origin/main:buf.yaml 2>/dev/null; then \
+		$(BUF) breaking --against '.git#ref=origin/main'; \
+	else \
+		echo "origin/main carries no schema yet, so there is nothing to compare against."; \
+	fi
 
 docs: ## Build the documentation site — the validator for records and entries
 	cd website && pnpm install --frozen-lockfile && pnpm run build
@@ -60,12 +97,28 @@ dev: ## Run the local development loop
 clean: ## Remove build output
 	rm -rf $(BIN_DIR) dist website/dist
 
-tools: $(GOLANGCI) ## Build the pinned developer tools into ./bin/tools
+tools: $(GOLANGCI) $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) ## Build the pinned developer tools into ./bin/tools
 
-# The linter lives in its own module so that its dependency graph — some two
-# hundred packages, including a pin on google.golang.org/protobuf, which is a
-# real dependency of this project — never enters ours. Go skips nested modules
-# when resolving ./..., so nothing else has to know it is there.
+# golangci-lint and buf live in their own module so that their dependency
+# graphs — some two hundred packages between them — never enter ours. Go skips
+# nested modules when resolving ./..., so nothing else has to know.
 $(GOLANGCI): tools/go.mod tools/go.sum
 	@mkdir -p $(TOOL_DIR)
 	go -C tools build -o $(CURDIR)/$@ github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+
+$(BUF): tools/go.mod tools/go.sum
+	@mkdir -p $(TOOL_DIR)
+	go -C tools build -o $(CURDIR)/$@ github.com/bufbuild/buf/cmd/buf
+
+# The two protoc plugins are built from *this* module, not tools/, on purpose.
+# protoc-gen-go ships inside google.golang.org/protobuf and protoc-gen-connect-go
+# inside connectrpc.com/connect — the same modules the generated code links
+# against at runtime. Building them here makes the generator's version and the
+# runtime's version the same by construction.
+$(PROTOC_GEN_GO): go.mod go.sum
+	@mkdir -p $(TOOL_DIR)
+	go build -o $@ google.golang.org/protobuf/cmd/protoc-gen-go
+
+$(PROTOC_GEN_CONNECT_GO): go.mod go.sum
+	@mkdir -p $(TOOL_DIR)
+	go build -o $@ connectrpc.com/connect/cmd/protoc-gen-connect-go

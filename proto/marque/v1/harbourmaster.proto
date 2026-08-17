@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package marque.v1;
+
+import "marque/v1/common.proto";
+
+option go_package = "github.com/sixfathoms/marque/gen/marque/v1;marquev1";
+
+// HarbourmasterService is the control plane: requests, policy, delegations and
+// the logbook. It never touches a target database and never holds a target
+// credential (EDR-0001, EDR-0005).
+//
+// At M0 it carries one method, which exists so that the annotation rule and
+// `buf breaking` are wired up while there is exactly one thing to get right.
+service HarbourmasterService {
+  // GetVersion reports the software the control plane is running, so a client
+  // can say what it was talking to.
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
+    option (marque.v1.safe) = true;
+    option (marque.v1.idempotency) = IDEMPOTENCY_NATURAL;
+  }
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  // version is a release tag, or "dev" for a build that came from no tag.
+  string version = 1;
+
+  // commit is the source revision, suffixed "-dirty" if the working tree had
+  // uncommitted changes when it was built.
+  string commit = 2;
+
+  // date is when the binary was built, in RFC 3339.
+  string date = 3;
+
+  // go_version is the toolchain the binary was built with.
+  string go_version = 4;
+
+  // platform is the operating system and architecture, as "linux/amd64".
+  string platform = 5;
+}

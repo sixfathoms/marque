@@ -1,0 +1,17 @@
+# The API is described in exactly one place, and every client is generated from
+# it (EDR-0020).
+version: v2
+
+modules:
+  - path: proto
+
+lint:
+  use:
+    - STANDARD
+
+breaking:
+  use:
+    - FILE
+  # Field numbers are never reused and a removed field is reserved, so the
+  # wire contract can only ever be extended. `buf breaking` runs against main
+  # on every pull request; see .github/workflows/ci.yml.

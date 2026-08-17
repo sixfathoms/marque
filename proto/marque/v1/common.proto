@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package marque.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/sixfathoms/marque/gen/marque/v1;marquev1";
+
+// Idempotency states what happens if a call is made twice.
+//
+// It is load-bearing rather than documentation. Most APIs treat retry policy as
+// client configuration; here, retrying the wrong method applies a production
+// change twice. Declaring it on the method means an integrator cannot get it
+// wrong by omission, which is the way they would get it wrong (EDR-0020).
+enum Idempotency {
+  // Never valid. A method that leaves this unset fails the build, because the
+  // default has to be a decision rather than an accident.
+  IDEMPOTENCY_UNSPECIFIED = 0;
+
+  // Repeating the call is inherently harmless: it carries no key and needs
+  // none, because a second identical call has the same effect as the first.
+  IDEMPOTENCY_NATURAL = 1;
+
+  // The caller supplies a key, named by `idempotency_field`, and a retry
+  // carries the same one. Execute is the case this exists for, and its key is
+  // the execution nonce (EDR-0011).
+  IDEMPOTENCY_KEYED = 2;
+
+  // Must not be retried automatically. A generated client surfaces the
+  // ambiguity to its caller instead of guessing — a second signature is a
+  // second grant.
+  IDEMPOTENCY_UNSAFE = 3;
+}
+
+extend google.protobuf.MethodOptions {
+  // safe marks a method read-only, so it may be retried freely and served from
+  // a replica.
+  bool safe = 50001;
+
+  // idempotency states whether repeating this method is safe, and how.
+  Idempotency idempotency = 50002;
+
+  // idempotency_field names the request field carrying the key. Required when
+  // idempotency is IDEMPOTENCY_KEYED, and meaningless otherwise.
+  string idempotency_field = 50003;
+}
