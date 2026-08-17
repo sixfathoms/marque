@@ -28,6 +28,7 @@ DESCRIPTOR_BEFORE     := $(BIN_DIR)/descriptor-before.binpb
 # main, where origin/main is the commit being pushed and comparing against it
 # would compare the schema with itself.
 BASE_REF ?= origin/main
+export BASE_REF
 
 # Version stamps. goreleaser overrides these for a release; a developer build
 # describes the working tree instead, so a binary never claims to be a release
@@ -166,30 +167,31 @@ schema-check: $(BUF) ## Fail if a method's retry declaration is missing or malfo
 # checkout, a renamed remote or a renamed default branch all turned a loud
 # failure into a silent pass.
 #
-# The remaining escape is for bootstrapping only: main genuinely has no schema
-# until this lands. Delete it in the next change; keeping it means that
-# deleting buf.yaml from main silently disables the check.
+# There is no escape for a base ref without a schema. There was one, needed
+# exactly once, while main predated the schema; keeping it past that would have
+# meant that deleting buf.yaml from main silently disabled both checks, which is
+# the shape of failure this target is built to refuse.
 #
-# The `&&` is load-bearing and was not there at first. Make runs a recipe under
-# sh without -e, so a multi-command `if` block exits with the status of its
-# *last* command: `buf breaking` could report an incompatible change, the shell
-# would carry on to `make compat`, and a passing compat check would hand back a
-# zero exit status for the whole target. That defect could not fire while the
-# bootstrap branch was the one being taken, and would have armed itself on the
-# merge that made this target live.
+# The two checks are separate recipe lines, not one shell block. Make runs each
+# line in its own shell and tests each one's status, so a failing `buf breaking`
+# stops the target. Written as one block it would not have: make runs a recipe
+# under sh without -e, so a multi-command `if` exits with the status of its
+# *last* command, and a passing compat check handed back success for the whole
+# target while buf was reporting an incompatible change.
 breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
-	@git rev-parse -q --verify '$(BASE_REF)^{commit}' >/dev/null || { \
-		echo "$(BASE_REF) is not in this clone, so the wire contract cannot be compared."; \
+	@git rev-parse -q --verify "$$BASE_REF^{commit}" >/dev/null || { \
+		echo "$$BASE_REF is not in this clone, so the wire contract cannot be compared."; \
 		echo "Fetch it first; CI needs actions/checkout with fetch-depth: 0."; \
 		exit 1; \
 	}
-	@if git cat-file -e '$(BASE_REF):buf.yaml' 2>/dev/null; then \
-		$(BUF) breaking --against '.git#ref=$(BASE_REF)' \
-			&& $(MAKE) --no-print-directory compat; \
-	else \
-		echo "NOTE: $(BASE_REF) carries no schema, so there is nothing to compare against."; \
-		echo "This is true only while bootstrapping the schema; remove this branch once it lands."; \
-	fi
+	@git cat-file -e "$$BASE_REF:buf.yaml" 2>/dev/null || { \
+		echo "$$BASE_REF carries no buf.yaml, so the wire contract cannot be compared."; \
+		echo "The schema has been on the main branch since"; \
+		echo "https://github.com/sixfathoms/marque/pull/2 — so this means something is wrong."; \
+		exit 1; \
+	}
+	$(BUF) breaking --against ".git#ref=$$BASE_REF"
+	@$(MAKE) --no-print-directory compat
 
 # What `buf breaking` cannot see. Its rules compare field numbers, names and
 # types and ignore custom method options entirely, so a method can be
@@ -200,7 +202,7 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 # twice in two places.
 compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_REF)
 	@mkdir -p $(BIN_DIR)
-	$(BUF) build '.git#ref=$(BASE_REF)' --exclude-imports -o $(DESCRIPTOR_BEFORE)
+	$(BUF) build ".git#ref=$$BASE_REF" --exclude-imports -o $(DESCRIPTOR_BEFORE)
 	$(BUF) build -o $(DESCRIPTOR_ALL)
 	$(BUF) build --exclude-imports -o $(DESCRIPTOR_OWNED)
 	go run ./internal/schema/schemacheck \

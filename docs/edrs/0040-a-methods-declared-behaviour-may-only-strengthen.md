@@ -136,11 +136,10 @@ and consumed only for `safe`. Saying that plainly is better than implying the lo
 - An interceptor honouring `keyed` and `unsafe` ships with the first generated client that makes
   calls, and [EDR-0020](./0020-one-schema-generates-every-client.md)'s claim that "generated clients
   honour it" is only fully true from that point.
-- **Delete the bootstrap escape in `make breaking`.** Until this record's own change is on the main
-  branch there is no previous schema to compare against, so the target says so and exits. That is
-  correct exactly once. While it survives, deleting `buf.yaml` from the main branch would disable
-  both checks silently, and "both are enforced by the build" is not yet true of the change that
-  introduces them. The next change to the schema removes it.
+- **Delete the bootstrap escape in `make breaking`.** *Discharged 2026-08-17.* Until this record's
+  own change was on the main branch there was no previous schema to compare against, so the target
+  said so and exited — correct exactly once. A base ref without a schema is now a hard failure, and
+  "both are enforced by the build" is true without qualification.
 
 **A limit worth stating.** The rule above is one-directional: it asks what an *old* client does
 against a *new* server. The reverse skew — a client newer than the server it calls — is not covered.
@@ -163,3 +162,7 @@ does not answer it.
 ## Changelog
 
 - **2026-08-16**: Accepted.
+- **2026-08-17**: The bootstrap escape in `make breaking` is deleted, discharging the obligation
+  above. A base ref carrying no schema now fails rather than reporting that there was nothing to
+  compare, so both checks run on every pull request without qualification. The decision is
+  unchanged.
