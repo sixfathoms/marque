@@ -14,6 +14,7 @@
 package conformance
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -63,8 +64,16 @@ var operations = []Operation{Update, Delete}
 
 // Scope is what the grammar must extract from a statement it admits: the
 // relation, the columns written, and the predicate the fence is built from.
+//
+// Schema and relation are separate fields rather than one qualified string.
+// EDR-0007 puts a relation resolved through `search_path` outside the subset,
+// so both halves are required — and encoding them separately means there is
+// nothing to parse and nothing to get wrong. A single string checked for a dot
+// accepts ".accounts", "public." and the quoted identifier "accounts.archive",
+// each of which is either malformed or not qualified at all.
 type Scope struct {
 	Operation Operation `json:"operation"`
+	Schema    string    `json:"schema"`
 	Relation  string    `json:"relation"`
 	// ColumnsWritten is required for Update and must be absent for Delete.
 	ColumnsWritten []string `json:"columns_written,omitempty"`
@@ -92,13 +101,99 @@ type Corpus struct {
 	Vectors       []Vector `json:"vectors"`
 }
 
+// fields are every key the format defines, spelled exactly. Go matches JSON
+// field names case-insensitively, so `DisallowUnknownFields` alone accepts
+// "Verdict" — which another implementation of this format would reject. The
+// names are distinct across every level, so one flat set is enough.
+var fields = map[string]struct{}{
+	"subset_version": {}, "vectors": {},
+	"name": {}, "statement": {}, "verdict": {}, "scope": {}, "because": {},
+	"operation": {}, "schema": {}, "relation": {}, "columns_written": {}, "predicate": {},
+}
+
+// checkKeys rejects a duplicate key and any spelling other than the documented
+// one, before anything is decoded.
+//
+// Both matter because this file is normative and language-neutral (CLAUDE.md).
+// encoding/json takes the last of two `verdict` keys and accepts `Verdict` for
+// `verdict`; a strict parser elsewhere would reject the file, or read a
+// different verdict from the same bytes — which is the corpus disagreeing with
+// itself depending on who reads it.
+func checkKeys(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+
+	// Inside an object the token stream alternates key, value, key, value, so
+	// which of the two is expected has to be tracked rather than guessed —
+	// a string value like "in_subset" is otherwise indistinguishable from a key.
+	type frame struct {
+		object    bool
+		expectKey bool
+		seen      map[string]struct{}
+	}
+	var stack []frame
+
+	consumedValue := func() {
+		if n := len(stack); n > 0 && stack[n-1].object {
+			stack[n-1].expectKey = true
+		}
+	}
+
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("parsing the corpus: %w", err)
+		}
+
+		if delim, ok := token.(json.Delim); ok {
+			switch delim {
+			case '{':
+				stack = append(stack, frame{object: true, expectKey: true, seen: map[string]struct{}{}})
+			case '[':
+				stack = append(stack, frame{})
+			case '}', ']':
+				stack = stack[:len(stack)-1]
+				consumedValue()
+			}
+			continue
+		}
+
+		top := len(stack) - 1
+		if top >= 0 && stack[top].object && stack[top].expectKey {
+			key, _ := token.(string)
+			if _, ok := fields[key]; !ok {
+				return fmt.Errorf("unknown field %q; the format defines no such key, and field "+
+					"names are matched exactly here even though Go would fold the case", key)
+			}
+			if _, duplicate := stack[top].seen[key]; duplicate {
+				return fmt.Errorf("duplicate key %q; one parser takes the first and another the "+
+					"last, so the corpus would say different things to different readers", key)
+			}
+			stack[top].seen[key] = struct{}{}
+			stack[top].expectKey = false
+			continue
+		}
+		consumedValue()
+	}
+}
+
 // Load reads and validates a corpus.
 //
 // Every vector is checked, and the first file to carry one gets the check —
 // rather than the check being written once the corpus has already drifted,
 // which is the order that never happens.
 func Load(r io.Reader) (*Corpus, error) {
-	decoder := json.NewDecoder(r)
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("reading the corpus: %w", err)
+	}
+	if err := checkKeys(raw); err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	// An unknown field is a typo or a format change, and silently ignoring it
 	// would drop a constraint the vector's author believed they had written.
 	decoder.DisallowUnknownFields()
@@ -108,8 +203,8 @@ func Load(r io.Reader) (*Corpus, error) {
 	// zero-valued Corpus, so without this, deleting the file's contents — or
 	// replacing the normative corpus with `null` — reads as a valid empty one.
 	var envelope struct {
-		SubsetVersion *int      `json:"subset_version"`
-		Vectors       *[]Vector `json:"vectors"`
+		SubsetVersion *int               `json:"subset_version"`
+		Vectors       *[]json.RawMessage `json:"vectors"`
 	}
 	if err := decoder.Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("parsing the corpus: %w", err)
@@ -127,15 +222,27 @@ func Load(r io.Reader) (*Corpus, error) {
 		return nil, fmt.Errorf("the corpus is followed by more JSON; the file holds one document")
 	}
 
-	corpus := Corpus{SubsetVersion: *envelope.SubsetVersion, Vectors: *envelope.Vectors}
+	corpus := Corpus{SubsetVersion: *envelope.SubsetVersion}
 	if corpus.SubsetVersion < 0 {
 		return nil, fmt.Errorf("subset_version is %d; it identifies a subset and cannot be negative",
 			corpus.SubsetVersion)
 	}
 
-	seen := make(map[string]struct{}, len(corpus.Vectors))
-	for i, v := range corpus.Vectors {
-		if err := v.validate(); err != nil {
+	seen := make(map[string]struct{}, len(*envelope.Vectors))
+	for i, rawVector := range *envelope.Vectors {
+		var v Vector
+		if err := json.Unmarshal(rawVector, &v); err != nil {
+			return nil, fmt.Errorf("vector %d: %w", i, err)
+		}
+		// Which keys the author actually wrote, so that a forbidden field can
+		// be rejected for being *present* rather than for being non-zero.
+		// `"because": ""` on an admitted vector is a shape the format forbids,
+		// and a zero value cannot be told from an omission.
+		var present map[string]json.RawMessage
+		if err := json.Unmarshal(rawVector, &present); err != nil {
+			return nil, fmt.Errorf("vector %d: %w", i, err)
+		}
+		if err := v.validate(present); err != nil {
 			return nil, fmt.Errorf("vector %d (%q): %w", i, v.Name, err)
 		}
 		if _, duplicate := seen[v.Name]; duplicate {
@@ -143,12 +250,13 @@ func Load(r io.Reader) (*Corpus, error) {
 				"failure report and has to be unique", i, v.Name)
 		}
 		seen[v.Name] = struct{}{}
+		corpus.Vectors = append(corpus.Vectors, v)
 	}
 
 	return &corpus, nil
 }
 
-func (v Vector) validate() error {
+func (v Vector) validate(present map[string]json.RawMessage) error {
 	if strings.TrimSpace(v.Name) == "" {
 		return fmt.Errorf("name is required; it is how a failing case is identified")
 	}
@@ -168,38 +276,38 @@ func (v Vector) validate() error {
 			return fmt.Errorf("verdict %q requires a scope saying what the grammar must extract",
 				v.Verdict)
 		}
-		if v.Because != "" {
+		if _, ok := present["because"]; ok {
 			return fmt.Errorf("verdict %q must not carry `because`; there is nothing being refused",
 				v.Verdict)
 		}
-		return v.Scope.validate()
+		return v.Scope.validate(present)
 	}
 
 	if strings.TrimSpace(v.Because) == "" {
 		return fmt.Errorf("verdict %q requires `because`, which is the reason a reader is shown",
 			v.Verdict)
 	}
-	if v.Scope != nil {
+	if _, ok := present["scope"]; ok {
 		return fmt.Errorf("verdict %q must not carry a scope; nothing was extracted", v.Verdict)
 	}
 	return nil
 }
 
-func (s Scope) validate() error {
+func (s Scope) validate(vectorKeys map[string]json.RawMessage) error {
 	if !slices.Contains(operations, s.Operation) {
 		return fmt.Errorf("scope.operation is %q, want one of %v", s.Operation, operations)
 	}
+	// Both halves required, because EDR-0007 puts a relation resolved through
+	// `search_path` outside the subset: an unqualified name can bind elsewhere,
+	// which is the escape the pinned search_path closes. The grammar extracts a
+	// directly-named base table, so a vector without a schema describes a
+	// statement it should have refused.
+	if strings.TrimSpace(s.Schema) == "" {
+		return fmt.Errorf("scope.schema is required; the subset admits a directly-named base " +
+			"table, not one resolved through search_path")
+	}
 	if strings.TrimSpace(s.Relation) == "" {
 		return fmt.Errorf("scope.relation is required")
-	}
-	// Schema-qualified, because EDR-0007 puts a relation resolved through
-	// `search_path` outside the subset: an unqualified name can bind elsewhere,
-	// which is the escape the pinned search_path closes. The grammar therefore
-	// extracts a directly-named base table, and a vector saying otherwise
-	// describes a statement it should have refused.
-	if !strings.Contains(s.Relation, ".") {
-		return fmt.Errorf("scope.relation %q is not schema-qualified; the subset admits a "+
-			"directly-named base table, not one resolved through search_path", s.Relation)
 	}
 	// The predicate is what the fence is built from (EDR-0007). Required for
 	// both operations because the initial subset is "single-relation UPDATE and
@@ -222,7 +330,13 @@ func (s Scope) validate() error {
 			}
 		}
 	case Delete:
-		if len(s.ColumnsWritten) != 0 {
+		// Present at all, not merely non-empty: `"columns_written": []` on a
+		// delete states an expectation the format does not have.
+		var scopeKeys map[string]json.RawMessage
+		if err := json.Unmarshal(vectorKeys["scope"], &scopeKeys); err != nil {
+			return fmt.Errorf("scope: %w", err)
+		}
+		if _, ok := scopeKeys["columns_written"]; ok {
 			return fmt.Errorf("scope.operation %q assigns to no column, so columns_written "+
 				"must be absent; the rows it removes are measured at execution", s.Operation)
 		}

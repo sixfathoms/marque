@@ -32,7 +32,8 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	      "verdict": "in_subset",
 	      "scope": {
 	        "operation": "update",
-	        "relation": "public.accounts",
+	        "schema": "public",
+	        "relation": "accounts",
 	        "columns_written": ["tier"],
 	        "predicate": "id = 42 AND region = 'eu'"
 	      }
@@ -43,7 +44,8 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	      "verdict": "in_subset",
 	      "scope": {
 	        "operation": "delete",
-	        "relation": "public.settings",
+	        "schema": "public",
+	        "relation": "settings",
 	        "predicate": "account_id = 42"
 	      }
 	    },
@@ -97,25 +99,25 @@ func TestLoadRejects(t *testing.T) {
 		{
 			name: "a refused statement carrying a scope",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"unsupported","because":"b",
-			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry a scope",
 		},
 		{
 			name: "an admitted statement carrying a reason",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset","because":"b",
-			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry `because`",
 		},
 		{
 			name: "a scope with no relation",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","schema":"public","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "scope.relation is required",
 		},
 		{
 			name: "a column that is only whitespace",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"public.accounts",
+			        "scope":{"operation":"update","schema":"public","relation":"accounts",
 			        "columns_written":["  "],"predicate":"id = 1"}}]}`,
 			want: "columns_written[0] is empty",
 		},
@@ -132,25 +134,25 @@ func TestLoadRejects(t *testing.T) {
 		{
 			name: "a relation that is only whitespace",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"  ","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","schema":"public","relation":"  ","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "scope.relation is required",
 		},
 		{
 			name: "a predicate that is only whitespace",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"],"predicate":" "}}]}`,
+			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":["tier"],"predicate":" "}}]}`,
 			want: "scope.predicate is required",
 		},
 		{
 			name: "an unqualified relation, which search_path could rebind",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
 			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
-			want: "not schema-qualified",
+			want: "scope.schema is required",
 		},
 		{
 			name: "a scope that writes nothing",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"public.accounts","columns_written":[],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":[],"predicate":"id = 1"}}]}`,
 			want: "requires columns_written",
 		},
 		{
@@ -171,16 +173,45 @@ func TestLoadRejects(t *testing.T) {
 			want: "is used twice",
 		},
 		{
+			name: "a duplicate key, which two parsers read differently",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s",
+			        "verdict":"out_of_grammar","verdict":"in_subset","because":"b"}]}`,
+			want: "duplicate key",
+		},
+		{
+			name: "a field name in the wrong case, which Go alone would fold",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","Verdict":"out_of_grammar","because":"b"}]}`,
+			want: "unknown field",
+		},
+		{
+			name: "an admitted vector carrying an empty because",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset","because":"",
+			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "must not carry `because`",
+		},
+		{
+			name: "a refused vector carrying a null scope",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar","because":"b","scope":null}]}`,
+			want: "must not carry a scope",
+		},
+		{
+			name: "a delete carrying an empty columns_written",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"delete","schema":"public","relation":"settings",
+			        "columns_written":[],"predicate":"id = 1"}}]}`,
+			want: "must be absent",
+		},
+		{
 			name: "a delete carrying columns_written",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"delete","relation":"public.settings","columns_written":["tier"],
+			        "scope":{"operation":"delete","schema":"public","relation":"settings","columns_written":["tier"],
 			        "predicate":"id = 1"}}]}`,
 			want: "assigns to no column",
 		},
 		{
 			name: "a scope with no operation",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"relation":"public.accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"schema":"public","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "scope.operation is",
 		},
 		{
@@ -188,7 +219,7 @@ func TestLoadRejects(t *testing.T) {
 			// subset admits nothing without one.
 			name: "an admitted scope with no predicate",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"]}}]}`,
+			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":["tier"]}}]}`,
 			want: "scope.predicate is required",
 		},
 		{

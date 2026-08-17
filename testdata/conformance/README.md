@@ -38,9 +38,21 @@ reports how many vectors it found, so an empty corpus is a stated fact rather th
 }
 ```
 
-Relations are **schema-qualified**. `EDR-0007` places a relation resolved through `search_path`
-outside the subset, because an unqualified name can bind elsewhere — which is the escape the pinned
-`search_path` closes. The validator rejects an unqualified one.
+Relations are **schema-qualified**, as two fields rather than one dotted string.
+[EDR-0007](../../docs/edrs/0007-delegation-by-containment-proof.md) places a relation resolved
+through `search_path` outside the subset, because an unqualified name can bind elsewhere — which is
+the escape the pinned `search_path` closes. Separate fields mean there is nothing to parse: a single
+string checked for a dot would accept `.accounts`, `public.`, and the quoted identifier
+`"accounts.archive"`, none of which is a qualified relation.
+
+**Field names are matched exactly, and a duplicate key is rejected.** Go's JSON decoder folds case
+and takes the last of two identical keys; a strict parser elsewhere would reject the file or read a
+different value from the same bytes. For a file that is normative *and* language-neutral, the same
+bytes must mean the same thing to every reader.
+
+**A forbidden field is rejected for being present, not for being empty.** `"because": ""` on an
+admitted vector, `"scope": null` on a refused one, and `"columns_written": []` on a delete are all
+shapes the format does not have.
 
 `subset_version` is the version of the checkable subset these vectors describe. It is recorded on
 every extracted scope, so a delegation signed against one subset stays pinned to it when the subset
@@ -55,7 +67,8 @@ A vector the grammar must **admit** carries the scope it must extract:
   "verdict": "in_subset",
   "scope": {
     "operation": "update",
-    "relation": "public.accounts",
+    "schema": "public",
+    "relation": "accounts",
     "columns_written": ["tier"],
     "predicate": "id = 42 AND region = 'eu'"
   }
@@ -73,7 +86,8 @@ and they are measured at execution rather than stated here:
   "verdict": "in_subset",
   "scope": {
     "operation": "delete",
-    "relation": "public.settings",
+    "schema": "public",
+    "relation": "settings",
     "predicate": "account_id = 42"
   }
 }
