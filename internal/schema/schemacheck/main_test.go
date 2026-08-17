@@ -125,6 +125,12 @@ func TestRunRejectsASchemaWithNoMethods(t *testing.T) {
 	if !strings.Contains(stderr, "declares no methods") {
 		t.Errorf("stderr = %q, want it to say nothing was checked", stderr)
 	}
+	// With no violations to count, the summary must describe the fault it
+	// actually found. Reporting "0 schema violation(s)" while exiting 1, and
+	// citing two records that have nothing to do with it, is worse than silence.
+	if !strings.Contains(err.Error(), "1 problem(s) with the schema check itself") {
+		t.Errorf("error = %v, want it to name the problem as being with the check", err)
+	}
 }
 
 func TestRunRejectsAWeakenedDeclaration(t *testing.T) {
@@ -298,8 +304,13 @@ func TestRunDistinguishesTheOwnedSetFromTheFullOne(t *testing.T) {
 	// then be walked and rejected.
 	stdout.Reset()
 	stderr.Reset()
-	if err := run([]string{"-owned", allPath, "-all", ownedPath}, &stdout, &stderr); err == nil {
-		t.Error("run() = nil with the sets swapped, want the imported service to be rejected")
+	err := run([]string{"-owned", allPath, "-all", ownedPath}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run() = nil with the sets swapped, want the imported service to be rejected")
+	}
+	if !strings.Contains(stderr.String(), "google.longrunning.Operations.GetOperation") {
+		t.Errorf("stderr = %q, want the imported method named — the swap must fail for that reason",
+			stderr.String())
 	}
 }
 
@@ -363,6 +374,11 @@ func TestRunReportsViolationsAndFatalsTogether(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "declares no methods") {
 		t.Errorf("stderr = %q, want the vacuity problem reported in the same run", stderr)
+	}
+	// The other side of the same branch: with a violation present, the summary
+	// counts violations rather than reporting a problem with the check.
+	if !strings.Contains(err.Error(), "schema violation(s)") {
+		t.Errorf("error = %v, want it to count the violations", err)
 	}
 }
 

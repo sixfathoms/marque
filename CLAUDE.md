@@ -136,9 +136,9 @@ a commit message.
   workload principal can satisfy, and that mechanical impossibility is asserted by a test.
 - **Escalation stage 1 for an agent is always its own principal**, every stage is a human, and **a
   timeout never satisfies a stage** (EDR-0019).
-- **Every method declares its behaviour** — `safe`, and one of `natural` / `keyed` / `unsafe` — in a
-  single `MethodBehaviour` extension, and an unannotated method fails the build, because the default
-  must be a decision (EDR-0020). **The declaration may only ever strengthen**: `safe` to not-safe,
+- **Every method declares its behaviour** — `safe`, *or* one of `natural` / `keyed` / `unsafe`;
+  either alone is a declaration — in a single `MethodBehaviour` extension, and a method declaring
+  neither fails the build, because the default must be a decision (EDR-0020). **The declaration may only ever strengthen**: `safe` to not-safe,
   `natural` to `keyed` or `unsafe`, `keyed` to `unsafe`, or moving the key's field, each breaks a
   client that already compiled the old policy, so each needs a new method rather than an edit.
   `buf breaking` does *not* see custom options, so a separate check enforces this (EDR-0040). A

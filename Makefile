@@ -62,13 +62,27 @@ COMMIT ?= $(shell \
               printf 'unknown'; \
             fi)
 #
-# $(strip) is load-bearing: make joins the continuation lines below with a
-# space, and a leading space inside an -X linker flag is a build failure with an
-# unhelpful message.
-SOURCE_DATE ?= $(strip $(if $(SOURCE_DATE_EPOCH),\
-                 $(shell date -u -d "@$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-                      || date -u -r "$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null),\
-                 $(shell TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd 2>/dev/null)))
+# The epoch is checked to be digits before either date(1) is tried. The two
+# spellings are not equivalent fallbacks: BSD's `-r` takes epoch seconds, but
+# GNU's `-r` takes a *filename* and reports its mtime, so on Linux an
+# unconvertible value like "Makefile" would quietly yield a plausible date and
+# slip past the guard below.
+#
+# $(strip) is load-bearing: make joins the continuation lines with a space, and
+# a leading space inside an -X linker flag is a build failure with an unhelpful
+# message. The digits test is `grep` rather than the more natural `case`,
+# because make counts parentheses inside $(shell ...) and the `)` closing a
+# case pattern ends the expansion early — which produces a linker flag made of
+# shell fragments.
+SOURCE_DATE ?= $(strip $(shell \
+                 epoch='$(SOURCE_DATE_EPOCH)'; \
+                 if [ -n "$$epoch" ]; then \
+                   printf '%s' "$$epoch" | grep -qE '^[0-9]+$$' || exit 0; \
+                   date -u -d "@$$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                     || date -u -r "$$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null; \
+                 else \
+                   TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd 2>/dev/null; \
+                 fi))
 
 # A distribution that sets SOURCE_DATE_EPOCH has asked for a reproducible date.
 # Silently falling back to something else is the one response it must not get.

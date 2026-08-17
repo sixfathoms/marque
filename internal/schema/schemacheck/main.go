@@ -75,6 +75,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	// violation within it. They are collected rather than returned on sight so
 	// that one run reports everything wrong — an operator who fixes the schema
 	// serially, one error per build, is an operator who stops reading.
+	//
+	// Collection covers what the checks find, not what stops them running: an
+	// unreadable descriptor set below still returns immediately, discarding
+	// anything gathered so far, because there is nothing further to say once an
+	// input cannot be read.
 	var fatal []string
 
 	// A guard that inspects nothing is the failure worth fearing here: one

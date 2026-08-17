@@ -146,6 +146,15 @@ func checkMethod(method *descriptorpb.MethodDescriptorProto, messages map[string
 	return reasons
 }
 
+// safeNeedsNoSideEffects is shared by the two branches that can reach it, so
+// that the `safe` direction of the rule cannot be implemented in one and
+// forgotten in the other — which is exactly how it was lost once already, when
+// this switch was restructured around the level and the direction survived only
+// in the branch for an unset one.
+const safeNeedsNoSideEffects = "is marked safe but does not set " +
+	"`option idempotency_level = NO_SIDE_EFFECTS`, which is the option a generated Connect " +
+	"client reads to treat a method as read-only."
+
 // checkIdempotencyLevel keeps the declaration and the standard option in step,
 // across all three of the standard option's values.
 //
@@ -155,20 +164,13 @@ func checkMethod(method *descriptorpb.MethodDescriptorProto, messages map[string
 // therefore does not stay in the schema: the generated client is the one that
 // acts, and it would act on the standard option.
 //
-// NO_SIDE_EFFECTS is the read-only claim, so it pairs with `safe`. IDEMPOTENT
-// is the "repeating is harmless" claim, so it pairs with NATURAL or KEYED and
-// must never appear on a method declared UNSAFE — which is the pairing that
-// would otherwise let a method Marque says must not be retried advertise
-// itself to the retry interceptor as one that may.
-// safeNeedsNoSideEffects is shared by the two branches that can reach it, so
-// that the `safe` direction of the rule cannot be implemented in one and
-// forgotten in the other — which is exactly how it was lost once already, when
-// this switch was restructured around the level and the direction survived only
-// in the unset case.
-const safeNeedsNoSideEffects = "is marked safe but does not set " +
-	"`option idempotency_level = NO_SIDE_EFFECTS`, which is the option a generated Connect " +
-	"client reads to treat a method as read-only."
-
+// NO_SIDE_EFFECTS is the read-only claim, so it pairs with `safe` — and the
+// pairing is a biconditional, because stating only that NO_SIDE_EFFECTS needs
+// `safe` is what let `safe` with IDEMPOTENT through once. IDEMPOTENT is the
+// weaker "repeating is harmless" claim, so it pairs with NATURAL or KEYED and
+// must never appear on a method declared UNSAFE — the pairing that would
+// otherwise let a method Marque says must not be retried advertise itself to
+// the retry interceptor as one that may.
 func checkIdempotencyLevel(
 	method *descriptorpb.MethodDescriptorProto,
 	safe bool,
