@@ -9,6 +9,7 @@ package conformance_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -494,5 +495,58 @@ func TestPopulatedCorpusRoundTrips(t *testing.T) {
 	}
 	if len(second.Vectors) != len(first.Vectors) {
 		t.Errorf("round trip changed the vector count: %d then %d", len(first.Vectors), len(second.Vectors))
+	}
+}
+
+// TestScopeShapeMatrix pins the whole format, exhaustively: for each operation,
+// exactly one combination of the two optional scope fields is legal.
+//
+// The rules come from EDR-0007 — "assigned columns (SET, INSERT column list)"
+// is what `columns_written` records, so a select and a delete assign none — and
+// from SQL: an insert has no WHERE, while an unconditional statement has the
+// predicate TRUE. Three review rounds each found a shape the format could not
+// express, so the shape is stated here in full rather than inferred from the
+// rules that produce it.
+func TestScopeShapeMatrix(t *testing.T) {
+	// The one legal combination per operation: {columns, predicate}.
+	legal := map[conformance.Operation][2]bool{
+		conformance.Select: {false, true},
+		conformance.Insert: {true, false},
+		conformance.Update: {true, true},
+		conformance.Delete: {false, true},
+	}
+
+	for _, op := range []conformance.Operation{
+		conformance.Select, conformance.Insert, conformance.Update, conformance.Delete,
+	} {
+		for _, columns := range []bool{false, true} {
+			for _, predicate := range []bool{false, true} {
+				name := fmt.Sprintf("%s/columns=%v/predicate=%v", op, columns, predicate)
+				t.Run(name, func(t *testing.T) {
+					parts := []string{
+						fmt.Sprintf(`"operation":%q`, op),
+						`"schema":"public"`,
+						`"relation":"accounts"`,
+					}
+					if columns {
+						parts = append(parts, `"columns_written":["tier"]`)
+					}
+					if predicate {
+						parts = append(parts, `"predicate":"id = 1"`)
+					}
+					body := `{"subset_version":0,"vectors":[{"name":"n","statement":"s",` +
+						`"verdict":"in_subset","scope":{` + strings.Join(parts, ",") + `}}]}`
+
+					_, err := conformance.Load(strings.NewReader(body))
+					want := legal[op] == [2]bool{columns, predicate}
+					switch {
+					case want && err != nil:
+						t.Errorf("Load() error = %v, want nil — this is the shape %s takes", err, op)
+					case !want && err == nil:
+						t.Errorf("Load() = nil error, want one: %s does not take this shape", op)
+					}
+				})
+			}
+		}
 	}
 }
