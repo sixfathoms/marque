@@ -67,8 +67,12 @@ The rework-preventing milestone. Everything here is cheap now and expensive to r
    throughout.
 4. CI: build, test, lint on pull requests; least-privilege permissions; actions pinned to SHAs.
 5. `goreleaser` configured but **not releasing** — a native runner per platform, proven by a snapshot
-   build on each. Discovering the cgo release matrix is broken at version 0.1 is a bad day; discovering
-   it now costs an afternoon.
+   build on each. Discovering the release matrix is broken at version 0.1 is a bad day; discovering it
+   now costs an afternoon. Note what a snapshot proves before the grammar exists: that each runner is
+   available, that the release plumbing works there, and that the binary it produces runs. Nothing in
+   the dependency graph is C until `pg_query_go` lands in M2, so this starts testing a **cgo** matrix
+   then — which is the point at which it would be expensive to learn that one of these platforms
+   cannot build it.
 6. The conformance-vector harness: an empty vector file and the test that executes it.
 
 **Exit:** CI green on all supported platforms; a snapshot build produces a binary on each; `buf

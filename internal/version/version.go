@@ -4,8 +4,15 @@
 // The three build variables below are injected at link time — by the Makefile
 // during development, and by goreleaser for a release. When they are empty (a
 // bare "go build", or "go run") the module's own embedded build information is
-// used instead, so a development binary still reports something true rather
-// than a row of "unknown".
+// used instead, so a development binary still reports something rather than a
+// row of "unknown".
+//
+// One caveat on that fallback, because it is not always true: inside a linked
+// git worktree the embedded VCS data describes the *parent* repository's HEAD,
+// not the worktree's, so a bare "go run" there reports a commit that is not the
+// one being built. Both build paths pass -buildvcs=false for exactly this
+// reason, which means the fallback is reached only by builds that go around
+// them.
 package version
 
 import (

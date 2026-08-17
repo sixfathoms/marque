@@ -75,3 +75,53 @@ jobs:
           # run block, so no context value is ever shell.
           BASE_REF: ${{ github.event_name == 'push' && github.event.before || 'origin/main' }}
         run: make breaking BASE_REF="$BASE_REF"
+
+  snapshot:
+    name: snapshot (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every platform reports. A cgo build breaks per-platform, so the whole
+      # point is seeing which ones — hiding the rest behind the first failure
+      # would mean learning them one merge at a time.
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux/amd64 }
+          - { os: ubuntu-24.04-arm, platform: linux/arm64 }
+          - { os: macos-latest, platform: darwin/arm64 }
+          - { os: macos-15-intel, platform: darwin/amd64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # For the tags, not for refusal. A shallow clone does not fail here
+          # — it quietly derives a version from no tags at all, so the snapshot
+          # names a lineage that is not the repository's. `fetch-tags: true` at
+          # depth 1 is NOT equivalent: it brings the tag objects without the
+          # commits between tag and HEAD, so `git describe` cannot compute the
+          # distance and fails unless HEAD is itself tagged. Full history here
+          # is negligible.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      # Builds the platform's own slice of the release matrix and asserts that
+      # make and goreleaser agree about what they built.
+      #
+      # EXPECT_PLATFORM is checked against `go env`, because --single-target
+      # builds whatever the host happens to be: without it, a mutable runner
+      # label that changed architecture would leave the matrix reporting four
+      # slices while building the same one twice.
+      - env:
+          EXPECT_PLATFORM: ${{ matrix.platform }}
+        # The emptiness check is not defensive noise: make skips the assertion
+        # when the variable is unset, which is right for local use and wrong
+        # here. A matrix entry added without `platform:` would otherwise be
+        # green with the platform assertion silently disabled.
+        run: |
+          test -n "$EXPECT_PLATFORM" || {
+            echo "this matrix entry has no platform:, so the runner would not be checked"
+            exit 1
+          }
+          make snapshot-check
