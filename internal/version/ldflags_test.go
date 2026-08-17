@@ -246,12 +246,18 @@ func TestBothPathsStampTheWorkingTreeState(t *testing.T) {
 	tests := []struct {
 		file, anchor, marker string
 	}{
+		// The Makefile takes two links, so both are checked. The first line
+		// *computes* the value and the second *stamps* it, and keeping the
+		// marker on the first while the second stops referring to it leaves
+		// every guard green — on a clean tree, which is every CI runner.
 		{"../../Makefile", "COMMIT ?=", "$(MARQUE_DIRTY)"},
+		{"../../Makefile", "version.buildCommit=", "$(COMMIT)"},
+		// goreleaser has no indirection: the anchor is the ldflags entry.
 		{"../../.goreleaser.yaml", "version.buildCommit=", "{{ .Env.MARQUE_DIRTY }}"},
 	}
 
 	for _, tt := range tests {
-		t.Run(filepath.Base(tt.file), func(t *testing.T) {
+		t.Run(filepath.Base(tt.file)+"/"+tt.anchor, func(t *testing.T) {
 			raw, err := os.ReadFile(tt.file)
 			if err != nil {
 				t.Fatalf("reading %s: %v", tt.file, err)
