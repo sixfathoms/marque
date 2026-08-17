@@ -8,28 +8,48 @@ on:
     paths: ['docs/**', 'website/**', '.github/workflows/deploy-docs.yml']
   workflow_dispatch:
 
+# Read-only by default. The two write permissions this workflow needs belong to
+# the job that deploys, and to nothing else — see the comment on `build`.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Never cancel a Pages deployment in flight; queue instead.
+#
+# Pull requests get their own group, which matters more than it looks. With one
+# shared `pages` group, a pull-request run and a push to main queue together —
+# and GitHub keeps only one *pending* run per group, cancelling the previous
+# one. So a second push to a pull request could cancel a main deploy that was
+# still waiting to start: the site quietly does not publish, nothing goes red,
+# and nothing retries. `cancel-in-progress: false` protects a run that has
+# already started, not one that is still queued.
+#
+# Pull requests never deploy, so they belong in a different queue entirely, and
+# superseding their own earlier runs is what you want there.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # No permissions beyond the workflow default, deliberately. This job runs
+    # `node build.mjs` — code from the branch under test — and it previously
+    # inherited `id-token: write` from the workflow, which is enough to mint an
+    # OIDC identity for this repository against any cloud trust policy keyed to
+    # it. A docs build has no business holding that.
     defaults:
       run:
         working-directory: website
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing after this step uses git, and the step after next runs code
+          # from the branch under test.
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10.33.2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
@@ -38,7 +58,7 @@ jobs:
       # The build validates every decision record and changelog entry, so it is
       # also the test suite — it runs on pull requests, where nothing deploys.
       - run: pnpm run build
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: github.event_name != 'pull_request'
         with:
           path: website/dist
@@ -47,9 +67,15 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    # The write permissions live here, on the job that does nothing but publish
+    # an artefact built by the job above.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
