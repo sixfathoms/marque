@@ -43,6 +43,8 @@ const GITHUB_SOURCE_BASE = `${REPO_URL}/blob/main`;
 const SITE_NAME = 'Marque';
 
 const VALID_STATUSES = new Set(['proposed', 'accepted', 'deprecated', 'superseded']);
+// Statuses whose decision no longer stands, so their record is not work outstanding.
+const RETIRED_STATUSES = new Set(['deprecated', 'superseded']);
 
 // `status` records what was DECIDED. `implementation` records what EXISTS, and
 // the two axes are orthogonal on purpose: a record is routinely `accepted` and
@@ -393,7 +395,13 @@ function validateEdr(filename, fm) {
       `implementation must be one of ${IMPLEMENTATION_STATE_NAMES.join('|')} — what EXISTS, as ` +
         `opposed to what status records was decided (got ${JSON.stringify(fm.implementation)})`,
     );
-  } else if (IMPLEMENTATION_NOTE_REQUIRED.has(fm.implementation) && !fm.implementation_note) {
+  } else if (
+    IMPLEMENTATION_NOTE_REQUIRED.has(fm.implementation) &&
+    // Trimmed, not merely present. `partial` and `in-flight` carry their
+    // whole meaning in the note, and a blank one renders as an empty
+    // paragraph — invisible, where a blank summary would at least be a gap.
+    !String(fm.implementation_note ?? '').trim()
+  ) {
     errs.push(
       `implementation: ${fm.implementation} requires implementation_note ` +
         `${IMPLEMENTATION_NOTE_REQUIRED.get(fm.implementation)}`,
@@ -470,7 +478,7 @@ async function buildEdrPage(edr, byId, layout) {
     status_badge: statusBadge(fm.status),
     implementation_badge: implementationBadge(fm.implementation),
     implementation_note: fm.implementation_note
-      ? `<p class="edr-impl-note">${escapeHtml(fm.implementation_note)}</p>`
+      ? `<p class="edr-impl-note"><strong>What exists:</strong> ${escapeHtml(fm.implementation_note)}</p>`
       : '',
     date: escapeHtml(formatDate(fm.date)),
     authors: authorNames(fm),
@@ -535,7 +543,12 @@ async function buildEdrIndex(edrs, layout) {
 // by silently skipping a record that never declared its state.
 async function buildRoadmap(edrs, layout) {
   const byState = new Map(IMPLEMENTATION_STATE_NAMES.map((s) => [s, []]));
-  for (const e of edrs) byState.get(e.frontmatter.implementation).push(e);
+  // A superseded or deprecated record is not outstanding work: whatever
+  // replaced it carries that, and counting both would report the same work
+  // twice. They keep the field — what exists is still a fact about them —
+  // they simply do not appear here.
+  const live = edrs.filter((e) => !RETIRED_STATUSES.has(e.frontmatter.status));
+  for (const e of live) byState.get(e.frontmatter.implementation).push(e);
 
   // Most outstanding first: a roadmap opens on the work, not on the wins.
   const order = [...IMPLEMENTATION_STATES].reverse();
@@ -568,7 +581,7 @@ async function buildRoadmap(edrs, layout) {
             `<div class="edr-body"><p class="edr-title"><a href="${href}">${escapeHtml(fm.title)}</a>` +
             ` ${statusBadge(fm.status)}</p>` +
             (fm.implementation_note
-              ? `<p class="edr-impl-note">${escapeHtml(fm.implementation_note)}</p>`
+              ? `<p class="edr-impl-note"><strong>What exists:</strong> ${escapeHtml(fm.implementation_note)}</p>`
               : '') +
             `</div></li>`
           );
@@ -577,7 +590,7 @@ async function buildRoadmap(edrs, layout) {
       return (
         `<section class="roadmap-group">\n` +
         `<h2 id="${state}">${implementationBadge(state)}` +
-        `<span class="roadmap-count">${byState.get(state).length} of ${edrs.length}</span></h2>\n` +
+        `<span class="roadmap-count">${byState.get(state).length} of ${live.length}</span></h2>\n` +
         `<p class="roadmap-blurb">${escapeHtml(blurb)}</p>\n` +
         `<ul class="edr-list">\n${rows}\n</ul>\n</section>`
       );
@@ -585,7 +598,7 @@ async function buildRoadmap(edrs, layout) {
     .join('\n');
 
   const body = await renderTemplate('roadmap.html', {
-    count: String(edrs.length),
+    count: String(live.length),
     tally,
     groups,
     base: BASE,

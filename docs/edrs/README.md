@@ -93,7 +93,8 @@ claims reproduces exactly the drift it exists to detect.
   a dated line to the record's Changelog. The decision is unchanged.
 - **The code caught up with the decision** → update `implementation` and its note, and add a dated
   Changelog line. The decision is unchanged; only the world is. This is never a reason to write a new
-  record.
+  record. The line records a *change* of state, so the change that first gave every record the field
+  did not add forty of them — it has one changelog entry of its own instead.
 - **The decision itself changes** → write a *new* record with a higher number, set `supersedes: N` on
   it, and set `status: superseded` + `superseded_by: M` on the old one. Never edit the decision text
   of a superseded record: its whole value is being an accurate account of what we used to think.

@@ -4,7 +4,7 @@ title: "Broker production data access as reviewed, signed, expiring grants"
 summary: "Marque replaces ad-hoc production database access with a reviewed workflow: a submitted statement is analysed, approved by a human with authority over that target, and executed under a named role inside a signed validity window."
 status: accepted
 implementation: none
-implementation_note: "Three binaries exist by name — cmd/marque, cmd/harbourmaster, cmd/pilot — and each prints its version and exits. None of the flow, the object model, the plane split's behaviour or the logbook exists, so this is none rather than partial: no component yet does the job the table above gives it."
+implementation_note: "Three binaries exist by name — cmd/marque, cmd/harbourmaster, cmd/pilot — and each prints its version and exits. None of the flow, the object model, the plane split's behaviour or the logbook exists, so this is none rather than partial: no component yet does the job the component table in this record gives it."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
