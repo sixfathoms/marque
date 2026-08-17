@@ -16,8 +16,15 @@ service HarbourmasterService {
   // GetVersion reports the software the control plane is running, so a client
   // can say what it was talking to.
   rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
-    option (marque.v1.safe) = true;
-    option (marque.v1.idempotency) = IDEMPOTENCY_NATURAL;
+    // NO_SIDE_EFFECTS is the standard option Connect's generator reads, and it
+    // is what makes `safe` mean something to a generated client rather than
+    // only to this repository's own build. The two must agree; the build
+    // rejects one without the other (EDR-0040).
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (marque.v1.behaviour) = {
+      safe: true
+      idempotency: IDEMPOTENCY_NATURAL
+    };
   }
 }
 

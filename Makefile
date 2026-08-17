@@ -19,26 +19,39 @@ GOLANGCI              := $(TOOL_DIR)/golangci-lint
 BUF                   := $(TOOL_DIR)/buf
 PROTOC_GEN_GO         := $(TOOL_DIR)/protoc-gen-go
 PROTOC_GEN_CONNECT_GO := $(TOOL_DIR)/protoc-gen-connect-go
-DESCRIPTOR            := $(BIN_DIR)/descriptor.binpb
+PROTO_ROOT            := proto
+DESCRIPTOR_ALL        := $(BIN_DIR)/descriptor-all.binpb
+DESCRIPTOR_OWNED      := $(BIN_DIR)/descriptor-owned.binpb
+DESCRIPTOR_BEFORE     := $(BIN_DIR)/descriptor-before.binpb
+
+# The ref the wire contract is compared against. CI overrides it on a push to
+# main, where origin/main is the commit being pushed and comparing against it
+# would compare the schema with itself.
+BASE_REF ?= origin/main
 
 # Version stamps. goreleaser overrides these for a release; a developer build
 # describes the working tree instead, so a binary never claims to be a release
 # it is not. See internal/version.
+#
+# DATE is the *commit* date, not the wall clock, so that building the same
+# commit twice produces the same binary. For a tool whose logbook entries name
+# the software that produced them, "same source, same binary" is worth having.
+# SOURCE_DATE_EPOCH is honoured where a distribution sets it.
 VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
+DATE    ?= $(shell git log -1 --format=%cI 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS := -X $(MODULE)/internal/version.buildVersion=$(VERSION) \
            -X $(MODULE)/internal/version.buildCommit=$(COMMIT) \
            -X $(MODULE)/internal/version.buildDate=$(DATE)
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking
+.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking compat
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
 		| sort \
-		| awk 'BEGIN {FS = ":.*## "}; {printf "  %-8s %s\n", $$1, $$2}'
+		| awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 build: ## Build every binary into ./bin
 	@mkdir -p $(BIN_DIR)
@@ -68,23 +81,58 @@ generate-check: generate ## Fail if the committed generated code is out of date
 		exit 1; \
 	fi
 
-schema-check: $(BUF) ## Fail if any method is missing its retry annotation
+# Two descriptor sets: the owned one says which methods are ours to check, the
+# full one resolves request messages that live in imported files. See the
+# package comment in internal/schema.
+schema-check: $(BUF) ## Fail if a method's retry declaration is missing or malformed
 	@mkdir -p $(BIN_DIR)
-	$(BUF) build -o $(DESCRIPTOR)
-	go run ./internal/schema/schemacheck $(DESCRIPTOR)
+	@stray=$$(git ls-files '*.proto' | grep -v '^$(PROTO_ROOT)/' || true); \
+	if [ -n "$$stray" ]; then \
+		echo "these .proto files are outside $(PROTO_ROOT)/, where buf never sees them:"; \
+		echo "$$stray"; \
+		exit 1; \
+	fi
+	$(BUF) build -o $(DESCRIPTOR_ALL)
+	$(BUF) build --exclude-imports -o $(DESCRIPTOR_OWNED)
+	go run ./internal/schema/schemacheck \
+		-owned $(DESCRIPTOR_OWNED) -all $(DESCRIPTOR_ALL) -proto-root $(PROTO_ROOT)
 
 # A wire contract is a thing you cannot take back once a client has shipped, so
 # it is reviewed like a schema migration (EDR-0020).
 #
-# The guard exists only while main predates the schema; once this lands there is
-# always something to compare against, and it should be deleted. Keeping it
-# would mean that deleting buf.yaml from main silently disables the check.
-breaking: $(BUF) ## Check the schema against main for a breaking change
-	@if git cat-file -e origin/main:buf.yaml 2>/dev/null; then \
-		$(BUF) breaking --against '.git#ref=origin/main'; \
+# The ref is asserted before anything else. The previous shape of this target
+# treated "$(BASE_REF) is not a ref here" the same as "there is no schema to
+# compare against" and printed a reassuring message for both — so a shallow
+# checkout, a renamed remote or a renamed default branch all turned a loud
+# failure into a silent pass.
+#
+# The remaining escape is for bootstrapping only: main genuinely has no schema
+# until this lands. Delete it in the next change; keeping it means that
+# deleting buf.yaml from main silently disables the check.
+breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
+	@git rev-parse -q --verify '$(BASE_REF)^{commit}' >/dev/null || { \
+		echo "$(BASE_REF) is not in this clone, so the wire contract cannot be compared."; \
+		echo "Fetch it first; CI needs actions/checkout with fetch-depth: 0."; \
+		exit 1; \
+	}
+	@if git cat-file -e '$(BASE_REF):buf.yaml' 2>/dev/null; then \
+		$(BUF) breaking --against '.git#ref=$(BASE_REF)'; \
+		$(MAKE) --no-print-directory compat; \
 	else \
-		echo "origin/main carries no schema yet, so there is nothing to compare against."; \
+		echo "NOTE: $(BASE_REF) carries no schema, so there is nothing to compare against."; \
+		echo "This is true only while bootstrapping the schema; remove this branch once it lands."; \
 	fi
+
+# What `buf breaking` cannot see. Its rules compare field numbers, names and
+# types and ignore custom method options entirely, so a method can be
+# reclassified from safe to unsafe with every check green (EDR-0040).
+compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_REF)
+	@mkdir -p $(BIN_DIR)
+	$(BUF) build '.git#ref=$(BASE_REF)' --exclude-imports -o $(DESCRIPTOR_BEFORE)
+	$(BUF) build -o $(DESCRIPTOR_ALL)
+	$(BUF) build --exclude-imports -o $(DESCRIPTOR_OWNED)
+	go run ./internal/schema/schemacheck \
+		-owned $(DESCRIPTOR_OWNED) -all $(DESCRIPTOR_ALL) -before $(DESCRIPTOR_BEFORE)
 
 docs: ## Build the documentation site — the validator for records and entries
 	cd website && pnpm install --frozen-lockfile && pnpm run build
@@ -94,8 +142,8 @@ dev: ## Run the local development loop
 	@echo "the only thing to run is the documentation site."
 	cd website && pnpm run serve
 
-clean: ## Remove build output
-	rm -rf $(BIN_DIR) dist website/dist
+clean: ## Remove build output, including what `make docs` installs
+	rm -rf $(BIN_DIR) dist website/dist website/node_modules
 
 tools: $(GOLANGCI) $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) ## Build the pinned developer tools into ./bin/tools
 

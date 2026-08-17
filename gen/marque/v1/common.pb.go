@@ -90,64 +90,126 @@ func (Idempotency) EnumDescriptor() ([]byte, []int) {
 	return file_marque_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
+// MethodBehaviour is what a method declares about being called twice.
+//
+// The three fields travel as one message rather than as three separate
+// extensions for two reasons. They cannot then be half-set — an idempotency
+// without its key field is a single malformed value rather than two annotations
+// that disagree. And extension numbers in the 50000-99999 range are reserved
+// for use *within one organisation* and are explicitly not globally unique, so
+// an adopter who imports this file alongside their own options collides on a
+// number and the Go runtime panics at registration. One extension is one
+// chance to collide instead of three (EDR-0040).
+type MethodBehaviour struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// safe marks a method read-only, so it may be retried freely and served from
+	// a replica. A safe method must also carry the standard
+	// `idempotency_level = NO_SIDE_EFFECTS`, which is what Connect's own
+	// generator reads; the build rejects one without the other.
+	Safe bool `protobuf:"varint,1,opt,name=safe,proto3" json:"safe,omitempty"`
+	// idempotency states whether repeating this method is safe, and how.
+	Idempotency Idempotency `protobuf:"varint,2,opt,name=idempotency,proto3,enum=marque.v1.Idempotency" json:"idempotency,omitempty"`
+	// idempotency_field names the request field carrying the key. Required when
+	// idempotency is IDEMPOTENCY_KEYED, and meaningless otherwise. The field it
+	// names must be a singular string or bytes, because that is what a generated
+	// client can actually carry through a retry.
+	IdempotencyField string `protobuf:"bytes,3,opt,name=idempotency_field,json=idempotencyField,proto3" json:"idempotency_field,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MethodBehaviour) Reset() {
+	*x = MethodBehaviour{}
+	mi := &file_marque_v1_common_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MethodBehaviour) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MethodBehaviour) ProtoMessage() {}
+
+func (x *MethodBehaviour) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_common_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MethodBehaviour.ProtoReflect.Descriptor instead.
+func (*MethodBehaviour) Descriptor() ([]byte, []int) {
+	return file_marque_v1_common_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *MethodBehaviour) GetSafe() bool {
+	if x != nil {
+		return x.Safe
+	}
+	return false
+}
+
+func (x *MethodBehaviour) GetIdempotency() Idempotency {
+	if x != nil {
+		return x.Idempotency
+	}
+	return Idempotency_IDEMPOTENCY_UNSPECIFIED
+}
+
+func (x *MethodBehaviour) GetIdempotencyField() string {
+	if x != nil {
+		return x.IdempotencyField
+	}
+	return ""
+}
+
 var file_marque_v1_common_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
-		ExtensionType: (*bool)(nil),
-		Field:         50001,
-		Name:          "marque.v1.safe",
-		Tag:           "varint,50001,opt,name=safe",
-		Filename:      "marque/v1/common.proto",
-	},
-	{
-		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
-		ExtensionType: (*Idempotency)(nil),
-		Field:         50002,
-		Name:          "marque.v1.idempotency",
-		Tag:           "varint,50002,opt,name=idempotency,enum=marque.v1.Idempotency",
-		Filename:      "marque/v1/common.proto",
-	},
-	{
-		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
-		ExtensionType: (*string)(nil),
-		Field:         50003,
-		Name:          "marque.v1.idempotency_field",
-		Tag:           "bytes,50003,opt,name=idempotency_field",
+		ExtensionType: (*MethodBehaviour)(nil),
+		Field:         74180,
+		Name:          "marque.v1.behaviour",
+		Tag:           "bytes,74180,opt,name=behaviour",
 		Filename:      "marque/v1/common.proto",
 	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
 var (
-	// safe marks a method read-only, so it may be retried freely and served from
-	// a replica.
+	// behaviour is what this method declares about being called twice. Every
+	// method carries it; one that does not fails the build.
 	//
-	// optional bool safe = 50001;
-	E_Safe = &file_marque_v1_common_proto_extTypes[0]
-	// idempotency states whether repeating this method is safe, and how.
+	// The number is deliberately not near the bottom of the in-house range,
+	// where numbering by convention starts and where a collision is therefore
+	// most likely. It is still not globally unique: before Marque is imported by
+	// anyone outside this repository, a unique range should be requested from
+	// the protobuf global extension registry (EDR-0040).
 	//
-	// optional marque.v1.Idempotency idempotency = 50002;
-	E_Idempotency = &file_marque_v1_common_proto_extTypes[1]
-	// idempotency_field names the request field carrying the key. Required when
-	// idempotency is IDEMPOTENCY_KEYED, and meaningless otherwise.
-	//
-	// optional string idempotency_field = 50003;
-	E_IdempotencyField = &file_marque_v1_common_proto_extTypes[2]
+	// optional marque.v1.MethodBehaviour behaviour = 74180;
+	E_Behaviour = &file_marque_v1_common_proto_extTypes[0]
 )
 
 var File_marque_v1_common_proto protoreflect.FileDescriptor
 
 const file_marque_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x16marque/v1/common.proto\x12\tmarque.v1\x1a google/protobuf/descriptor.proto*r\n" +
+	"\x16marque/v1/common.proto\x12\tmarque.v1\x1a google/protobuf/descriptor.proto\"\x8c\x01\n" +
+	"\x0fMethodBehaviour\x12\x12\n" +
+	"\x04safe\x18\x01 \x01(\bR\x04safe\x128\n" +
+	"\vidempotency\x18\x02 \x01(\x0e2\x16.marque.v1.IdempotencyR\vidempotency\x12+\n" +
+	"\x11idempotency_field\x18\x03 \x01(\tR\x10idempotencyField*r\n" +
 	"\vIdempotency\x12\x1b\n" +
 	"\x17IDEMPOTENCY_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13IDEMPOTENCY_NATURAL\x10\x01\x12\x15\n" +
 	"\x11IDEMPOTENCY_KEYED\x10\x02\x12\x16\n" +
-	"\x12IDEMPOTENCY_UNSAFE\x10\x03:4\n" +
-	"\x04safe\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x04safe:Z\n" +
-	"\vidempotency\x12\x1e.google.protobuf.MethodOptions\x18҆\x03 \x01(\x0e2\x16.marque.v1.IdempotencyR\vidempotency:M\n" +
-	"\x11idempotency_field\x12\x1e.google.protobuf.MethodOptions\x18ӆ\x03 \x01(\tR\x10idempotencyFieldB5Z3github.com/sixfathoms/marque/gen/marque/v1;marquev1b\x06proto3"
+	"\x12IDEMPOTENCY_UNSAFE\x10\x03:Z\n" +
+	"\tbehaviour\x12\x1e.google.protobuf.MethodOptions\x18\xc4\xc3\x04 \x01(\v2\x1a.marque.v1.MethodBehaviourR\tbehaviourB5Z3github.com/sixfathoms/marque/gen/marque/v1;marquev1b\x06proto3"
 
 var (
 	file_marque_v1_common_proto_rawDescOnce sync.Once
@@ -162,20 +224,21 @@ func file_marque_v1_common_proto_rawDescGZIP() []byte {
 }
 
 var file_marque_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_marque_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_marque_v1_common_proto_goTypes = []any{
 	(Idempotency)(0),                   // 0: marque.v1.Idempotency
-	(*descriptorpb.MethodOptions)(nil), // 1: google.protobuf.MethodOptions
+	(*MethodBehaviour)(nil),            // 1: marque.v1.MethodBehaviour
+	(*descriptorpb.MethodOptions)(nil), // 2: google.protobuf.MethodOptions
 }
 var file_marque_v1_common_proto_depIdxs = []int32{
-	1, // 0: marque.v1.safe:extendee -> google.protobuf.MethodOptions
-	1, // 1: marque.v1.idempotency:extendee -> google.protobuf.MethodOptions
-	1, // 2: marque.v1.idempotency_field:extendee -> google.protobuf.MethodOptions
-	0, // 3: marque.v1.idempotency:type_name -> marque.v1.Idempotency
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	3, // [3:4] is the sub-list for extension type_name
-	0, // [0:3] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0, // 0: marque.v1.MethodBehaviour.idempotency:type_name -> marque.v1.Idempotency
+	2, // 1: marque.v1.behaviour:extendee -> google.protobuf.MethodOptions
+	1, // 2: marque.v1.behaviour:type_name -> marque.v1.MethodBehaviour
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	2, // [2:3] is the sub-list for extension type_name
+	1, // [1:2] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_marque_v1_common_proto_init() }
@@ -189,13 +252,14 @@ func file_marque_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_marque_v1_common_proto_rawDesc), len(file_marque_v1_common_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   0,
-			NumExtensions: 3,
+			NumMessages:   1,
+			NumExtensions: 1,
 			NumServices:   0,
 		},
 		GoTypes:           file_marque_v1_common_proto_goTypes,
 		DependencyIndexes: file_marque_v1_common_proto_depIdxs,
 		EnumInfos:         file_marque_v1_common_proto_enumTypes,
+		MessageInfos:      file_marque_v1_common_proto_msgTypes,
 		ExtensionInfos:    file_marque_v1_common_proto_extTypes,
 	}.Build()
 	File_marque_v1_common_proto = out.File

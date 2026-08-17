@@ -151,10 +151,10 @@ const file_marque_v1_harbourmaster_proto_rawDesc = "" +
 	"\x04date\x18\x03 \x01(\tR\x04date\x12\x1d\n" +
 	"\n" +
 	"go_version\x18\x04 \x01(\tR\tgoVersion\x12\x1a\n" +
-	"\bplatform\x18\x05 \x01(\tR\bplatform2k\n" +
-	"\x14HarbourmasterService\x12S\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform2n\n" +
+	"\x14HarbourmasterService\x12V\n" +
 	"\n" +
-	"GetVersion\x12\x1c.marque.v1.GetVersionRequest\x1a\x1d.marque.v1.GetVersionResponse\"\b\x88\xb5\x18\x01\x90\xb5\x18\x01B5Z3github.com/sixfathoms/marque/gen/marque/v1;marquev1b\x06proto3"
+	"GetVersion\x12\x1c.marque.v1.GetVersionRequest\x1a\x1d.marque.v1.GetVersionResponse\"\v\xa2\x9c$\x04\b\x01\x10\x01\x90\x02\x01B5Z3github.com/sixfathoms/marque/gen/marque/v1;marquev1b\x06proto3"
 
 var (
 	file_marque_v1_harbourmaster_proto_rawDescOnce sync.Once

@@ -67,4 +67,11 @@ jobs:
       - name: generated code matches the schema
         run: make generate-check
       - name: no breaking change to the wire contract
-        run: make breaking
+        env:
+          # On a push to main, origin/main *is* the commit being pushed, so
+          # comparing against it compares the schema with itself and passes
+          # whatever it is given. The previous tip is the meaningful base.
+          # Passed through the environment rather than interpolated into the
+          # run block, so no context value is ever shell.
+          BASE_REF: ${{ github.event_name == 'push' && github.event.before || 'origin/main' }}
+        run: make breaking BASE_REF="$BASE_REF"

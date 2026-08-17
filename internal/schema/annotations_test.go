@@ -5,50 +5,80 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 
 	marquev1 "github.com/sixfathoms/marque/gen/marque/v1"
 )
 
-type option func(*descriptorpb.MethodOptions)
+const (
+	noOptions = true
+	unknown   = descriptorpb.MethodOptions_IDEMPOTENCY_UNKNOWN
+	noSide    = descriptorpb.MethodOptions_NO_SIDE_EFFECTS
+)
 
-func safe(v bool) option {
-	return func(o *descriptorpb.MethodOptions) { proto.SetExtension(o, marquev1.E_Safe, v) }
-}
-
-func idempotency(v marquev1.Idempotency) option {
-	return func(o *descriptorpb.MethodOptions) { proto.SetExtension(o, marquev1.E_Idempotency, v) }
-}
-
-func keyField(v string) option {
-	return func(o *descriptorpb.MethodOptions) { proto.SetExtension(o, marquev1.E_IdempotencyField, v) }
-}
-
-// options builds a MethodOptions from the given annotations. Passing none
-// yields an empty-but-present options message, which is distinct from a method
-// carrying no options at all — both must be caught.
-func options(opts ...option) *descriptorpb.MethodOptions {
-	o := &descriptorpb.MethodOptions{}
-	for _, apply := range opts {
-		apply(o)
+// behaviour is shorthand for a MethodBehaviour.
+func behaviour(safe bool, idempotency marquev1.Idempotency, field string) *marquev1.MethodBehaviour {
+	return &marquev1.MethodBehaviour{
+		Safe:             safe,
+		Idempotency:      idempotency,
+		IdempotencyField: field,
 	}
-	return o
 }
 
-// probe builds a one-method descriptor set. requestFields names the fields on
-// the request message, so the idempotency-key rule has something to resolve
-// against.
-func probe(opts *descriptorpb.MethodOptions, requestFields ...string) *descriptorpb.FileDescriptorSet {
-	fields := make([]*descriptorpb.FieldDescriptorProto, 0, len(requestFields))
-	for i, name := range requestFields {
-		fields = append(fields, &descriptorpb.FieldDescriptorProto{
-			Name:   proto.String(name),
-			Number: proto.Int32(int32(i + 1)),
-			Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-			Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
-		})
-	}
+// natural is the commonest valid declaration.
+func natural() *marquev1.MethodBehaviour {
+	return behaviour(false, marquev1.Idempotency_IDEMPOTENCY_NATURAL, "")
+}
 
+// keyed names its key, which the default probe request carries.
+func keyed(field string) *marquev1.MethodBehaviour {
+	return behaviour(false, marquev1.Idempotency_IDEMPOTENCY_KEYED, field)
+}
+
+// method builds a method descriptor whose options carry b and level.
+func method(name string, b *marquev1.MethodBehaviour, level descriptorpb.MethodOptions_IdempotencyLevel) *descriptorpb.MethodDescriptorProto {
+	opts := &descriptorpb.MethodOptions{}
+	if level != unknown {
+		opts.IdempotencyLevel = level.Enum()
+	}
+	if b != nil {
+		proto.SetExtension(opts, marquev1.E_Behaviour, b)
+	}
+	return &descriptorpb.MethodDescriptorProto{
+		Name:       proto.String(name),
+		InputType:  proto.String(".marque.v1.ProbeRequest"),
+		OutputType: proto.String(".marque.v1.ProbeResponse"),
+		Options:    opts,
+	}
+}
+
+// bareMethod declares no options at all, which is distinct from declaring
+// empty ones. Both must be caught.
+func bareMethod(name string) *descriptorpb.MethodDescriptorProto {
+	m := method(name, nil, unknown)
+	m.Options = nil
+	return m
+}
+
+func stringField(name string, number int32) *descriptorpb.FieldDescriptorProto {
+	return &descriptorpb.FieldDescriptorProto{
+		Name:   proto.String(name),
+		Number: proto.Int32(number),
+		Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+		Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+	}
+}
+
+// probe builds a one-file descriptor set. The request message carries a single
+// string field "nonce", which is what the keyed rules resolve against.
+func probe(methods ...*descriptorpb.MethodDescriptorProto) *descriptorpb.FileDescriptorSet {
+	return probeWithFields([]*descriptorpb.FieldDescriptorProto{stringField("nonce", 1)}, methods...)
+}
+
+func probeWithFields(fields []*descriptorpb.FieldDescriptorProto, methods ...*descriptorpb.MethodDescriptorProto) *descriptorpb.FileDescriptorSet {
 	return &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{{
 			Name:    proto.String("marque/v1/probe.proto"),
@@ -59,13 +89,8 @@ func probe(opts *descriptorpb.MethodOptions, requestFields ...string) *descripto
 				{Name: proto.String("ProbeResponse")},
 			},
 			Service: []*descriptorpb.ServiceDescriptorProto{{
-				Name: proto.String("ProbeService"),
-				Method: []*descriptorpb.MethodDescriptorProto{{
-					Name:       proto.String("Probe"),
-					InputType:  proto.String(".marque.v1.ProbeRequest"),
-					OutputType: proto.String(".marque.v1.ProbeResponse"),
-					Options:    opts,
-				}},
+				Name:   proto.String("ProbeService"),
+				Method: methods,
 			}},
 		}},
 	}
@@ -78,38 +103,62 @@ func TestCheckAnnotationsAccepts(t *testing.T) {
 		reason string
 	}{
 		{
-			name:   "safe alone is a declaration",
-			fds:    probe(options(safe(true))),
+			name: "safe, with the standard option that makes it mean something",
+			fds:  probe(method("M", behaviour(true, marquev1.Idempotency_IDEMPOTENCY_NATURAL, ""), noSide)),
+		},
+		{
+			name:   "safe alone, without an idempotency",
+			fds:    probe(method("M", behaviour(true, marquev1.Idempotency_IDEMPOTENCY_UNSPECIFIED, ""), noSide)),
 			reason: "EDR-0020's own example annotates a read-only method with safe and nothing else",
 		},
 		{
-			name: "an idempotency alone is a declaration",
-			fds:  probe(options(idempotency(marquev1.Idempotency_IDEMPOTENCY_NATURAL))),
+			name: "an idempotency alone",
+			fds:  probe(method("M", natural(), unknown)),
 		},
 		{
 			name: "unsafe is a decision like any other",
-			fds:  probe(options(idempotency(marquev1.Idempotency_IDEMPOTENCY_UNSAFE))),
+			fds:  probe(method("M", behaviour(false, marquev1.Idempotency_IDEMPOTENCY_UNSAFE, ""), unknown)),
 		},
 		{
-			name: "keyed naming a field the request has",
-			fds: probe(
-				options(idempotency(marquev1.Idempotency_IDEMPOTENCY_KEYED), keyField("nonce")),
-				"nonce",
+			name: "keyed, naming a singular string the request has",
+			fds:  probe(method("M", keyed("nonce"), unknown)),
+		},
+		{
+			name: "keyed on bytes",
+			fds: probeWithFields(
+				[]*descriptorpb.FieldDescriptorProto{{
+					Name:   proto.String("nonce"),
+					Number: proto.Int32(1),
+					Type:   descriptorpb.FieldDescriptorProto_TYPE_BYTES.Enum(),
+					Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				}},
+				method("M", keyed("nonce"), unknown),
 			),
 		},
 		{
-			name: "safe and keyed together are not contradictory",
-			fds: probe(
-				options(safe(true), idempotency(marquev1.Idempotency_IDEMPOTENCY_KEYED), keyField("nonce")),
-				"nonce",
+			name: "keyed on a proto3 optional field, whose synthetic oneof is not a real one",
+			fds: probeWithFields(
+				[]*descriptorpb.FieldDescriptorProto{{
+					Name:           proto.String("nonce"),
+					Number:         proto.Int32(1),
+					Type:           descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Label:          descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					OneofIndex:     proto.Int32(0),
+					Proto3Optional: proto.Bool(true),
+				}},
+				method("M", keyed("nonce"), unknown),
 			),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := CheckAnnotations(tt.fds); len(got) != 0 {
-				t.Errorf("CheckAnnotations() = %v, want none (%s)", got, tt.reason)
+			report := CheckAnnotations(tt.fds, tt.fds)
+			if len(report.Violations) != 0 {
+				t.Errorf("CheckAnnotations() = %v, want none (%s)", report.Violations, tt.reason)
+			}
+			if report.MethodsChecked != 1 {
+				t.Errorf("MethodsChecked = %d, want 1", report.MethodsChecked)
 			}
 		})
 	}
@@ -119,120 +168,324 @@ func TestCheckAnnotationsRejects(t *testing.T) {
 	tests := []struct {
 		name string
 		fds  *descriptorpb.FileDescriptorSet
-		want string // substring the reason must contain
+		want string
 	}{
 		{
 			name: "no options at all",
-			fds:  probe(nil),
-			want: "declares neither",
+			fds:  probe(bareMethod("M")),
+			want: "declares no (marque.v1.behaviour)",
 		},
 		{
-			name: "options present but empty",
-			fds:  probe(options()),
-			want: "declares neither",
+			name: "options present but no behaviour",
+			fds:  probe(method("M", nil, unknown)),
+			want: "declares no (marque.v1.behaviour)",
 		},
 		{
 			name: "safe explicitly false is not a declaration of safety",
-			fds:  probe(options(safe(false))),
-			want: "declares neither",
+			fds:  probe(method("M", behaviour(false, marquev1.Idempotency_IDEMPOTENCY_UNSPECIFIED, ""), unknown)),
+			want: "declares no (marque.v1.behaviour)",
 		},
 		{
 			name: "safe and unsafe at once",
-			fds:  probe(options(safe(true), idempotency(marquev1.Idempotency_IDEMPOTENCY_UNSAFE))),
+			fds:  probe(method("M", behaviour(true, marquev1.Idempotency_IDEMPOTENCY_UNSAFE, ""), noSide)),
 			want: "cannot be one that must not be retried",
 		},
 		{
+			name: "safe without the standard option a Connect client reads",
+			fds:  probe(method("M", behaviour(true, marquev1.Idempotency_IDEMPOTENCY_NATURAL, ""), unknown)),
+			want: "does not set `option idempotency_level = NO_SIDE_EFFECTS`",
+		},
+		{
+			name: "the standard option without safe",
+			fds:  probe(method("M", natural(), noSide)),
+			want: "so a generated client treats it as read-only and this repository does not",
+		},
+		{
 			name: "keyed without naming the key",
-			fds:  probe(options(idempotency(marquev1.Idempotency_IDEMPOTENCY_KEYED))),
-			want: "without an (marque.v1.idempotency_field)",
+			fds:  probe(method("M", keyed(""), unknown)),
+			want: "without an idempotency_field naming the key",
 		},
 		{
 			name: "keyed naming a field the request does not have",
-			fds: probe(
-				options(idempotency(marquev1.Idempotency_IDEMPOTENCY_KEYED), keyField("nonce")),
-				"reason",
-			),
+			fds:  probe(method("M", keyed("absent"), unknown)),
 			want: "which marque.v1.ProbeRequest does not have",
 		},
 		{
-			name: "a key on a method that is not keyed",
-			fds: probe(
-				options(idempotency(marquev1.Idempotency_IDEMPOTENCY_NATURAL), keyField("nonce")),
-				"nonce",
+			name: "keyed naming a repeated field",
+			fds: probeWithFields(
+				[]*descriptorpb.FieldDescriptorProto{{
+					Name:   proto.String("nonce"),
+					Number: proto.Int32(1),
+					Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Label:  descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
+				}},
+				method("M", keyed("nonce"), unknown),
 			),
+			want: "is repeated; a key is a single value",
+		},
+		{
+			name: "keyed naming an integer field",
+			fds: probeWithFields(
+				[]*descriptorpb.FieldDescriptorProto{{
+					Name:   proto.String("nonce"),
+					Number: proto.Int32(1),
+					Type:   descriptorpb.FieldDescriptorProto_TYPE_INT64.Enum(),
+					Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+				}},
+				method("M", keyed("nonce"), unknown),
+			),
+			want: "is INT64; a key is a string or bytes",
+		},
+		{
+			name: "keyed naming a real oneof member",
+			fds: probeWithFields(
+				[]*descriptorpb.FieldDescriptorProto{{
+					Name:       proto.String("nonce"),
+					Number:     proto.Int32(1),
+					Type:       descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+					Label:      descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					OneofIndex: proto.Int32(0),
+				}},
+				method("M", keyed("nonce"), unknown),
+			),
+			want: "is a member of a oneof",
+		},
+		{
+			name: "a key on a method that is not keyed",
+			fds:  probe(method("M", behaviour(false, marquev1.Idempotency_IDEMPOTENCY_NATURAL, "nonce"), unknown)),
 			want: "so the field means nothing",
+		},
+		{
+			name: "an idempotency value this build does not know",
+			fds:  probe(method("M", behaviour(false, marquev1.Idempotency(99), ""), unknown)),
+			want: "which this build does not know",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CheckAnnotations(tt.fds)
-			if len(got) == 0 {
+			report := CheckAnnotations(tt.fds, tt.fds)
+			if len(report.Violations) == 0 {
 				t.Fatalf("CheckAnnotations() = none, want a violation containing %q", tt.want)
 			}
-			if !strings.Contains(got[0].Reason, tt.want) {
-				t.Errorf("reason = %q, want it to contain %q", got[0].Reason, tt.want)
+			if !containsReason(report.Violations, tt.want) {
+				t.Errorf("violations = %v, want one containing %q", report.Violations, tt.want)
 			}
-			if got[0].Method != "marque.v1.ProbeService.Probe" {
-				t.Errorf("Method = %q, want the fully-qualified name", got[0].Method)
-			}
-			if got[0].File != "marque/v1/probe.proto" {
-				t.Errorf("File = %q, want the declaring file", got[0].File)
+			for _, v := range report.Violations {
+				if v.Method != "marque.v1.ProbeService.M" {
+					t.Errorf("Method = %q, want the fully-qualified name", v.Method)
+				}
+				if v.File != "marque/v1/probe.proto" {
+					t.Errorf("File = %q, want the declaring file", v.File)
+				}
 			}
 		})
 	}
 }
 
-// A request message declared inside another message still has to be resolvable,
-// or the key rule would silently pass every method whose request is nested.
+func containsReason(violations []Violation, want string) bool {
+	for _, v := range violations {
+		if strings.Contains(v.Reason, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// Methods live only in the owned set. A service in an imported file — a health
+// service, google.longrunning — must not be put through Marque's rules, because
+// it is code this project does not own and cannot annotate.
+func TestCheckAnnotationsIgnoresImportedServices(t *testing.T) {
+	owned := probe(method("M", natural(), unknown))
+
+	all := probe(method("M", natural(), unknown))
+	all.File = append(all.File, &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("google/longrunning/operations.proto"),
+		Package: proto.String("google.longrunning"),
+		Syntax:  proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("GetOperationRequest")},
+			{Name: proto.String("Operation")},
+		},
+		Service: []*descriptorpb.ServiceDescriptorProto{{
+			Name:   proto.String("Operations"),
+			Method: []*descriptorpb.MethodDescriptorProto{bareMethod("GetOperation")},
+		}},
+	})
+
+	report := CheckAnnotations(owned, all)
+	if len(report.Violations) != 0 {
+		t.Errorf("CheckAnnotations() = %v, want none; imported services are not ours to annotate",
+			report.Violations)
+	}
+	if report.MethodsChecked != 1 {
+		t.Errorf("MethodsChecked = %d, want 1 — only the owned method", report.MethodsChecked)
+	}
+}
+
+// A request message living in an imported file must still resolve, which is the
+// whole reason two sets are passed rather than one.
+func TestCheckAnnotationsResolvesImportedRequestMessages(t *testing.T) {
+	owned := probe(method("M", keyed("nonce"), unknown))
+	owned.File[0].Service[0].Method[0].InputType = proto.String(".other.v1.Imported")
+
+	all := probe(method("M", keyed("nonce"), unknown))
+	all.File = append(all.File, &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("other/v1/other.proto"),
+		Package: proto.String("other.v1"),
+		Syntax:  proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{{
+			Name:  proto.String("Imported"),
+			Field: []*descriptorpb.FieldDescriptorProto{stringField("nonce", 1)},
+		}},
+	})
+
+	if report := CheckAnnotations(owned, all); len(report.Violations) != 0 {
+		t.Errorf("CheckAnnotations() = %v, want none", report.Violations)
+	}
+}
+
 func TestCheckAnnotationsResolvesNestedRequestMessages(t *testing.T) {
-	fds := probe(options(idempotency(marquev1.Idempotency_IDEMPOTENCY_KEYED), keyField("nonce")))
+	fds := probe(method("M", keyed("nonce"), unknown))
 	file := fds.GetFile()[0]
 	file.MessageType = []*descriptorpb.DescriptorProto{{
 		Name: proto.String("Outer"),
 		NestedType: []*descriptorpb.DescriptorProto{{
-			Name: proto.String("ProbeRequest"),
-			Field: []*descriptorpb.FieldDescriptorProto{{
-				Name:   proto.String("nonce"),
-				Number: proto.Int32(1),
-				Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
-				Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
-			}},
+			Name:  proto.String("ProbeRequest"),
+			Field: []*descriptorpb.FieldDescriptorProto{stringField("nonce", 1)},
 		}},
 	}}
 	file.Service[0].Method[0].InputType = proto.String(".marque.v1.Outer.ProbeRequest")
 
-	if got := CheckAnnotations(fds); len(got) != 0 {
-		t.Errorf("CheckAnnotations() = %v, want none for a nested request message", got)
+	if report := CheckAnnotations(fds, fds); len(report.Violations) != 0 {
+		t.Errorf("CheckAnnotations() = %v, want none for a nested request message", report.Violations)
 	}
 }
 
 // An unresolvable request message must fail rather than be assumed correct.
-// A check that resolves doubt toward yes is not a check.
 func TestCheckAnnotationsFailsOnUnresolvableRequest(t *testing.T) {
-	fds := probe(options(idempotency(marquev1.Idempotency_IDEMPOTENCY_KEYED), keyField("nonce")))
+	fds := probe(method("M", keyed("nonce"), unknown))
 	fds.GetFile()[0].Service[0].Method[0].InputType = proto.String(".marque.v1.Missing")
 
-	got := CheckAnnotations(fds)
-	if len(got) != 1 {
-		t.Fatalf("CheckAnnotations() = %v, want one violation", got)
-	}
-	if !strings.Contains(got[0].Reason, "does not have") {
-		t.Errorf("reason = %q, want it to report the field as absent", got[0].Reason)
+	report := CheckAnnotations(fds, fds)
+	if !containsReason(report.Violations, "is not in the descriptor set") {
+		t.Errorf("violations = %v, want one reporting the message as unresolvable", report.Violations)
 	}
 }
 
-// Violations are sorted, so a schema with several problems produces the same
-// output every run and a diff of the output means something.
+// Violations are sorted by method, then reason, so output is stable and a diff
+// of it means something. Two files and three methods, declared out of order —
+// with one method the sort is unexercised and the test passes even if the sort
+// is deleted.
 func TestCheckAnnotationsIsOrdered(t *testing.T) {
-	fds := probe(options(safe(true), idempotency(marquev1.Idempotency_IDEMPOTENCY_UNSAFE), keyField("nonce")))
-	got := CheckAnnotations(fds)
-	if len(got) != 2 {
-		t.Fatalf("CheckAnnotations() = %v, want two violations", got)
+	fds := probe(bareMethod("Zulu"), bareMethod("Alpha"))
+	second := probe(bareMethod("Mike"))
+	second.File[0].Name = proto.String("marque/v1/second.proto")
+	fds.File = append(fds.File, second.File[0])
+
+	report := CheckAnnotations(fds, fds)
+	if report.MethodsChecked != 3 {
+		t.Fatalf("MethodsChecked = %d, want 3", report.MethodsChecked)
 	}
-	for i := 1; i < len(got); i++ {
-		if got[i-1].Reason > got[i].Reason {
-			t.Errorf("violations are not sorted: %q before %q", got[i-1].Reason, got[i].Reason)
+
+	got := make([]string, 0, len(report.Violations))
+	for _, v := range report.Violations {
+		got = append(got, v.Method)
+	}
+	want := []string{"marque.v1.ProbeService.Alpha", "marque.v1.ProbeService.Mike", "marque.v1.ProbeService.Zulu"}
+	if len(got) != len(want) {
+		t.Fatalf("violations = %v, want %d", got, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("violation %d = %q, want %q (order: %v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+// Streaming methods are methods. Nothing about a stream makes retry safety
+// somebody else's problem.
+func TestCheckAnnotationsChecksStreamingMethods(t *testing.T) {
+	for _, kind := range []string{"client", "server", "bidi"} {
+		t.Run(kind, func(t *testing.T) {
+			m := bareMethod("Stream")
+			m.ClientStreaming = proto.Bool(kind == "client" || kind == "bidi")
+			m.ServerStreaming = proto.Bool(kind == "server" || kind == "bidi")
+
+			report := CheckAnnotations(probe(m), probe(m))
+			if len(report.Violations) == 0 {
+				t.Error("CheckAnnotations() = none, want a violation; a streaming method still declares")
+			}
+		})
+	}
+}
+
+// schemacheck reads descriptor sets off disk, so the decode path is the one
+// that matters. Setting extensions in memory never exercises it.
+func TestCheckAnnotationsSurvivesAWireRoundTrip(t *testing.T) {
+	original := probe(method("Keyed", keyed("nonce"), unknown), bareMethod("Bare"))
+
+	raw, err := proto.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	report := CheckAnnotations(&decoded, &decoded)
+	if report.MethodsChecked != 2 {
+		t.Fatalf("MethodsChecked = %d, want 2", report.MethodsChecked)
+	}
+	// The keyed method's annotation must have survived the round trip; if the
+	// extension decoded as an unknown field it would look unannotated and
+	// produce a second violation here.
+	if len(report.Violations) != 1 {
+		t.Errorf("violations = %v, want exactly one (the bare method)", report.Violations)
+	}
+	if !containsReason(report.Violations, "declares no (marque.v1.behaviour)") {
+		t.Errorf("violations = %v, want the bare method's", report.Violations)
+	}
+}
+
+// The committed schema itself is checked here as well as by `make lint`, so an
+// unannotated method in a new service fails `go test` without anyone having
+// built buf first.
+func TestCommittedSchemaIsAnnotated(t *testing.T) {
+	var fds descriptorpb.FileDescriptorSet
+	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		if strings.HasPrefix(fd.Path(), "marque/") {
+			fds.File = append(fds.File, protodesc.ToFileDescriptorProto(fd))
+		}
+		return true
+	})
+
+	report := CheckAnnotations(&fds, &fds)
+	if report.MethodsChecked == 0 {
+		t.Fatal("no methods found in the committed schema; this test is inspecting nothing")
+	}
+	if len(report.Violations) != 0 {
+		t.Errorf("the committed schema has violations: %v", report.Violations)
+	}
+}
+
+func TestUncoveredProtoFiles(t *testing.T) {
+	owned := probe(method("M", natural(), unknown))
+
+	got := UncoveredProtoFiles(owned, []string{
+		"marque/v1/probe.proto",
+		"marque/v1/hidden.proto",
+		"elsewhere/thing.proto",
+	})
+	want := []string{"elsewhere/thing.proto", "marque/v1/hidden.proto"}
+
+	if len(got) != len(want) {
+		t.Fatalf("UncoveredProtoFiles() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("UncoveredProtoFiles()[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
 }

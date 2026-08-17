@@ -128,9 +128,10 @@ Six properties the design gives other things up to keep:
 
 ## Status
 
-**Design.** The decision records are published and implementation has not started. Nothing here runs
-in production anywhere yet. See [Scope](./scope.md) for what is in the first release and what is
-deliberately deferred.
+**Design; scaffolding underway.** The decision records are published and remain the source of truth.
+Implementation has begun at M0 of the [implementation plan](./implementation-plan.md) — the
+toolchain, the schema and the build — and nothing runs against a database yet. See
+[Scope](./scope.md) for what is in the first release and what is deliberately deferred.
 
 ## Using it
 

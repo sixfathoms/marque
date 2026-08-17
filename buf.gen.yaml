@@ -8,6 +8,9 @@
 # the tool directives in go.mod.
 version: v2
 
+# `clean` removes each output directory entirely before generating, not just the
+# files a plugin claims. Every `out:` below must therefore be a directory
+# nothing else lives in — `out: .` here would delete the repository.
 clean: true
 
 plugins:

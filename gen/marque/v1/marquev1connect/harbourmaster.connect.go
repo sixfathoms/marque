@@ -60,6 +60,7 @@ func NewHarbourmasterServiceClient(httpClient connect.HTTPClient, baseURL string
 			httpClient,
 			baseURL+HarbourmasterServiceGetVersionProcedure,
 			connect.WithSchema(harbourmasterServiceMethods.ByName("GetVersion")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -93,6 +94,7 @@ func NewHarbourmasterServiceHandler(svc HarbourmasterServiceHandler, opts ...con
 		HarbourmasterServiceGetVersionProcedure,
 		svc.GetVersion,
 		connect.WithSchema(harbourmasterServiceMethods.ByName("GetVersion")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/marque.v1.HarbourmasterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
