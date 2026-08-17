@@ -84,7 +84,7 @@ func (o Operation) assignsColumns() bool { return o == Update || o == Insert }
 // hasPredicate says whether the statement has a predicate over its *target*
 // relation. An insert does not, which is different from an unconditional
 // update, whose predicate is TRUE — and different again from carrying no WHERE
-// at all, which an `INSERT … SELECT … WHERE` plainly does.
+// at all: an `INSERT … SELECT … WHERE` plainly carries one.
 func (o Operation) hasPredicate() bool { return o != Insert }
 
 // Scope is what the grammar must extract from a statement it admits: the
