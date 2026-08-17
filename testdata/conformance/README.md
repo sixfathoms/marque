@@ -38,6 +38,10 @@ reports how many vectors it found, so an empty corpus is a stated fact rather th
 }
 ```
 
+Relations are **schema-qualified**. `EDR-0007` places a relation resolved through `search_path`
+outside the subset, because an unqualified name can bind elsewhere — which is the escape the pinned
+`search_path` closes. The validator rejects an unqualified one.
+
 `subset_version` is the version of the checkable subset these vectors describe. It is recorded on
 every extracted scope, so a delegation signed against one subset stays pinned to it when the subset
 later widens.
@@ -47,11 +51,11 @@ A vector the grammar must **admit** carries the scope it must extract:
 ```json
 {
   "name": "single-relation update with a conjunctive predicate over literals",
-  "statement": "UPDATE accounts SET tier = 'pro' WHERE id = 42 AND region = 'eu'",
+  "statement": "UPDATE public.accounts SET tier = 'pro' WHERE id = 42 AND region = 'eu'",
   "verdict": "in_subset",
   "scope": {
     "operation": "update",
-    "relation": "accounts",
+    "relation": "public.accounts",
     "columns_written": ["tier"],
     "predicate": "id = 42 AND region = 'eu'"
   }
@@ -65,11 +69,11 @@ and they are measured at execution rather than stated here:
 ```json
 {
   "name": "single-relation delete with a predicate over literals",
-  "statement": "DELETE FROM settings WHERE account_id = 42",
+  "statement": "DELETE FROM public.settings WHERE account_id = 42",
   "verdict": "in_subset",
   "scope": {
     "operation": "delete",
-    "relation": "settings",
+    "relation": "public.settings",
     "predicate": "account_id = 42"
   }
 }
@@ -80,17 +84,31 @@ A vector it must **refuse** carries the reason, which is the error message a rea
 ```json
 {
   "name": "a function call in the predicate cannot be evaluated at review time",
-  "statement": "UPDATE accounts SET tier = 'pro' WHERE created_at < now()",
+  "statement": "UPDATE public.accounts SET tier = 'pro' WHERE created_at < now()",
   "verdict": "out_of_grammar",
   "because": "a function call cannot be evaluated at review time"
 }
 ```
 
-| Verdict | Meaning |
-|---|---|
-| `in_subset` | The grammar proves what this touches. Requires `scope`. |
-| `out_of_grammar` | The subset cannot express this, and may never. Requires `because`. |
-| `unsupported` | The engine cannot enforce a control this needs. Requires `because`. |
+The three verdicts are [EDR-0039](../../docs/edrs/0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)'s,
+quoted rather than restated — an earlier version of this file put them in its own words and had
+`unsupported` mean "the engine cannot enforce a control", which is not what the record says.
+
+| Verdict | Meaning | What happens | Carries |
+|---|---|---|---|
+| `in_subset` | Provable shape; scope and predicate extracted | May match a delegation or standing order | `scope` |
+| `out_of_grammar` | Valid SQL the subset cannot prove anything about | **Escalates to a human** | `because` |
+| `unsupported` | Marque will not broker it at all (DDL, implicit commit, multi-statement) | Refused with the reason | `because` |
+
+The middle row is the one to keep straight. `out_of_grammar` is not a refusal — it is the ordinary
+path to a person. [EDR-0022](../../docs/edrs/0022-local-proxy-brokers-every-statement.md) is explicit
+that an operator who cannot tell "ask someone" from "never going to work" will assume the latter and
+route around the system.
+
+There is no fourth verdict, and there is no verdict for SQL that does not parse. `out_of_grammar` is
+*valid* SQL the subset cannot reason about, so a statement PostgreSQL itself rejects has no place
+here; the differential harness of M2 compares what the parser and a real server accept, and its
+inputs are a separate concern from this corpus.
 
 Examples here use the neutral fictional schema this repository uses throughout — `accounts`,
 `settings`, `tier`. No organisation's schema, table or column names belong in a vector.

@@ -28,36 +28,36 @@ func TestLoadAcceptsAWellFormedCorpus(t *testing.T) {
 	  "vectors": [
 	    {
 	      "name": "single-relation update with a conjunctive predicate over literals",
-	      "statement": "UPDATE accounts SET tier = 'pro' WHERE id = 42 AND region = 'eu'",
+	      "statement": "UPDATE public.accounts SET tier = 'pro' WHERE id = 42 AND region = 'eu'",
 	      "verdict": "in_subset",
 	      "scope": {
 	        "operation": "update",
-	        "relation": "accounts",
+	        "relation": "public.accounts",
 	        "columns_written": ["tier"],
 	        "predicate": "id = 42 AND region = 'eu'"
 	      }
 	    },
 	    {
 	      "name": "single-relation delete, which assigns to no column",
-	      "statement": "DELETE FROM settings WHERE account_id = 42",
+	      "statement": "DELETE FROM public.settings WHERE account_id = 42",
 	      "verdict": "in_subset",
 	      "scope": {
 	        "operation": "delete",
-	        "relation": "settings",
+	        "relation": "public.settings",
 	        "predicate": "account_id = 42"
 	      }
 	    },
 	    {
 	      "name": "a function call in the predicate",
-	      "statement": "UPDATE accounts SET tier = 'pro' WHERE created_at < now()",
+	      "statement": "UPDATE public.accounts SET tier = 'pro' WHERE created_at < now()",
 	      "verdict": "out_of_grammar",
 	      "because": "a function call cannot be evaluated at review time"
 	    },
 	    {
-	      "name": "an engine that cannot assert the write set",
-	      "statement": "DELETE FROM settings WHERE id = 1",
+	      "name": "DDL, which Marque does not broker at all",
+	      "statement": "ALTER TABLE public.accounts ADD COLUMN nickname text",
 	      "verdict": "unsupported",
-	      "because": "this engine has no RETURNING, so the post-assert cannot run"
+	      "because": "a statement that cannot be rolled back cannot be fenced or rehearsed"
 	    }
 	  ]
 	}`)
@@ -97,13 +97,13 @@ func TestLoadRejects(t *testing.T) {
 		{
 			name: "a refused statement carrying a scope",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"unsupported","because":"b",
-			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry a scope",
 		},
 		{
 			name: "an admitted statement carrying a reason",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset","because":"b",
-			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry `because`",
 		},
 		{
@@ -113,9 +113,44 @@ func TestLoadRejects(t *testing.T) {
 			want: "scope.relation is required",
 		},
 		{
+			name: "a column that is only whitespace",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","relation":"public.accounts",
+			        "columns_written":["  "],"predicate":"id = 1"}}]}`,
+			want: "columns_written[0] is empty",
+		},
+		{
+			name: "a statement that is only whitespace",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"   ","verdict":"out_of_grammar","because":"b"}]}`,
+			want: "statement is required",
+		},
+		{
+			name: "a reason that is only whitespace",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar","because":"  "}]}`,
+			want: "requires `because`",
+		},
+		{
+			name: "a relation that is only whitespace",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","relation":"  ","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "scope.relation is required",
+		},
+		{
+			name: "a predicate that is only whitespace",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"],"predicate":" "}}]}`,
+			want: "scope.predicate is required",
+		},
+		{
+			name: "an unqualified relation, which search_path could rebind",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "not schema-qualified",
+		},
+		{
 			name: "a scope that writes nothing",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"accounts","columns_written":[],"predicate":"id = 1"}}]}`,
+			        "scope":{"operation":"update","relation":"public.accounts","columns_written":[],"predicate":"id = 1"}}]}`,
 			want: "requires columns_written",
 		},
 		{
@@ -138,14 +173,14 @@ func TestLoadRejects(t *testing.T) {
 		{
 			name: "a delete carrying columns_written",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"delete","relation":"settings","columns_written":["tier"],
+			        "scope":{"operation":"delete","relation":"public.settings","columns_written":["tier"],
 			        "predicate":"id = 1"}}]}`,
 			want: "assigns to no column",
 		},
 		{
 			name: "a scope with no operation",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			        "scope":{"relation":"public.accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "scope.operation is",
 		},
 		{
@@ -153,7 +188,7 @@ func TestLoadRejects(t *testing.T) {
 			// subset admits nothing without one.
 			name: "an admitted scope with no predicate",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
-			        "scope":{"operation":"update","relation":"accounts","columns_written":["tier"]}}]}`,
+			        "scope":{"operation":"update","relation":"public.accounts","columns_written":["tier"]}}]}`,
 			want: "scope.predicate is required",
 		},
 		{
@@ -192,7 +227,7 @@ func TestLoadRejects(t *testing.T) {
 		},
 		{
 			name: "not JSON at all",
-			body: `UPDATE accounts SET tier = 'pro'`,
+			body: `UPDATE public.accounts SET tier = 'pro'`,
 			want: "parsing the corpus",
 		},
 	}

@@ -44,3 +44,11 @@ Nothing here runs against a database. The
   an OIDC identity.
 - **Builds stamp the source's date rather than the wall clock**, so the same commit produces the
   same binary, and `SOURCE_DATE_EPOCH` is honoured on both build paths.
+
+### Fixed
+
+- **A guard that reported success having compared nothing.** `make breaking` treated "the base
+  branch carries no schema" as a reason to exit 0, which was correct exactly once — while the schema
+  was being introduced. Left in place, deleting `buf.yaml` from the main branch would have silently
+  disabled both the wire-contract check and the compatibility check. It is now a hard failure, and
+  removing it is what let the check run against a real base for the first time.

@@ -24,13 +24,20 @@ import (
 // Verdict is what the grammar must decide about a statement.
 type Verdict string
 
+// The three verdicts are EDR-0039's, quoted rather than paraphrased. An earlier
+// version of this file restated them in its own words and had `unsupported`
+// mean "the engine cannot enforce a control" — which is not what the record
+// says, and which erases the distinction EDR-0022 insists an operator can draw:
+// "ask someone" and "never going to work" must not look alike.
 const (
-	// InSubset means the grammar proves what the statement touches, and must
-	// extract the scope the vector states.
+	// InSubset — "Provable shape; scope and predicate extracted." May match a
+	// delegation or standing order.
 	InSubset Verdict = "in_subset"
-	// OutOfGrammar means the checkable subset cannot express the statement.
+	// OutOfGrammar — "Valid SQL the subset cannot prove anything about."
+	// Escalates to a human, so it is not a refusal.
 	OutOfGrammar Verdict = "out_of_grammar"
-	// Unsupported means the engine cannot enforce a control the statement needs.
+	// Unsupported — "Marque will not broker it at all (DDL, implicit commit,
+	// multi-statement)." Refused with the reason.
 	Unsupported Verdict = "unsupported"
 )
 
@@ -49,6 +56,9 @@ const (
 	Delete Operation = "delete"
 )
 
+// EDR-0007 puts SELECT and INSERT in the checkable subset too. They are absent
+// here because M2's initial subset is UPDATE and DELETE, and adding an
+// operation later is additive — a vector written today stays valid.
 var operations = []Operation{Update, Delete}
 
 // Scope is what the grammar must extract from a statement it admits: the
@@ -182,9 +192,21 @@ func (s Scope) validate() error {
 	if strings.TrimSpace(s.Relation) == "" {
 		return fmt.Errorf("scope.relation is required")
 	}
-	// The predicate is what the fence is built from (EDR-0007). The initial
-	// subset admits nothing without one, so a scope that omits it describes a
-	// statement the grammar should have refused.
+	// Schema-qualified, because EDR-0007 puts a relation resolved through
+	// `search_path` outside the subset: an unqualified name can bind elsewhere,
+	// which is the escape the pinned search_path closes. The grammar therefore
+	// extracts a directly-named base table, and a vector saying otherwise
+	// describes a statement it should have refused.
+	if !strings.Contains(s.Relation, ".") {
+		return fmt.Errorf("scope.relation %q is not schema-qualified; the subset admits a "+
+			"directly-named base table, not one resolved through search_path", s.Relation)
+	}
+	// The predicate is what the fence is built from (EDR-0007). Required for
+	// both operations because the initial subset is "single-relation UPDATE and
+	// DELETE with a conjunctive predicate over literals" — the implementation
+	// plan's M2, not a rule invented here. If `insert` ever joins the operation
+	// set it has no WHERE, and this becomes operation-dependent like
+	// columns_written below.
 	if strings.TrimSpace(s.Predicate) == "" {
 		return fmt.Errorf("scope.predicate is required; it is what the fence is built from")
 	}
