@@ -118,7 +118,18 @@ func TestBuildConfigsStampEveryVariable(t *testing.T) {
 			// The Makefile writes the import path through a make variable, so
 			// it is expanded before comparison rather than matched loosely —
 			// a typo in the literal half must still fail.
-			text := strings.ReplaceAll(string(raw), "$(MODULE)", module)
+			// Comment lines are dropped first. Both files are comment-dense
+			// and both write `-X` in prose; matching those would fail the
+			// build over an explanation. They escape today only because the
+			// prose happens to put a backtick straight after the X, which is
+			// luck rather than a property worth relying on.
+			var code []string
+			for _, line := range strings.Split(string(raw), "\n") {
+				if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+					code = append(code, line)
+				}
+			}
+			text := strings.ReplaceAll(strings.Join(code, "\n"), "$(MODULE)", module)
 
 			got := map[string]bool{}
 			for _, m := range regexp.MustCompile(`-X\s+(\S+?)\.(\w+)=`).FindAllStringSubmatch(text, -1) {
@@ -149,12 +160,30 @@ func TestBuildConfigsStampEveryVariable(t *testing.T) {
 func buildVariables(t *testing.T) map[string]bool {
 	t.Helper()
 
-	file, err := parser.ParseFile(token.NewFileSet(), "version.go", nil, 0)
+	// The whole package, not just version.go: a build variable declared in a
+	// sibling file is stamped by the same flags and must be found here too.
+	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatalf("parsing version.go: %v", err)
+		t.Fatalf("reading the package directory: %v", err)
 	}
 
 	names := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", name, err)
+		}
+		collectBuildVars(file, names)
+	}
+	return names
+}
+
+func collectBuildVars(file *ast.File, names map[string]bool) {
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.VAR {
@@ -162,11 +191,18 @@ func buildVariables(t *testing.T) map[string]bool {
 		}
 		for _, spec := range gen.Specs {
 			value, ok := spec.(*ast.ValueSpec)
-			if !ok || len(value.Values) != 0 {
-				// A variable with an initialiser is not one the linker sets:
-				// -X only replaces an uninitialised string.
+			if !ok {
 				continue
 			}
+			// Variables *with* initialisers count too. An earlier version of
+			// this test skipped them, on the belief that -X only replaces an
+			// uninitialised string. That is false — `-X` overwrites
+			// `var v = "dev"` exactly as it overwrites `var v string`,
+			// verified — and the exclusion was worse than a gap: writing
+			// `var buildVersion = "dev"`, the commonest idiom for this
+			// pattern, made the test report that version.go "does not
+			// declare" a variable it plainly declares, which invites deleting
+			// two working -X lines to make the error go away.
 			for _, name := range value.Names {
 				if strings.HasPrefix(name.Name, "build") {
 					names[name.Name] = true
@@ -174,7 +210,6 @@ func buildVariables(t *testing.T) map[string]bool {
 			}
 		}
 	}
-	return names
 }
 
 // makeVariable reads a simple `NAME := value` assignment out of the Makefile.

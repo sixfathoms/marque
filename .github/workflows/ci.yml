@@ -95,8 +95,11 @@ jobs:
         with:
           # For the tags, not for refusal. A shallow clone does not fail here
           # — it quietly derives a version from no tags at all, so the snapshot
-          # names a lineage that is not the repository's. `fetch-tags: true`
-          # at depth 1 would do as well; full history is negligible here.
+          # names a lineage that is not the repository's. `fetch-tags: true` at
+          # depth 1 is NOT equivalent: it brings the tag objects without the
+          # commits between tag and HEAD, so `git describe` cannot compute the
+          # distance and fails unless HEAD is itself tagged. Full history here
+          # is negligible.
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -112,4 +115,13 @@ jobs:
       # slices while building the same one twice.
       - env:
           EXPECT_PLATFORM: ${{ matrix.platform }}
-        run: make snapshot-check
+        # The emptiness check is not defensive noise: make skips the assertion
+        # when the variable is unset, which is right for local use and wrong
+        # here. A matrix entry added without `platform:` would otherwise be
+        # green with the platform assertion silently disabled.
+        run: |
+          test -n "$EXPECT_PLATFORM" || {
+            echo "this matrix entry has no platform:, so the runner would not be checked"
+            exit 1
+          }
+          make snapshot-check

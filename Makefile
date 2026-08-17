@@ -52,17 +52,23 @@ export BASE_REF
 # commit on two machines. Normalising the value is not enough; the
 # representation has to be pinned too.
 VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
-# The dirty suffix is decided inside the same shell that resolved the revision.
-# Two separate $(shell)s concatenated produced "unknown-dirty" from a source
-# archive with no .git, because both commands failed and the second failure
-# reads as "modified".
-COMMIT ?= $(shell \
-            if rev=$$(git rev-parse --short HEAD 2>/dev/null); then \
-              git diff --quiet HEAD 2>/dev/null || rev="$$rev-dirty"; \
-              printf '%s' "$$rev"; \
-            else \
-              printf 'unknown'; \
-            fi)
+# One definition of "the working tree differs from HEAD", shared by the commit
+# stamp and by goreleaser, because two definitions would let the two build paths
+# disagree about the same tree.
+#
+# It counts *untracked* files, which `git diff HEAD` does not — and an untracked
+# .go file inside a package is compiled, so a build over one is not HEAD however
+# clean git diff says the tree is.
+#
+# The git-dir check comes first so that a git *failure* cannot read as
+# "modified": two concatenated $(shell)s once produced "unknown-dirty" from a
+# source archive with no .git, because both commands failed and the second
+# failure looked like a modification.
+DIRTY := $(shell git rev-parse --git-dir >/dev/null 2>&1 && \
+                 { test -z "$$(git status --porcelain 2>/dev/null)" || printf -- '-dirty'; })
+export DIRTY
+
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || printf 'unknown')$(DIRTY)
 #
 # The epoch is validated before either date(1) is tried, because `date -r`
 # also accepts a *filename* and reports its mtime — on GNU that is all it
@@ -103,12 +109,21 @@ it must be a decimal integer with no leading zeros, and convertible by date(1) h
 endif
 endif
 
+# Exported for goreleaser, which has no SOURCE_DATE_EPOCH support of its own and
+# would otherwise stamp .CommitDate while make stamped the override — a
+# guaranteed disagreement, and a documented reproducibility switch silently
+# ignored on the release path.
+SOURCE_EPOCH ?= $(strip $(if $(SOURCE_DATE_EPOCH),$(SOURCE_DATE_EPOCH),\
+                  $(shell git log -1 --format=%ct 2>/dev/null)))
+export SOURCE_DATE
+export SOURCE_EPOCH
+
 LDFLAGS := -X $(MODULE)/internal/version.buildVersion=$(VERSION) \
            -X $(MODULE)/internal/version.buildCommit=$(COMMIT) \
            -X $(MODULE)/internal/version.buildSourceDate=$(SOURCE_DATE)
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking compat snapshot snapshot-check
+.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking compat snapshot snapshot-check platform-check
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -119,7 +134,7 @@ build: ## Build every binary into ./bin
 	@mkdir -p $(BIN_DIR)
 	@for b in $(BINARIES); do \
 		echo "  build $$b"; \
-		go build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$$b ./cmd/$$b || exit 1; \
+		go build -trimpath -buildvcs=false -ldflags '$(LDFLAGS)' -o $(BIN_DIR)/$$b ./cmd/$$b || exit 1; \
 	done
 
 test: ## Run the test suite
@@ -213,22 +228,19 @@ compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_RE
 # target, so one machine cannot produce the whole matrix; CI runs this on a
 # native runner per supported platform. Nothing is published — see
 # .goreleaser.yaml, where release is disabled.
-#
-# DIRTY is exported because goreleaser cannot see the working tree the way the
-# Makefile can: --snapshot skips its repository validation, so it would compile
-# uncommitted changes while stamping HEAD's clean commit and date. That is an
-# artefact labelled with a commit that does not contain it. Passing the marker
-# in makes both build paths say the same true thing.
-DIRTY := $(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
-export DIRTY
-
 snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes nothing
 	$(GORELEASER) build --snapshot --single-target --clean
 
-# The Makefile and goreleaser stamp the same three version variables by
-# different routes, from different sources. If they disagree about the source
-# date, one of them is lying about what a binary is, and "same commit, same
-# binary" stops being true across the two ways of building one.
+# What this proves, stated accurately, because it is not what it was when it was
+# written. The two paths no longer derive the source date independently — they
+# read one exported value, so that SOURCE_DATE_EPOCH can be honoured by both.
+# A shared source is a stronger guarantee than two sources that agree, but it
+# does mean the comparison is no longer evidence about the date itself.
+#
+# What it still proves, and what nothing else does: that both paths' -X stamps
+# reached the binary at all (a dead path yields "unknown", since -buildvcs=false
+# removes the fallback), that they agree about the tree being dirty, and that
+# the artefact this platform produced actually executes here.
 #
 # The commit *is* compared, now that DIRTY reaches both sides. Leaving it out
 # was how a dirty tree could produce a goreleaser binary stamped with a clean
@@ -238,17 +250,7 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 # holds one binary per name. Drop that flag and this silently compares the
 # first of several — on Linux a foreign-arch binary produces no stdout at all,
 # so the coverage would shrink without anything failing.
-snapshot-check: build snapshot ## Fail if make and goreleaser disagree about a build
-	@if [ -n "$$EXPECT_PLATFORM" ]; then \
-		actual="$$(go env GOOS)/$$(go env GOARCH)"; \
-		if [ "$$actual" != "$$EXPECT_PLATFORM" ]; then \
-			echo "this runner is $$actual, but the job says it is $$EXPECT_PLATFORM."; \
-			echo "--single-target builds whatever the host is, so the matrix would report a"; \
-			echo "platform it never built. Fix the runner label or the matrix entry."; \
-			exit 1; \
-		fi; \
-		echo "  platform: $$actual"; \
-	fi
+snapshot-check: platform-check build snapshot ## Fail if make and goreleaser disagree about a build
 	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*(\(.*\)) go.*/\1/'); \
 	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
 	if [ -z "$$theirs" ]; then echo "no snapshot binary was produced"; exit 1; fi; \
@@ -259,6 +261,21 @@ snapshot-check: build snapshot ## Fail if make and goreleaser disagree about a b
 		exit 1; \
 	fi; \
 	echo "  commit and source date agree across both build paths: $$mine"
+
+# Asserted before anything is built, so a mislabelled runner fails in a second
+# rather than after a full cgo build. EXPECT_PLATFORM is unset for local use;
+# CI requires it, and checks that it required it — see .github/workflows/ci.yml.
+platform-check: ## Fail if this host is not the platform EXPECT_PLATFORM names
+	@if [ -n "$$EXPECT_PLATFORM" ]; then \
+		actual="$$(go env GOOS)/$$(go env GOARCH)"; \
+		if [ "$$actual" != "$$EXPECT_PLATFORM" ]; then \
+			echo "this runner is $$actual, but the job says it is $$EXPECT_PLATFORM."; \
+			echo "--single-target builds whatever the host is, so the matrix would report a"; \
+			echo "platform it never built. Fix the runner label or the matrix entry."; \
+			exit 1; \
+		fi; \
+		echo "  platform: $$actual"; \
+	fi
 
 docs: ## Build the documentation site — the validator for records and entries
 	cd website && pnpm install --frozen-lockfile && pnpm run build

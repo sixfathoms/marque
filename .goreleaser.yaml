@@ -43,6 +43,13 @@ builds:
       # vcs.time identical to the value the Makefile stamps. And in a linked
       # git worktree the embedded vcs.revision is the *parent* repository's
       # HEAD, which is worse than no provenance because it looks like some.
+      #
+      # What it costs, since the benefits above are only half the story: `-X`
+      # values are program data and never appear in `go version -m`, so a
+      # released artefact's provenance is the line the binary prints and
+      # nothing machine-readable. An SBOM generator reading build settings, or
+      # a `debug.ReadBuildInfo` diagnostic in production, gets nothing. That
+      # bill comes due when releases are switched on, not now.
       - -buildvcs=false
     # .Env.DIRTY comes from the Makefile, which can see the working tree where
     # goreleaser cannot: --snapshot skips its repository validation, so without
@@ -57,10 +64,13 @@ builds:
     ldflags:
       - -X github.com/sixfathoms/marque/internal/version.buildVersion={{ .Version }}
       - -X github.com/sixfathoms/marque/internal/version.buildCommit={{ .ShortCommit }}{{ .Env.DIRTY }}
-      - -X github.com/sixfathoms/marque/internal/version.buildSourceDate={{ .CommitDate }}
-    # The commit's timestamp, not the build's, for the same reason the Makefile
+      - -X github.com/sixfathoms/marque/internal/version.buildSourceDate={{ .Env.SOURCE_DATE }}
+    # The source's timestamp, not the build's, for the same reason the Makefile
     # stamps a source date: the same commit should produce the same artefact.
-    mod_timestamp: '{{ .CommitTimestamp }}'
+    # Both come from the Makefile rather than from .CommitDate, because
+    # goreleaser has no SOURCE_DATE_EPOCH support and would otherwise ignore a
+    # documented reproducibility switch on the one path where it matters most.
+    mod_timestamp: '{{ .Env.SOURCE_EPOCH }}'
 
   - <<: *build
     id: harbourmaster
