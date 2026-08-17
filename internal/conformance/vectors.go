@@ -332,9 +332,20 @@ func Load(r io.Reader) (*Corpus, error) {
 		SubsetVersion: *envelope.SubsetVersion,
 		Vectors:       make([]Vector, 0, len(*envelope.Vectors)),
 	}
-	if corpus.SubsetVersion < 0 {
+	// Bounded at the largest integer IEEE-754 doubles represent exactly, which
+	// is what a JSON reader without 64-bit integers — JavaScript's JSON.parse
+	// among them — can carry without changing the value. Beyond it the same
+	// file names one subset here and a different one there, which for a
+	// language-neutral corpus is the same defect as a duplicate key.
+	const maxExactInteger = 1<<53 - 1
+	switch {
+	case corpus.SubsetVersion < 0:
 		return nil, fmt.Errorf("subset_version is %d; it identifies a subset and cannot be negative",
 			corpus.SubsetVersion)
+	case corpus.SubsetVersion > maxExactInteger:
+		return nil, fmt.Errorf("subset_version is %d, beyond the largest integer every JSON reader "+
+			"represents exactly (%d); readers past it would disagree about which subset this is",
+			corpus.SubsetVersion, maxExactInteger)
 	}
 
 	seen := make(map[string]struct{}, len(*envelope.Vectors))

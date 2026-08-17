@@ -68,7 +68,9 @@ the records admit outside the corpus; TRUE keeps the field meaningful and says w
 built from. The implementation plan narrows the *initial* M2 subset further than the records do,
 which is a matter for which vectors exist rather than for the format.
 
-`subset_version` is the version of the checkable subset these vectors describe. It is recorded on
+`subset_version` is the version of the checkable subset these vectors describe. It is bounded at the
+largest integer every JSON reader represents exactly (2^53 − 1) — past that, a reader without 64-bit
+integers rounds the value and the same file names a different subset. It is recorded on
 every extracted scope, so a delegation signed against one subset stays pinned to it when the subset
 later widens.
 

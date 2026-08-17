@@ -331,6 +331,13 @@ func TestLoadRejects(t *testing.T) {
 			want: "followed by more JSON",
 		},
 		{
+			// Past 2^53 a reader without 64-bit integers rounds the value, so
+			// the same file would name two different subsets.
+			name: "a subset version no JSON reader represents exactly",
+			body: `{"subset_version":9007199254740993,"vectors":[]}`,
+			want: "beyond the largest integer",
+		},
+		{
 			name: "a negative subset version",
 			body: `{"subset_version":-1,"vectors":[]}`,
 			want: "cannot be negative",
