@@ -19,6 +19,7 @@ GOLANGCI              := $(TOOL_DIR)/golangci-lint
 BUF                   := $(TOOL_DIR)/buf
 PROTOC_GEN_GO         := $(TOOL_DIR)/protoc-gen-go
 PROTOC_GEN_CONNECT_GO := $(TOOL_DIR)/protoc-gen-connect-go
+GORELEASER            := $(TOOL_DIR)/goreleaser
 PROTO_ROOT            := proto
 DESCRIPTOR_ALL        := $(BIN_DIR)/descriptor-all.binpb
 DESCRIPTOR_OWNED      := $(BIN_DIR)/descriptor-owned.binpb
@@ -107,7 +108,7 @@ LDFLAGS := -X $(MODULE)/internal/version.buildVersion=$(VERSION) \
            -X $(MODULE)/internal/version.buildSourceDate=$(SOURCE_DATE)
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking compat
+.PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking compat snapshot snapshot-check
 
 help: ## Show this help
 	@grep -hE '^[a-z][a-zA-Z0-9_-]*:.*## ' $(MAKEFILE_LIST) \
@@ -208,6 +209,32 @@ compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_RE
 	go run ./internal/schema/schemacheck \
 		-owned $(DESCRIPTOR_OWNED) -all $(DESCRIPTOR_ALL) -before $(DESCRIPTOR_BEFORE)
 
+# A release build for *this* platform only. cgo needs a C toolchain for the
+# target, so one machine cannot produce the whole matrix; CI runs this on a
+# native runner per supported platform. Nothing is published — see
+# .goreleaser.yaml, where release is disabled.
+snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes nothing
+	$(GORELEASER) build --snapshot --single-target --clean
+
+# The Makefile and goreleaser stamp the same three version variables by
+# different routes, from different sources. If they disagree about the source
+# date, one of them is lying about what a binary is, and "same commit, same
+# binary" stops being true across the two ways of building one.
+#
+# The commit field is not compared: a developer tree can be dirty, where a
+# release build never is.
+snapshot-check: build snapshot ## Fail if make and goreleaser disagree about a build
+	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*, \(.*\)) go.*/\1/'); \
+	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*, \(.*\)) go.*/\1/'); \
+	if [ -z "$$theirs" ]; then echo "no snapshot binary was produced"; exit 1; fi; \
+	if [ "$$mine" != "$$theirs" ]; then \
+		echo "make and goreleaser disagree about this commit's source date:"; \
+		echo "  make:       $$mine"; \
+		echo "  goreleaser: $$theirs"; \
+		exit 1; \
+	fi; \
+	echo "  source date agrees across both build paths: $$mine"
+
 docs: ## Build the documentation site — the validator for records and entries
 	cd website && pnpm install --frozen-lockfile && pnpm run build
 
@@ -219,7 +246,7 @@ dev: ## Run the local development loop
 clean: ## Remove build output, including what `make docs` installs
 	rm -rf $(BIN_DIR) dist website/dist website/node_modules
 
-tools: $(GOLANGCI) $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) ## Build the pinned developer tools into ./bin/tools
+tools: $(GOLANGCI) $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) $(GORELEASER) ## Build the pinned developer tools into ./bin/tools
 
 # golangci-lint and buf live in their own module so that their dependency
 # graphs — some two hundred packages between them — never enter ours. Go skips
@@ -231,6 +258,10 @@ $(GOLANGCI): tools/go.mod tools/go.sum
 $(BUF): tools/go.mod tools/go.sum
 	@mkdir -p $(TOOL_DIR)
 	go -C tools build -o $(CURDIR)/$@ github.com/bufbuild/buf/cmd/buf
+
+$(GORELEASER): tools/go.mod tools/go.sum
+	@mkdir -p $(TOOL_DIR)
+	go -C tools build -o $(CURDIR)/$@ github.com/goreleaser/goreleaser/v2
 
 # The two protoc plugins are built from *this* module, not tools/, on purpose.
 # protoc-gen-go ships inside google.golang.org/protobuf and protoc-gen-connect-go

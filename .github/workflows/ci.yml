@@ -75,3 +75,32 @@ jobs:
           # run block, so no context value is ever shell.
           BASE_REF: ${{ github.event_name == 'push' && github.event.before || 'origin/main' }}
         run: make breaking BASE_REF="$BASE_REF"
+
+  snapshot:
+    name: snapshot (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every platform reports. A cgo build breaks per-platform, so the whole
+      # point is seeing which ones — hiding the rest behind the first failure
+      # would mean learning them one merge at a time.
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux/amd64 }
+          - { os: ubuntu-24.04-arm, platform: linux/arm64 }
+          - { os: macos-latest, platform: darwin/arm64 }
+          - { os: macos-15-intel, platform: darwin/amd64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser reads the tag and commit history to derive a version;
+          # a shallow clone makes it refuse.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      # Builds the platform's own slice of the release matrix and asserts that
+      # make and goreleaser agree about what they built.
+      - run: make snapshot-check
