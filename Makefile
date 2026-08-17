@@ -62,22 +62,30 @@ COMMIT ?= $(shell \
               printf 'unknown'; \
             fi)
 #
-# The epoch is checked to be digits before either date(1) is tried. The two
-# spellings are not equivalent fallbacks: BSD's `-r` takes epoch seconds, but
-# GNU's `-r` takes a *filename* and reports its mtime, so on Linux an
-# unconvertible value like "Makefile" would quietly yield a plausible date and
-# slip past the guard below.
+# The epoch is validated before either date(1) is tried, because `date -r`
+# also accepts a *filename* and reports its mtime — on GNU that is all it
+# accepts, and BSD takes seconds or a filename. So on every platform an
+# unconvertible value that happens to name a file, "Makefile" say, quietly
+# yielded a plausible date and walked past the guard below.
 #
-# $(strip) is load-bearing: make joins the continuation lines with a space, and
-# a leading space inside an -X linker flag is a build failure with an unhelpful
-# message. The digits test is `grep` rather than the more natural `case`,
-# because make counts parentheses inside $(shell ...) and the `)` closing a
-# case pattern ends the expansion early — which produces a linker flag made of
-# shell fragments.
+# Leading zeros are rejected rather than merely tolerated: BSD parses the
+# seconds with base-0 semantics, so "010" is octal there and decimal on
+# GNU/BusyBox — the same input, two instants, two binaries from one commit,
+# which is the whole thing this variable exists to prevent.
+#
+# The test is `grep` with a top-level alternation rather than the more natural
+# `case`, or a grouped regex, because make counts parentheses inside
+# $(shell ...): a `)` closing a case pattern, or a group, ends the expansion
+# early and produces a linker flag assembled out of shell fragments.
+#
+# $(strip) is belt-and-braces here — the continuations now sit inside the shell
+# argument, where leading whitespace is inert — and stays because the expansion
+# feeds an -X linker flag, in which a stray leading space fails the build with a
+# message naming nothing.
 SOURCE_DATE ?= $(strip $(shell \
                  epoch='$(SOURCE_DATE_EPOCH)'; \
                  if [ -n "$$epoch" ]; then \
-                   printf '%s' "$$epoch" | grep -qE '^[0-9]+$$' || exit 0; \
+                   printf '%s' "$$epoch" | grep -qE '^0$$|^[1-9][0-9]*$$' || exit 0; \
                    date -u -d "@$$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
                      || date -u -r "$$epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null; \
                  else \
@@ -88,7 +96,8 @@ SOURCE_DATE ?= $(strip $(shell \
 # Silently falling back to something else is the one response it must not get.
 ifdef SOURCE_DATE_EPOCH
 ifeq ($(SOURCE_DATE),)
-$(error SOURCE_DATE_EPOCH is set to '$(SOURCE_DATE_EPOCH)', which date(1) here cannot convert)
+$(error SOURCE_DATE_EPOCH is set to '$(SOURCE_DATE_EPOCH)', which is not usable as a source date: \
+it must be a decimal integer with no leading zeros, and convertible by date(1) here)
 endif
 endif
 
