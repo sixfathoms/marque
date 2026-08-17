@@ -120,6 +120,10 @@ func TestCheckAnnotationsAccepts(t *testing.T) {
 			fds:  probe(method("M", behaviour(false, marquev1.Idempotency_IDEMPOTENCY_UNSAFE, ""), unknown)),
 		},
 		{
+			name: "IDEMPOTENT alongside a natural declaration, which is what it means",
+			fds:  probe(method("M", natural(), descriptorpb.MethodOptions_IDEMPOTENT)),
+		},
+		{
 			name: "keyed, naming a singular string the request has",
 			fds:  probe(method("M", keyed("nonce"), unknown)),
 		},
@@ -259,6 +263,12 @@ func TestCheckAnnotationsRejects(t *testing.T) {
 			name: "an idempotency value this build does not know",
 			fds:  probe(method("M", behaviour(false, marquev1.Idempotency(99), ""), unknown)),
 			want: "which this build does not know",
+		},
+		{
+			name: "IDEMPOTENT on a method declared unsafe",
+			fds: probe(method("M", behaviour(false, marquev1.Idempotency_IDEMPOTENCY_UNSAFE, ""),
+				descriptorpb.MethodOptions_IDEMPOTENT)),
+			want: "would advertise to its interceptors that repeating this is harmless",
 		},
 	}
 
@@ -449,9 +459,15 @@ func TestCheckAnnotationsSurvivesAWireRoundTrip(t *testing.T) {
 	}
 }
 
-// The committed schema itself is checked here as well as by `make lint`, so an
-// unannotated method in a new service fails `go test` without anyone having
-// built buf first.
+// The committed schema is checked here as well as by `make lint`, so an
+// unannotated method in an already-imported package fails `go test` without
+// anyone having built buf first.
+//
+// This is a convenience, not the guard. It ranges protoregistry, which holds
+// only files some Go package imported — the very limitation that made a
+// descriptor set the input to CheckAnnotations. A service in a new proto
+// package that nothing imports is invisible here, and `make schema-check` is
+// what covers it.
 func TestCommittedSchemaIsAnnotated(t *testing.T) {
 	var fds descriptorpb.FileDescriptorSet
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {

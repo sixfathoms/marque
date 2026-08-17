@@ -128,7 +128,7 @@ func checkMethod(method *descriptorpb.MethodDescriptorProto, messages map[string
 			"method cannot be one that must not be retried")
 	}
 
-	reasons = append(reasons, checkIdempotencyLevel(method, safe)...)
+	reasons = append(reasons, checkIdempotencyLevel(method, safe, idempotency)...)
 
 	switch idempotency {
 	case marquev1.Idempotency_IDEMPOTENCY_KEYED:
@@ -146,23 +146,51 @@ func checkMethod(method *descriptorpb.MethodDescriptorProto, messages map[string
 	return reasons
 }
 
-// checkIdempotencyLevel keeps `safe` and the standard option in step. Connect's
-// generator emits WithIdempotency(IdempotencyNoSideEffects) from
-// `idempotency_level` alone; without this rule the two could disagree and the
-// generated client would be the one that mattered.
-func checkIdempotencyLevel(method *descriptorpb.MethodDescriptorProto, safe bool) []string {
-	noSideEffects := method.GetOptions().GetIdempotencyLevel() == descriptorpb.MethodOptions_NO_SIDE_EFFECTS
+// checkIdempotencyLevel keeps the declaration and the standard option in step,
+// across all three of the standard option's values.
+//
+// Connect's generator reads `idempotency_level` and nothing else, emitting
+// WithIdempotency(...) onto the Spec, where every interceptor can see it —
+// including the retry interceptor EDR-0040 undertakes to build. A disagreement
+// therefore does not stay in the schema: the generated client is the one that
+// acts, and it would act on the standard option.
+//
+// NO_SIDE_EFFECTS is the read-only claim, so it pairs with `safe`. IDEMPOTENT
+// is the "repeating is harmless" claim, so it pairs with NATURAL or KEYED and
+// must never appear on a method declared UNSAFE — which is the pairing that
+// would otherwise let a method Marque says must not be retried advertise
+// itself to the retry interceptor as one that may.
+func checkIdempotencyLevel(
+	method *descriptorpb.MethodDescriptorProto,
+	safe bool,
+	idempotency marquev1.Idempotency,
+) []string {
+	level := method.GetOptions().GetIdempotencyLevel()
 
-	switch {
-	case safe && !noSideEffects:
-		return []string{"is marked safe but does not set `option idempotency_level = NO_SIDE_EFFECTS`, " +
-			"which is the option a generated Connect client reads"}
-	case !safe && noSideEffects:
-		return []string{"sets `option idempotency_level = NO_SIDE_EFFECTS` without (marque.v1.behaviour).safe, " +
-			"so a generated client treats it as read-only and this repository does not"}
-	default:
-		return nil
+	var reasons []string
+
+	switch level {
+	case descriptorpb.MethodOptions_NO_SIDE_EFFECTS:
+		if !safe {
+			reasons = append(reasons, "sets `option idempotency_level = NO_SIDE_EFFECTS` without "+
+				"(marque.v1.behaviour).safe, so a generated client treats it as read-only and this "+
+				"repository does not")
+		}
+	case descriptorpb.MethodOptions_IDEMPOTENT:
+		if idempotency == marquev1.Idempotency_IDEMPOTENCY_UNSAFE {
+			reasons = append(reasons, "sets `option idempotency_level = IDEMPOTENT` while declaring "+
+				"IDEMPOTENCY_UNSAFE; a generated client would advertise to its interceptors that "+
+				"repeating this is harmless")
+		}
+	case descriptorpb.MethodOptions_IDEMPOTENCY_UNKNOWN:
+		if safe {
+			reasons = append(reasons, "is marked safe but does not set "+
+				"`option idempotency_level = NO_SIDE_EFFECTS`, which is the option a generated "+
+				"Connect client reads")
+		}
 	}
+
+	return reasons
 }
 
 func checkKey(

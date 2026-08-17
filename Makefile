@@ -33,17 +33,31 @@ BASE_REF ?= origin/main
 # describes the working tree instead, so a binary never claims to be a release
 # it is not. See internal/version.
 #
-# DATE is the *commit* date, not the wall clock, so that building the same
-# commit twice produces the same binary. For a tool whose logbook entries name
-# the software that produced them, "same source, same binary" is worth having.
-# SOURCE_DATE_EPOCH is honoured where a distribution sets it.
+# SOURCE_DATE is the date of the *source*, not of the build, so that building
+# the same commit twice produces the same binary. For a tool whose logbook
+# entries name the software that produced them, "same source, same binary" is
+# worth more than knowing when the artefact was made — and the field it lands in
+# is named source_date, so the name and the value agree.
+#
+# SOURCE_DATE_EPOCH wins where a distribution sets it, which is the whole point
+# of that convention; otherwise the commit date is used. Both are normalised to
+# UTC, so two builders in different timezones agree. Left empty outside a git
+# checkout, which lets internal/version fall back to Go's embedded VCS stamp
+# rather than inventing a date.
 VERSION ?= $(shell git describe --tags --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
-DATE    ?= $(shell git log -1 --format=%cI 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+#
+# $(strip) is load-bearing: make joins the continuation lines below with a
+# space, and a leading space inside an -X linker flag is a build failure with an
+# unhelpful message.
+SOURCE_DATE ?= $(strip $(if $(SOURCE_DATE_EPOCH),\
+                 $(shell date -u -d "@$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+                      || date -u -r "$(SOURCE_DATE_EPOCH)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null),\
+                 $(shell TZ=UTC git log -1 --date=iso-strict-local --format=%cd 2>/dev/null)))
 
 LDFLAGS := -X $(MODULE)/internal/version.buildVersion=$(VERSION) \
            -X $(MODULE)/internal/version.buildCommit=$(COMMIT) \
-           -X $(MODULE)/internal/version.buildDate=$(DATE)
+           -X $(MODULE)/internal/version.buildSourceDate=$(SOURCE_DATE)
 
 .DEFAULT_GOAL := help
 .PHONY: help build test lint docs dev clean tools generate generate-check schema-check breaking compat
@@ -126,6 +140,10 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 # What `buf breaking` cannot see. Its rules compare field numbers, names and
 # types and ignore custom method options entirely, so a method can be
 # reclassified from safe to unsafe with every check green (EDR-0040).
+#
+# `-proto-root` is deliberately not passed here: coverage is `schema-check`'s
+# job, it runs in the lint job, and repeating it would report the same violation
+# twice in two places.
 compat: $(BUF) ## Fail if a method's declared behaviour weakened since $(BASE_REF)
 	@mkdir -p $(BIN_DIR)
 	$(BUF) build '.git#ref=$(BASE_REF)' --exclude-imports -o $(DESCRIPTOR_BEFORE)

@@ -38,8 +38,10 @@ message GetVersionResponse {
   // uncommitted changes when it was built.
   string commit = 2;
 
-  // date is when the binary was built, in RFC 3339.
-  string date = 3;
+  // source_date is when the source this was built from was committed, in
+  // RFC 3339. It is the source's date rather than the build's so that building
+  // the same commit twice produces the same binary.
+  string source_date = 3;
 
   // go_version is the toolchain the binary was built with.
   string go_version = 4;

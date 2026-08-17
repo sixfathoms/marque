@@ -64,8 +64,10 @@ type GetVersionResponse struct {
 	// commit is the source revision, suffixed "-dirty" if the working tree had
 	// uncommitted changes when it was built.
 	Commit string `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
-	// date is when the binary was built, in RFC 3339.
-	Date string `protobuf:"bytes,3,opt,name=date,proto3" json:"date,omitempty"`
+	// source_date is when the source this was built from was committed, in
+	// RFC 3339. It is the source's date rather than the build's so that building
+	// the same commit twice produces the same binary.
+	SourceDate string `protobuf:"bytes,3,opt,name=source_date,json=sourceDate,proto3" json:"source_date,omitempty"`
 	// go_version is the toolchain the binary was built with.
 	GoVersion string `protobuf:"bytes,4,opt,name=go_version,json=goVersion,proto3" json:"go_version,omitempty"`
 	// platform is the operating system and architecture, as "linux/amd64".
@@ -118,9 +120,9 @@ func (x *GetVersionResponse) GetCommit() string {
 	return ""
 }
 
-func (x *GetVersionResponse) GetDate() string {
+func (x *GetVersionResponse) GetSourceDate() string {
 	if x != nil {
-		return x.Date
+		return x.SourceDate
 	}
 	return ""
 }
@@ -144,11 +146,12 @@ var File_marque_v1_harbourmaster_proto protoreflect.FileDescriptor
 const file_marque_v1_harbourmaster_proto_rawDesc = "" +
 	"\n" +
 	"\x1dmarque/v1/harbourmaster.proto\x12\tmarque.v1\x1a\x16marque/v1/common.proto\"\x13\n" +
-	"\x11GetVersionRequest\"\x95\x01\n" +
+	"\x11GetVersionRequest\"\xa2\x01\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
-	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x12\n" +
-	"\x04date\x18\x03 \x01(\tR\x04date\x12\x1d\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\x12\x1f\n" +
+	"\vsource_date\x18\x03 \x01(\tR\n" +
+	"sourceDate\x12\x1d\n" +
 	"\n" +
 	"go_version\x18\x04 \x01(\tR\tgoVersion\x12\x1a\n" +
 	"\bplatform\x18\x05 \x01(\tR\bplatform2n\n" +

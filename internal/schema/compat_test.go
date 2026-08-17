@@ -54,7 +54,7 @@ func TestCheckCompatibilityMatrix(t *testing.T) {
 			before := probe(method("M", behaviour(false, tt.before, keyFor(tt.before)), unknown))
 			after := probe(method("M", behaviour(false, tt.after, keyFor(tt.after)), unknown))
 
-			got := CheckCompatibility(before, after)
+			got := CheckCompatibility(before, after).Violations
 			if tt.allowed && len(got) != 0 {
 				t.Errorf("CheckCompatibility() = %v, want none (%s)", got, tt.why)
 			}
@@ -89,7 +89,7 @@ func TestCheckCompatibilitySafe(t *testing.T) {
 			before := probe(method("M", behaviour(tt.before, natrl, ""), unknown))
 			after := probe(method("M", behaviour(tt.after, natrl, ""), unknown))
 
-			got := CheckCompatibility(before, after)
+			got := CheckCompatibility(before, after).Violations
 			if tt.allowed && len(got) != 0 {
 				t.Errorf("CheckCompatibility() = %v, want none", got)
 			}
@@ -111,7 +111,7 @@ func TestCheckCompatibilityRejectsAMovedKey(t *testing.T) {
 	before := probe(method("M", keyed("nonce"), unknown))
 	after := probe(method("M", keyed("token"), unknown))
 
-	got := CheckCompatibility(before, after)
+	got := CheckCompatibility(before, after).Violations
 	if !containsReason(got, `moved its idempotency key from "nonce" to "token"`) {
 		t.Errorf("CheckCompatibility() = %v, want the moved-key reason", got)
 	}
@@ -122,7 +122,7 @@ func TestCheckCompatibilityAllowsNewMethods(t *testing.T) {
 	before := probe(method("Old", natural(), unknown))
 	after := probe(method("Old", natural(), unknown), method("New", behaviour(false, unsafeI, ""), unknown))
 
-	if got := CheckCompatibility(before, after); len(got) != 0 {
+	if got := CheckCompatibility(before, after).Violations; len(got) != 0 {
 		t.Errorf("CheckCompatibility() = %v, want none for an added method", got)
 	}
 }
@@ -133,7 +133,7 @@ func TestCheckCompatibilityIgnoresRemovedMethods(t *testing.T) {
 	before := probe(method("Gone", natural(), unknown), method("Kept", natural(), unknown))
 	after := probe(method("Kept", natural(), unknown))
 
-	if got := CheckCompatibility(before, after); len(got) != 0 {
+	if got := CheckCompatibility(before, after).Violations; len(got) != 0 {
 		t.Errorf("CheckCompatibility() = %v, want none; removal is buf breaking's business", got)
 	}
 }
@@ -143,7 +143,7 @@ func TestCheckCompatibilityMatchesByQualifiedName(t *testing.T) {
 	before := probe(method("A", natural(), unknown), method("B", behaviour(false, unsafeI, ""), unknown))
 	after := probe(method("B", behaviour(false, unsafeI, ""), unknown), method("A", natural(), unknown))
 
-	if got := CheckCompatibility(before, after); len(got) != 0 {
+	if got := CheckCompatibility(before, after).Violations; len(got) != 0 {
 		t.Errorf("CheckCompatibility() = %v, want none; only the order changed", got)
 	}
 }
@@ -156,12 +156,46 @@ func TestCheckCompatibilityIsOrdered(t *testing.T) {
 		method("Alpha", behaviour(false, unsafeI, ""), unknown),
 	)
 
-	got := CheckCompatibility(before, after)
+	got := CheckCompatibility(before, after).Violations
 	if len(got) != 2 {
 		t.Fatalf("CheckCompatibility() = %v, want two violations", got)
 	}
 	if got[0].Method != "marque.v1.ProbeService.Alpha" || got[1].Method != "marque.v1.ProbeService.Zulu" {
 		t.Errorf("violations are not sorted by method: %v", got)
+	}
+}
+
+// The previous schema never passes through the annotation rules, so it is the
+// one place a value this build does not know can appear — a base ref whose enum
+// has since shrunk. Falling through the transition switch would allow every
+// move out of it, which is the sibling code failing open where it fails closed.
+func TestCheckCompatibilityRejectsAnUnknownIdempotency(t *testing.T) {
+	before := probe(method("M", behaviour(false, marquev1.Idempotency(99), ""), unknown))
+	after := probe(method("M", natural(), unknown))
+
+	got := CheckCompatibility(before, after).Violations
+	if !containsReason(got, "which this build does not know") {
+		t.Errorf("CheckCompatibility() = %v, want the unknown-value reason", got)
+	}
+}
+
+// A comparison that matched no pairs is reported as such rather than as a pass.
+func TestCheckCompatibilityCountsWhatItCompared(t *testing.T) {
+	before := probe(method("M", natural(), unknown))
+	after := probe(method("M", natural(), unknown))
+
+	report := CheckCompatibility(before, after)
+	if report.MethodsBefore != 1 || report.MethodsCompared != 1 {
+		t.Errorf("MethodsBefore/Compared = %d/%d, want 1/1", report.MethodsBefore, report.MethodsCompared)
+	}
+
+	renamed := probe(method("M", natural(), unknown))
+	renamed.File[0].Service[0].Name = proto.String("RenamedService")
+
+	report = CheckCompatibility(before, renamed)
+	if report.MethodsBefore != 1 || report.MethodsCompared != 0 {
+		t.Errorf("MethodsBefore/Compared = %d/%d, want 1/0 for a renamed service",
+			report.MethodsBefore, report.MethodsCompared)
 	}
 }
 
@@ -171,7 +205,7 @@ func TestCheckCompatibilityHandlesMissingOptions(t *testing.T) {
 	before := probe(method("M", behaviour(true, natrl, ""), noSide))
 	after := probe(bareMethod("M"))
 
-	got := CheckCompatibility(before, after)
+	got := CheckCompatibility(before, after).Violations
 	if !containsReason(got, "was declared safe and no longer is") {
 		t.Errorf("CheckCompatibility() = %v, want the safe-to-unsafe reason", got)
 	}
@@ -184,7 +218,7 @@ func TestCheckCompatibilityReportsTheFile(t *testing.T) {
 	after := probe(method("M", behaviour(false, unsafeI, ""), unknown))
 	after.File[0].Name = proto.String("marque/v1/renamed.proto")
 
-	got := CheckCompatibility(before, after)
+	got := CheckCompatibility(before, after).Violations
 	if len(got) != 1 {
 		t.Fatalf("CheckCompatibility() = %v, want one violation", got)
 	}

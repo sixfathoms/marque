@@ -80,11 +80,20 @@ the cached policy of a client built against the previous schema unsafe?* Forbidd
 Allowed, including the ones that read as widenings: `UNSAFE` to anything, because the old client
 never retried; `KEYED` to `NATURAL`, because repeating became harmless; not-`safe` to `safe`.
 
-**`safe` and `idempotency_level` agree, in both directions.** Connect's generator emits
-`WithIdempotency(IdempotencyNoSideEffects)` from the standard `idempotency_level` option and reads
-nothing else. A method marked `safe` without it is a claim no client can act on; one with it but
-without `safe` is a client treating as read-only something this repository does not. Either
-disagreement fails the build.
+**The declaration and the standard `idempotency_level` agree, across all three of its values.**
+Connect's generator reads `idempotency_level` and nothing else, emitting `WithIdempotency(…)` onto
+the method's `Spec`, where every interceptor can see it — including the retry interceptor this record
+undertakes to build. A disagreement therefore does not stay in the schema; the generated client is
+the one that acts.
+
+| `idempotency_level` | Must pair with | Because |
+|---|---|---|
+| `NO_SIDE_EFFECTS` | `safe` | It is the read-only claim, and it is what enables a GET |
+| `IDEMPOTENT` | not `IDEMPOTENCY_UNSAFE` | It is the "repeating is harmless" claim, and a method that must never be retried must not advertise the opposite to the retry interceptor |
+| unset | not `safe` | A `safe` method with nothing set is a claim no generated client can act on |
+
+The middle row is the one that bites: without it a method could declare `IDEMPOTENCY_UNSAFE` here and
+`IDEMPOTENT` there, and the client would believe the second.
 
 **Scope.** This record covers the declaration and its stability. It does not cover client-side retry
 *behaviour* beyond what `idempotency_level` already gives — an interceptor honouring `keyed` and
@@ -121,6 +130,18 @@ and consumed only for `safe`. Saying that plainly is better than implying the lo
 - An interceptor honouring `keyed` and `unsafe` ships with the first generated client that makes
   calls, and [EDR-0020](./0020-one-schema-generates-every-client.md)'s claim that "generated clients
   honour it" is only fully true from that point.
+- **Delete the bootstrap escape in `make breaking`.** Until this record's own change is on the main
+  branch there is no previous schema to compare against, so the target says so and exits. That is
+  correct exactly once. While it survives, deleting `buf.yaml` from the main branch would disable
+  both checks silently, and "both are enforced by the build" is not yet true of the change that
+  introduces them. The next change to the schema removes it.
+
+**A limit worth stating.** The rule above is one-directional: it asks what an *old* client does
+against a *new* server. The reverse skew — a client newer than the server it calls — is not covered.
+Moving a method to `safe` is permitted, and a client that then opts into an HTTP GET will be refused
+by a server that has not yet been upgraded. Nothing enables GET today, so this is not reachable; when
+something does, it becomes a deployment-ordering question rather than a schema one, and this record
+does not answer it.
 
 ## References
 

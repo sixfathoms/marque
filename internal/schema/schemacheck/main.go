@@ -79,12 +79,26 @@ func run(args []string, stdout, stderr io.Writer) error {
 			"a check that inspects nothing is not a check", cfg.owned)
 	}
 
+	compared := ""
 	if cfg.before != "" {
 		before, err := readDescriptorSet(cfg.before)
 		if err != nil {
 			return err
 		}
-		violations = append(violations, schema.CheckCompatibility(before, owned)...)
+		compat := schema.CheckCompatibility(before, owned)
+		violations = append(violations, compat.Violations...)
+
+		// Methods are matched by fully-qualified name, so renaming a service —
+		// or moving an RPC into another one — matches nothing and compares
+		// nothing. `buf breaking` catches a rename and runs first, but a check
+		// whose vacuous case is indistinguishable from its passing case is
+		// exactly what this command exists not to be.
+		if compat.MethodsBefore > 0 && compat.MethodsCompared == 0 {
+			return fmt.Errorf("none of the %d method(s) in %s matched a method here by name, "+
+				"so no declaration was compared; a service or method was renamed",
+				compat.MethodsBefore, cfg.before)
+		}
+		compared = fmt.Sprintf(", %d compared against the previous schema", compat.MethodsCompared)
 	}
 
 	if len(violations) > 0 {
@@ -100,8 +114,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Say what was inspected, so a green CI log is evidence rather than silence.
-	_, err = fmt.Fprintf(stdout, "schemacheck: %d method(s) checked, no violations\n",
-		report.MethodsChecked)
+	_, err = fmt.Fprintf(stdout, "schemacheck: %d method(s) checked%s, no violations\n",
+		report.MethodsChecked, compared)
 	return err
 }
 

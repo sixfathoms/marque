@@ -38,29 +38,64 @@ import (
 //
 // A method whose declaration must genuinely weaken gets a new method name,
 // exactly as a field whose meaning changes gets a new number.
-func CheckCompatibility(before, after *descriptorpb.FileDescriptorSet) []Violation {
+func CheckCompatibility(before, after *descriptorpb.FileDescriptorSet) CompatReport {
 	previous := indexMethods(before)
 
-	var violations []Violation
+	report := CompatReport{MethodsBefore: len(previous)}
 	for name, now := range indexMethods(after) {
 		was, existed := previous[name]
 		if !existed {
 			// A new method constrains nobody.
 			continue
 		}
+		report.MethodsCompared++
 		for _, reason := range compareBehaviour(was.behaviour, now.behaviour) {
-			violations = append(violations, Violation{File: now.file, Method: name, Reason: reason})
+			report.Violations = append(report.Violations,
+				Violation{File: now.file, Method: name, Reason: reason})
 		}
 	}
 
-	slices.SortFunc(violations, func(a, b Violation) int {
+	slices.SortFunc(report.Violations, func(a, b Violation) int {
 		return cmp.Or(cmp.Compare(a.Method, b.Method), cmp.Compare(a.Reason, b.Reason))
 	})
-	return violations
+	return report
+}
+
+// CompatReport is what the comparison found, and how many pairs it actually
+// compared.
+//
+// The count is not decoration. Methods are matched by fully-qualified name, so
+// renaming a service — or moving an RPC into another one — matches nothing, and
+// a comparison of zero pairs reports no violations at all. `buf breaking`
+// catches a rename and runs first, but a check whose vacuous case looks
+// identical to its passing case is the thing this package exists not to be.
+type CompatReport struct {
+	// MethodsBefore is how many methods the previous schema declared.
+	MethodsBefore int
+	// MethodsCompared is how many of them were matched by name in the new one.
+	MethodsCompared int
+	// Violations is every weakened declaration found.
+	Violations []Violation
 }
 
 func compareBehaviour(was, now *marquev1.MethodBehaviour) []string {
 	var reasons []string
+
+	// The previous schema never passed through CheckAnnotations, so this is the
+	// one place an idempotency value the build does not know can appear —
+	// a base ref whose enum has since shrunk. Rejecting it keeps this side
+	// failing closed, as the annotation rules do; falling through to the
+	// switch below would silently allow every transition out of it.
+	for label, value := range map[string]marquev1.Idempotency{"was": was.GetIdempotency(), "is now": now.GetIdempotency()} {
+		if _, known := marquev1.Idempotency_name[int32(value)]; !known {
+			reasons = append(reasons, fmt.Sprintf(
+				"%s idempotency %d, which this build does not know, so no transition from it "+
+					"can be judged; regenerate gen/", label, value))
+		}
+	}
+	if len(reasons) > 0 {
+		return reasons
+	}
 
 	if was.GetSafe() && !now.GetSafe() {
 		reasons = append(reasons, "was declared safe and no longer is; a client built against the "+
