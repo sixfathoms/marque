@@ -531,9 +531,11 @@ func TestPopulatedCorpusRoundTrips(t *testing.T) {
 // The rules come from EDR-0007 — "assigned columns (SET, INSERT column list)"
 // is what `columns_written` records, so a select and a delete assign none — and
 // from what the fence is built over: an insert has no predicate over its
-// target relation, while an unconditional statement has the predicate TRUE. Three review rounds each found a shape the format could not
-// express, so the shape is stated here in full rather than inferred from the
-// rules that produce it.
+// target relation, while an unconditional statement has the predicate TRUE.
+//
+// Three review rounds each found a shape the format could not express, so the
+// shape is stated here in full rather than inferred from the rules that
+// produce it.
 func TestScopeShapeMatrix(t *testing.T) {
 	// The one legal combination per operation: {columns, predicate}.
 	legal := map[conformance.Operation][2]bool{
