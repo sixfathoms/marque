@@ -92,12 +92,12 @@ func TestLoadRejects(t *testing.T) {
 			want: "requires a scope",
 		},
 		{
-			name: "a refused statement with no reason",
+			name: "an unadmitted statement with no reason",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar"}]}`,
 			want: "requires `because`",
 		},
 		{
-			name: "a refused statement carrying a scope",
+			name: "an unadmitted statement carrying a scope",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"unsupported","because":"b",
 			        "scope":{"operation":"update","schema":"public","relation":"accounts","columns_written":["tier"],"predicate":"id = 1"}}]}`,
 			want: "must not carry a scope",
@@ -173,6 +173,34 @@ func TestLoadRejects(t *testing.T) {
 			want: "is used twice",
 		},
 		{
+			// The level a key belongs at is enforced by the struct decode; the
+			// flat key set cannot see it, and a regression once let this pass.
+			name: "a scope key on a vector",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s",
+			        "verdict":"out_of_grammar","because":"b","predicate":"id = 1"}]}`,
+			want: "unknown field",
+		},
+		{
+			name: "a corpus key on a vector",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s",
+			        "verdict":"out_of_grammar","because":"b","subset_version":1}]}`,
+			want: "unknown field",
+		},
+		{
+			name: "an operation outside the closed set",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"insert","schema":"public","relation":"accounts",
+			        "columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "scope.operation is",
+		},
+		{
+			name: "a schema that is only whitespace",
+			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"in_subset",
+			        "scope":{"operation":"update","schema":"  ","relation":"accounts",
+			        "columns_written":["tier"],"predicate":"id = 1"}}]}`,
+			want: "scope.schema is required",
+		},
+		{
 			name: "a duplicate key, which two parsers read differently",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s",
 			        "verdict":"out_of_grammar","verdict":"in_subset","because":"b"}]}`,
@@ -190,7 +218,7 @@ func TestLoadRejects(t *testing.T) {
 			want: "must not carry `because`",
 		},
 		{
-			name: "a refused vector carrying a null scope",
+			name: "an unadmitted vector carrying a null scope",
 			body: `{"subset_version":0,"vectors":[{"name":"n","statement":"s","verdict":"out_of_grammar","because":"b","scope":null}]}`,
 			want: "must not carry a scope",
 		},

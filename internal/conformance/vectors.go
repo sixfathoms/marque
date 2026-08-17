@@ -51,9 +51,9 @@ const (
 	// Update assigns to named columns, and the scope lists them.
 	Update Operation = "update"
 	// Delete removes rows and assigns to no column, so a delete scope carries
-	// no columns_written. The rows it removes are the write set the fence
-	// asserts over (EDR-0033), which is measured at execution rather than
-	// stated here.
+	// no columns_written. What it does remove — including anything the engine
+	// removes on its behalf — is asserted at execution by the write-set check
+	// (EDR-0033), not stated here.
 	Delete Operation = "delete"
 )
 
@@ -87,8 +87,9 @@ type Vector struct {
 	Verdict   Verdict `json:"verdict"`
 	// Scope is required for InSubset and must be absent otherwise.
 	Scope *Scope `json:"scope,omitempty"`
-	// Because is the reason a statement is refused, and is the message a
-	// reader will be shown. Required for everything except InSubset.
+	// Because is why the grammar could not admit the statement, and is the
+	// message a reader is shown — whether that ends in an escalation
+	// (out_of_grammar) or a refusal (unsupported). Required for both.
 	Because string `json:"because,omitempty"`
 }
 
@@ -101,10 +102,16 @@ type Corpus struct {
 	Vectors       []Vector `json:"vectors"`
 }
 
-// fields are every key the format defines, spelled exactly. Go matches JSON
-// field names case-insensitively, so `DisallowUnknownFields` alone accepts
-// "Verdict" — which another implementation of this format would reject. The
-// names are distinct across every level, so one flat set is enough.
+// fields are every key the format defines, spelled exactly.
+//
+// This set is flat and deliberately says nothing about *where* a key belongs.
+// It exists for the two things a struct decode cannot do: Go matches JSON field
+// names case-insensitively, so `DisallowUnknownFields` alone accepts "Verdict";
+// and it takes the last of duplicate keys without complaint. Which level a key
+// is legal at is enforced by decoding into the structs, strictly — the two
+// checks are complementary, and an earlier version of this file dropped the
+// second while claiming the first was sufficient, which let `predicate` sit on
+// a vector.
 var fields = map[string]struct{}{
 	"subset_version": {}, "vectors": {},
 	"name": {}, "statement": {}, "verdict": {}, "scope": {}, "because": {},
@@ -230,8 +237,13 @@ func Load(r io.Reader) (*Corpus, error) {
 
 	seen := make(map[string]struct{}, len(*envelope.Vectors))
 	for i, rawVector := range *envelope.Vectors {
+		// Strict, so that a key legal elsewhere in the format is still rejected
+		// here: `predicate` belongs to a scope and `subset_version` to the
+		// corpus, and neither is a vector's.
 		var v Vector
-		if err := json.Unmarshal(rawVector, &v); err != nil {
+		vectorDecoder := json.NewDecoder(bytes.NewReader(rawVector))
+		vectorDecoder.DisallowUnknownFields()
+		if err := vectorDecoder.Decode(&v); err != nil {
 			return nil, fmt.Errorf("vector %d: %w", i, err)
 		}
 		// Which keys the author actually wrote, so that a forbidden field can
@@ -267,8 +279,8 @@ func (v Vector) validate(present map[string]json.RawMessage) error {
 		return fmt.Errorf("verdict is %q, want one of %v", v.Verdict, verdicts)
 	}
 
-	// The two shapes are exclusive, in both directions. A refused vector
-	// carrying a scope would state an expectation nothing can check, and an
+	// The two shapes are exclusive, in both directions. A vector the grammar
+	// did not admit cannot carry a scope, because nothing was extracted; an
 	// admitted one without a scope would pass by asserting only that the
 	// grammar said yes — which is half of what the vector is for.
 	if v.Verdict == InSubset {
@@ -309,12 +321,15 @@ func (s Scope) validate(vectorKeys map[string]json.RawMessage) error {
 	if strings.TrimSpace(s.Relation) == "" {
 		return fmt.Errorf("scope.relation is required")
 	}
-	// The predicate is what the fence is built from (EDR-0007). Required for
-	// both operations because the initial subset is "single-relation UPDATE and
-	// DELETE with a conjunctive predicate over literals" — the implementation
-	// plan's M2, not a rule invented here. If `insert` ever joins the operation
-	// set it has no WHERE, and this becomes operation-dependent like
-	// columns_written below.
+	// The predicate is what the fence is built from (EDR-0007), and is always
+	// present because an unconditional statement has the predicate TRUE rather
+	// than none. That keeps the field meaningful without making an unqualified
+	// UPDATE inexpressible — EDR-0007's subset rules do not require a WHERE, so
+	// requiring one here would put a statement the records admit outside the
+	// corpus. The implementation plan's M2 narrows the *initial* subset further
+	// than the records do, which is a matter for the vectors rather than the
+	// format. If `insert` ever joins the operation set it has no WHERE at all,
+	// and this becomes operation-dependent like columns_written below.
 	if strings.TrimSpace(s.Predicate) == "" {
 		return fmt.Errorf("scope.predicate is required; it is what the fence is built from")
 	}

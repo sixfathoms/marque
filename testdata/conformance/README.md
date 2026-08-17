@@ -19,15 +19,16 @@ up as a diff a reviewer reads, rather than as a behaviour nobody noticed — whi
 [CLAUDE.md](../../CLAUDE.md) calls a parser upgrade a reviewed change on the order of a schema
 migration.
 
-**A corpus of only happy paths tests nothing.** The cases that must be *refused* are the ones worth
+**A corpus of only happy paths tests nothing.** The cases the grammar must *not admit* are the ones worth
 writing: a function call in a predicate, a CTE, a second relation arriving through `FROM`, a
 subquery. Each of those is a way a statement can do more than it appears to.
 
 ## Status
 
 **The corpus is empty**, deliberately. The harness, the format and the validator are M0; the vectors
-and the grammar that runs them are M2. `internal/conformance` loads and validates this file today and
-reports how many vectors it found, so an empty corpus is a stated fact rather than a silent one.
+and the grammar that runs them are M2. `internal/conformance` loads and validates this file today, so
+an empty corpus and an unreadable one are not the same outcome — a missing, truncated, `null` or
+`{}` file fails the build, each with its own message. The vector count is logged under `go test -v`.
 
 ## Format
 
@@ -45,14 +46,24 @@ the escape the pinned `search_path` closes. Separate fields mean there is nothin
 string checked for a dot would accept `.accounts`, `public.`, and the quoted identifier
 `"accounts.archive"`, none of which is a qualified relation.
 
+**A key is legal only where the format puts it.** `predicate` belongs to a scope and
+`subset_version` to the corpus; neither is a vector's, and the strict struct decode is what enforces
+that. It is a separate guard from the one below, and losing either loses half the check.
+
 **Field names are matched exactly, and a duplicate key is rejected.** Go's JSON decoder folds case
 and takes the last of two identical keys; a strict parser elsewhere would reject the file or read a
 different value from the same bytes. For a file that is normative *and* language-neutral, the same
 bytes must mean the same thing to every reader.
 
 **A forbidden field is rejected for being present, not for being empty.** `"because": ""` on an
-admitted vector, `"scope": null` on a refused one, and `"columns_written": []` on a delete are all
+admitted vector, `"scope": null` on an unadmitted one, and `"columns_written": []` on a delete are all
 shapes the format does not have.
+
+An unconditional statement records `"predicate": "TRUE"` rather than omitting the field. EDR-0007's
+subset rules do not require a `WHERE`, so a required-but-omittable predicate would put a statement
+the records admit outside the corpus; TRUE keeps the field meaningful and says what the fence is
+built from. The implementation plan narrows the *initial* M2 subset further than the records do,
+which is a matter for which vectors exist rather than for the format.
 
 `subset_version` is the version of the checkable subset these vectors describe. It is recorded on
 every extracted scope, so a delegation signed against one subset stays pinned to it when the subset
@@ -93,7 +104,8 @@ and they are measured at execution rather than stated here:
 }
 ```
 
-A vector it must **refuse** carries the reason, which is the error message a reader will be shown:
+A vector the grammar must **not admit** carries the reason, which is the message a reader is shown.
+Whether that ends in an escalation or a refusal is the verdict's business, not the reason's:
 
 ```json
 {
