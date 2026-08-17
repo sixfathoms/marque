@@ -14,9 +14,20 @@ permissions:
   contents: read
 
 # Never cancel a Pages deployment in flight; queue instead.
+#
+# Pull requests get their own group, which matters more than it looks. With one
+# shared `pages` group, a pull-request run and a push to main queue together —
+# and GitHub keeps only one *pending* run per group, cancelling the previous
+# one. So a second push to a pull request could cancel a main deploy that was
+# still waiting to start: the site quietly does not publish, nothing goes red,
+# and nothing retries. `cancel-in-progress: false` protects a run that has
+# already started, not one that is still queued.
+#
+# Pull requests never deploy, so they belong in a different queue entirely, and
+# superseding their own earlier runs is what you want there.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -31,6 +42,10 @@ jobs:
         working-directory: website
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing after this step uses git, and the step after next runs code
+          # from the branch under test.
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10.33.2
