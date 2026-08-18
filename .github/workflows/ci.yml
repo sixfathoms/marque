@@ -20,25 +20,28 @@ concurrency:
 
 jobs:
   build-test:
-    name: build and test (${{ matrix.os }})
+    name: build and test (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
-      # The test tier: one runner per operating system, which is the boundary
-      # the C toolchain follows. The plan's "What green in CI covers" states
-      # why it stops here and that M2 is when to revisit it — `pg_query_go`
-      # puts a C parser in the graph, and a grammar that classifies a statement
-      # differently per architecture is the worst thing to find late
-      # (EDR-0039). The build-and-smoke tier below covers all four platforms.
+      # The test tier: one runner per operating system, which is where the
+      # compiler and libc version actually change. The plan's "What green in CI
+      # covers" states why it stops here, and M2's exit criterion is what
+      # widens it — from there the parser is C (EDR-0039). The build-and-smoke
+      # tier below covers all four platforms.
       #
-      # Both platforms report, so a failure on one does not hide the other's.
+      # Both platforms report, so a failure on one does not hide the other's
+      # result.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - { os: ubuntu-latest, platform: linux/amd64 }
+          - { os: macos-latest, platform: darwin/arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Nothing here uses git after checkout, so the token has no reason to
-          # sit in .git/config for the build. Uniform with the other jobs: a
+          # make reads the working tree with git to stamp the version — five
+          # local commands, none of which contacts a remote — so nothing here
+          # needs the token to persist. Uniform with the other jobs: a
           # selectively-hardened workflow reads as though the jobs that set it
           # needed it for some particular reason, and none of them do.
           persist-credentials: false
@@ -46,6 +49,19 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: "**/go.sum"
+      # The plan names this tier's platforms, so the runner has to say it is
+      # one of them. `macos-latest` has already migrated Intel to ARM once;
+      # without this the plan's table would go quietly false while CI stayed
+      # green, which is the exact disagreement this job's tier was written to
+      # settle. Same guard the snapshot job uses, same reason.
+      - env:
+          EXPECT_PLATFORM: ${{ matrix.platform }}
+        run: |
+          test -n "$EXPECT_PLATFORM" || {
+            echo "this matrix entry has no platform:, so the runner would not be checked"
+            exit 1
+          }
+          make platform-check
       - run: make build
       - run: make test
 
@@ -71,9 +87,10 @@ jobs:
           # buf breaking reads main out of the local git repository, so the
           # default single-commit checkout is not enough.
           fetch-depth: 0
-          # Safe despite this being the one job that does use git: `make
-          # breaking` reads refs and objects from the local clone and never
-          # contacts a remote. fetch-depth: 0 above is what makes that true.
+          # Safe despite this being the job that reads git refs: `make
+          # breaking` and buf's `.git#ref=` input both work against the local
+          # clone — buf clones it over a file:// URL — so no credential and no
+          # remote is involved. fetch-depth: 0 above is what makes that true.
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

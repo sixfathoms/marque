@@ -48,14 +48,23 @@ reason it stops where it does:
 | Tier | Platforms | What it proves |
 |---|---|---|
 | **Build and smoke** | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 | The release matrix builds on a native runner and the binary it produces runs. This is the tier that must not shrink: it is the only thing standing between a broken platform and a release. |
-| **Test suite** | linux/amd64, darwin/arm64 | One runner per operating system. What varies across the two is the C toolchain, and the architectures within an operating system share it. |
-| **Integration** | linux/amd64 | Containers. GitHub-hosted macOS runners have no Docker daemon, so a testcontainers suite cannot run there at all — this bound is the platform's, not a choice. |
+| **Test suite** | linux/amd64, darwin/arm64 | One runner per operating system. Within an operating system the two architectures get the same compiler and libc version; across them, neither. Each runner asserts which platform it actually is, so the row cannot quietly stop being true when a runner label moves. |
+| **Integration** | linux/amd64 — *arrives with M1* | Containers. macOS is excluded by the platform: GitHub-hosted runners there have no Docker daemon and service containers are Linux-only. linux/arm64 has Docker and is excluded **by choice** — the suite exercises the driver and the schema, not the architecture. |
 
 The test tier is the one to revisit, and **M2 is when**: `pg_query_go` puts a C parser in the
-dependency graph, and a grammar that classifies a statement differently on one architecture is the
-defect this project can least afford to find late. Until then nothing in the tree can fail
-differently across architectures — there is no assembly, no unsafe pointer arithmetic and no cgo —
-so the second tier's cost would buy nothing.
+dependency graph, and a grammar that classifies a statement differently on one architecture is
+expensive to find late. That obligation is written into M2's exit criterion, not left here.
+
+What justifies two runners rather than four *today* is narrower than it looks, and worth stating
+precisely because the obvious version of it is false. The dependency graph is full of
+architecture-specific code — the standard library alone carries per-architecture assembly in
+fourteen packages, and protobuf does `uintptr` arithmetic — so "no assembly, no unsafe, no cgo" is
+not true of the compiled program and would not imply architecture-independence if it were. Go
+permits FMA contraction on arm64 and not on amd64, and arm64's weaker memory model surfaces races
+amd64 hides. The real reason is that **the first-party tree has no concurrency and no
+floating-point arithmetic**, so there is nothing here yet for an architecture to disagree about.
+That is checkable, and it names the change that would invalidate it: the first goroutine or the
+first `float64`, whichever arrives before M2.
 
 ## The milestones
 
@@ -93,8 +102,9 @@ The rework-preventing milestone. Everything here is cheap now and expensive to r
    cannot build it.
 6. The conformance-vector harness: an empty vector file and the test that executes it.
 
-**Exit:** CI green across the three tiers above; a snapshot build produces a binary on each of the
-four platforms and that binary runs; `buf breaking` rejects a deliberately-broken schema change.
+**Exit:** the build-and-smoke and test tiers green — the integration tier has no job until M1, and a
+criterion that cannot fail is not one; a snapshot build produces a binary on each of the four
+platforms and that binary runs; `buf breaking` rejects a deliberately-broken schema change.
 
 ### M1 — Walking skeleton
 
@@ -133,8 +143,11 @@ The foundation the rest of the authority model stands on
 5. A differential harness: throw statements at both the parser and a real PostgreSQL, and assert they
    agree on what parses.
 
-**Exit:** the corpus passes; the subset version is recorded on extracted scopes; widening the
-allowlist by one node type shows up as a corpus diff.
+**Exit:** the corpus passes **on all four supported platforms** — this is the milestone the test
+tier widens for, because from here the parser is C and a grammar that classifies a statement
+differently per architecture is a soundness bug the build-and-smoke tier cannot see; the subset
+version is recorded on extracted scopes; widening the allowlist by one node type shows up as a
+corpus diff.
 
 ### M3 — Marques
 
