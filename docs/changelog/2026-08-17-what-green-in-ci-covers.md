@@ -27,10 +27,10 @@ than left standing.
   arriving with M1. Each tier carries the reason it stops where it does — and the test tier says
   plainly that it is a cost decision, because two attempts to justify it by argument were both
   false.
-- **Both milestone exit criteria read against those tiers** rather than against a phrase that meant
-  whatever the reader assumed — and **M2's exit criterion now carries the obligation to widen the
-  test tier**, since M2 is where the parser becomes C and the person implementing it will read M2's
-  criterion rather than a table three sections earlier.
+- **M0's and M1's exit criteria read against those tiers** rather than against a phrase that meant
+  whatever the reader assumed — and **M2's now carries the obligation to widen the test tier**, since
+  M2 is where the parser becomes C and the person implementing it will read M2's criterion rather
+  than a table three sections earlier.
 - **`make breaking` names both causes of an unusable base ref.** It advised fetching more history,
   which is the wrong repair when the ref is the all-zeros SHA a branch creation produces, or the
   orphan a force-push leaves behind.

@@ -111,10 +111,6 @@ rather than an engine; it introduces no new verification case, only a narrower o
 operating system and architecture. `go install` continues to work and requires a C toolchain, which
 is stated in the installation instructions rather than discovered.
 
-The CI tiers that stage this, and the milestone at which the test matrix widens, are set out in the
-[implementation plan](../content/overview/implementation-plan.md#what-green-in-ci-covers) and carried
-by that milestone's exit criterion.
-
 ## Consequences
 
 **Easier.**
@@ -176,7 +172,3 @@ by that milestone's exit criterion.
   grammar that runs them still to come in M2. `implementation` stays `none` — nothing here parses a
   statement or decides anything — and the note is corrected, since it said no corpus existed. The
   decision is unchanged.
-- **2026-08-17**: A pointer added from "cgo everywhere" to where the CI tiers are written down. No
-  policy is stated here: which platforms the tests cover before the parser is linked in, and the
-  milestone at which they widen, are sequencing, and the implementation plan is where sequencing
-  lives. The decision is unchanged.

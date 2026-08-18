@@ -229,9 +229,9 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 		echo "    all-zeros SHA when a branch is created, and an orphaned commit"; \
 		echo "    after a force-push. No checkout depth helps, because the commit"; \
 		echo "    is unreachable from any ref. Compare against a commit that is,"; \
-		echo "    and resolve it here rather than passing the expression: buf"; \
-		echo "    re-clones the repository, and only HEAD and ref names survive"; \
-		echo "    that, so origin/main works and origin/main~1 does not."; \
+		echo "    and resolve it here: buf takes an object id, a ref name or"; \
+		echo "    HEAD, but re-clones first, so origin/main~1 has nothing to"; \
+		echo "    walk back through and fails while origin/main works."; \
 		echo "      make breaking BASE_REF=\"\$$(git rev-parse origin/main~1)\""; \
 		echo "    Note that after a force-push that is the parent of the new"; \
 		echo "    head, not the tip clients actually saw."; \
