@@ -58,6 +58,11 @@ jobs:
       # The build validates every decision record and changelog entry, so it is
       # also the test suite — it runs on pull requests, where nothing deploys.
       - run: pnpm run build
+      # Dotfiles are EXCLUDED by default here — v4.0.0 added include-hidden-files
+      # and defaulted it to false. Nothing the build emits is hidden today, so
+      # this is inert; the first `.well-known/security.txt` or `.nojekyll` would
+      # otherwise be dropped from the artefact with the build green and the
+      # deploy successful. Set include-hidden-files: true when that day comes.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: github.event_name != 'pull_request'
         with:
