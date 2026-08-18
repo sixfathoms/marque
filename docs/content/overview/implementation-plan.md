@@ -39,6 +39,35 @@ Every milestone, without exception:
 - Its exit criterion demonstrated by a test that has been **seen to fail** for the right reason. A
   guard nobody has watched fail is a guard nobody knows works.
 
+### What "green in CI" covers
+
+Four platforms are supported. They are not all checked the same way, and pretending otherwise would
+mean either a claim CI does not meet or a matrix bought for no reason. Three tiers, each with the
+reason it stops where it does:
+
+| Tier | Platforms | What it proves |
+|---|---|---|
+| **Build and smoke** | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 | The release matrix builds on a native runner and the binary it produces runs. This is the tier that must not shrink: it is the only thing standing between a broken platform and a release. |
+| **Test suite** | linux/amd64, darwin/arm64 | That the suite passes on these two platforms, and nothing about the other two. One runner per operating system is a **sample**. Each runner asserts which platform it actually is, so the row cannot quietly stop being true when a runner label moves. |
+| **Integration** | linux/amd64 — *arrives with M1* | Containers. macOS is excluded by the platform: GitHub-hosted runners there have no Docker daemon and service containers are Linux-only. linux/arm64 has Docker and is excluded **by choice** — the suite exercises the driver and the schema, not the architecture. |
+
+**The test tier is a cost decision, not a proof, and it is written that way on purpose.** Two
+arguments for it look like proofs and are both false, so they are written down here rather than
+re-made later. *"There is no assembly, no unsafe and no cgo"* is not true of the compiled program —
+every binary reaches architecture-specific assembly in `runtime` and `syscall`, and the tests
+additionally compile protobuf's `uintptr` arithmetic — and it would not imply
+architecture-independence if it were, since Go permits FMA contraction on arm64 and not amd64.
+*"The first-party tree has no concurrency and no floating-point arithmetic"* fails the same way: the
+committed generated code uses `sync.Once`, and `make test` runs `-race`, which is itself built per
+architecture. Two runners are a sample, chosen because a defect that shows on one architecture and
+not another is *unlikely* here today rather than impossible. Unlikely is a cost judgement, and that
+is the honest name for it.
+
+**M2 is where the judgement expires**: `pg_query_go` puts a C parser in the dependency graph, and a
+grammar that classifies a statement differently on one architecture is a soundness bug the
+build-and-smoke tier cannot see. That obligation is written into M2's own exit criterion rather than
+left here, because whoever implements M2 will read M2.
+
 ## The milestones
 
 | | Milestone | Proves |
@@ -75,8 +104,8 @@ The rework-preventing milestone. Everything here is cheap now and expensive to r
    cannot build it.
 6. The conformance-vector harness: an empty vector file and the test that executes it.
 
-**Exit:** CI green on all supported platforms; a snapshot build produces a binary on each; `buf
-breaking` rejects a deliberately-broken schema change.
+**Exit:** the build-and-smoke and test tiers green — the integration tier has no job until M1, and a
+criterion that cannot fail is not one; `buf breaking` rejects a deliberately-broken schema change.
 
 ### M1 — Walking skeleton
 
@@ -94,6 +123,8 @@ This milestone deliberately builds something insecure, so it is contained by con
 
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
 the row changed. The first genuine end-to-end signal, available in week one rather than month three.
+It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
+above.
 
 ### M2 — The grammar
 
@@ -113,8 +144,11 @@ The foundation the rest of the authority model stands on
 5. A differential harness: throw statements at both the parser and a real PostgreSQL, and assert they
    agree on what parses.
 
-**Exit:** the corpus passes; the subset version is recorded on extracted scopes; widening the
-allowlist by one node type shows up as a corpus diff.
+**Exit:** the corpus passes **on all four supported platforms** — this is the milestone the test
+tier widens for, because from here the parser is C and a grammar that classifies a statement
+differently per architecture is a soundness bug the build-and-smoke tier cannot see; the subset
+version is recorded on extracted scopes; widening the allowlist by one node type shows up as a
+corpus diff.
 
 ### M3 — Marques
 

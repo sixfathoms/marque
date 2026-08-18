@@ -20,21 +20,49 @@ concurrency:
 
 jobs:
   build-test:
-    name: build and test (${{ matrix.os }})
+    name: build and test (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
+      # The test tier: one runner per operating system, as a sample rather
+      # than a proof — see the plan's "What green in CI covers", which says
+      # plainly that this is a cost decision. M2's exit criterion is what
+      # widens it to four, because from there the parser is C (EDR-0039). The
+      # build-and-smoke tier below already covers all four platforms.
+      #
       # Both platforms report, so a failure on one does not hide the other's
-      # result. cgo is where they diverge, and that is the whole reason for a
-      # matrix this early (EDR-0039).
+      # result.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - { os: ubuntu-latest, platform: linux/amd64 }
+          - { os: macos-latest, platform: darwin/arm64 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # make reads the working tree with git to stamp the version, on
+          # every invocation and before any recipe runs. Every one of those
+          # reads is local — rev-parse, status, describe, log — so nothing
+          # here needs the token to persist. Uniform with the other jobs: a
+          # selectively-hardened workflow reads as though the jobs that set the
+          # flag needed it for some particular reason, and none of them do.
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: "**/go.sum"
+      # The plan names this tier's platforms, so the runner has to say it is
+      # one of them. `macos-latest` has already migrated Intel to ARM once;
+      # without this the plan's table would go quietly false while CI stayed
+      # green, which is the exact disagreement this job's tier was written to
+      # settle. Same guard the snapshot job uses, same reason.
+      - env:
+          EXPECT_PLATFORM: ${{ matrix.platform }}
+        run: |
+          test -n "$EXPECT_PLATFORM" || {
+            echo "this matrix entry has no platform:, so the runner would not be checked"
+            exit 1
+          }
+          make platform-check
       - run: make build
       - run: make test
 
@@ -43,6 +71,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -58,6 +88,12 @@ jobs:
           # buf breaking reads main out of the local git repository, so the
           # default single-commit checkout is not enough.
           fetch-depth: 0
+          # Safe despite this being the job that reads history beyond HEAD:
+          # `make breaking` and buf's `.git#ref=` input both work against the
+          # local clone — buf clones it over a file:// URL — so no credential
+          # and no remote is involved. fetch-depth: 0 above is what makes that
+          # true.
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -80,6 +116,10 @@ jobs:
     name: snapshot (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
+      # The build-and-smoke tier, and the one that must not shrink: it is all
+      # that stands between a platform that cannot build and a release that
+      # claims it.
+      #
       # Every platform reports. A cgo build breaks per-platform, so the whole
       # point is seeing which ones — hiding the rest behind the first failure
       # would mean learning them one merge at a time.
