@@ -39,6 +39,24 @@ Every milestone, without exception:
 - Its exit criterion demonstrated by a test that has been **seen to fail** for the right reason. A
   guard nobody has watched fail is a guard nobody knows works.
 
+### What "green in CI" covers
+
+Four platforms are supported. They are not all checked the same way, and pretending otherwise would
+mean either a claim CI does not meet or a matrix bought for no reason. Three tiers, each with the
+reason it stops where it does:
+
+| Tier | Platforms | What it proves |
+|---|---|---|
+| **Build and smoke** | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 | The release matrix builds on a native runner and the binary it produces runs. This is the tier that must not shrink: it is the only thing standing between a broken platform and a release. |
+| **Test suite** | linux/amd64, darwin/arm64 | One runner per operating system. What varies across the two is the C toolchain, and the architectures within an operating system share it. |
+| **Integration** | linux/amd64 | Containers. GitHub-hosted macOS runners have no Docker daemon, so a testcontainers suite cannot run there at all — this bound is the platform's, not a choice. |
+
+The test tier is the one to revisit, and **M2 is when**: `pg_query_go` puts a C parser in the
+dependency graph, and a grammar that classifies a statement differently on one architecture is the
+defect this project can least afford to find late. Until then nothing in the tree can fail
+differently across architectures — there is no assembly, no unsafe pointer arithmetic and no cgo —
+so the second tier's cost would buy nothing.
+
 ## The milestones
 
 | | Milestone | Proves |
@@ -75,8 +93,8 @@ The rework-preventing milestone. Everything here is cheap now and expensive to r
    cannot build it.
 6. The conformance-vector harness: an empty vector file and the test that executes it.
 
-**Exit:** CI green on all supported platforms; a snapshot build produces a binary on each; `buf
-breaking` rejects a deliberately-broken schema change.
+**Exit:** CI green across the three tiers above; a snapshot build produces a binary on each of the
+four platforms and that binary runs; `buf breaking` rejects a deliberately-broken schema change.
 
 ### M1 — Walking skeleton
 
@@ -94,6 +112,8 @@ This milestone deliberately builds something insecure, so it is contained by con
 
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
 the row changed. The first genuine end-to-end signal, available in week one rather than month three.
+It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
+above.
 
 ### M2 — The grammar
 

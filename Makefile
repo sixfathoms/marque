@@ -222,7 +222,13 @@ schema-check: $(BUF) ## Fail if a method's retry declaration is missing or malfo
 breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 	@git rev-parse -q --verify "$$BASE_REF^{commit}" >/dev/null || { \
 		echo "$$BASE_REF is not in this clone, so the wire contract cannot be compared."; \
-		echo "Fetch it first; CI needs actions/checkout with fetch-depth: 0."; \
+		echo "Two causes, and the fix differs:"; \
+		echo "  - the ref exists but was not fetched: CI needs actions/checkout"; \
+		echo "    with fetch-depth: 0."; \
+		echo "  - the ref does not meaningfully exist. github.event.before is the"; \
+		echo "    all-zeros SHA when a branch is created, and an orphaned commit"; \
+		echo "    after a force-push. No checkout depth helps; compare against"; \
+		echo "    origin/main~1 instead."; \
 		exit 1; \
 	}
 	@git cat-file -e "$$BASE_REF:buf.yaml" 2>/dev/null || { \
