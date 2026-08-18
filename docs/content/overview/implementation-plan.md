@@ -52,12 +52,12 @@ reason it stops where it does:
 | **Integration** | linux/amd64 — *arrives with M1* | Containers. macOS is excluded by the platform: GitHub-hosted runners there have no Docker daemon and service containers are Linux-only. linux/arm64 has Docker and is excluded **by choice** — the suite exercises the driver and the schema, not the architecture. |
 
 **The test tier is a cost decision, not a proof, and it is written that way on purpose.** Two
-attempts to justify it by argument were both false, and the second was found by the review of the
-first. "No assembly, no unsafe, no cgo" is not true of the compiled program — every binary reaches
-architecture-specific assembly in `runtime` and `syscall`, and the tests additionally compile
-protobuf's `uintptr` arithmetic — and it would not imply architecture-independence if it were, since
-Go permits FMA contraction on
-arm64 and not amd64. Nor is the first-party tree free of what exposes such differences — the
+arguments for it look like proofs and are both false, so they are written down here rather than
+re-made later. *"There is no assembly, no unsafe and no cgo"* is not true of the compiled program —
+every binary reaches architecture-specific assembly in `runtime` and `syscall`, and the tests
+additionally compile protobuf's `uintptr` arithmetic — and it would not imply
+architecture-independence if it were, since Go permits FMA contraction on arm64 and not amd64.
+*"The first-party tree has no concurrency and no floating-point arithmetic"* fails the same way: the
 committed generated code uses `sync.Once`, and `make test` runs `-race`, which is itself built per
 architecture. Two runners are a sample, chosen because a defect that shows on one architecture and
 not another is *unlikely* here today rather than impossible. Unlikely is a cost judgement, and that

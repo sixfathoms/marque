@@ -43,8 +43,8 @@ jobs:
           # every invocation and before any recipe runs. Every one of those
           # reads is local — rev-parse, status, describe, log — so nothing
           # here needs the token to persist. Uniform with the other jobs: a
-          # selectively-hardened workflow reads as though the jobs that set it
-          # needed it for some particular reason, and none of them do.
+          # selectively-hardened workflow reads as though the jobs that set the
+          # flag needed it for some particular reason, and none of them do.
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -88,10 +88,11 @@ jobs:
           # buf breaking reads main out of the local git repository, so the
           # default single-commit checkout is not enough.
           fetch-depth: 0
-          # Safe despite this being the job that reads git refs: `make
-          # breaking` and buf's `.git#ref=` input both work against the local
-          # clone — buf clones it over a file:// URL — so no credential and no
-          # remote is involved. fetch-depth: 0 above is what makes that true.
+          # Safe despite this being the job that reads history beyond HEAD:
+          # `make breaking` and buf's `.git#ref=` input both work against the
+          # local clone — buf clones it over a file:// URL — so no credential
+          # and no remote is involved. fetch-depth: 0 above is what makes that
+          # true.
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
