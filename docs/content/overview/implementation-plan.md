@@ -56,11 +56,11 @@ attempts to justify it by argument were both false, and the second was found by 
 first. "No assembly, no unsafe, no cgo" is not true of the compiled program — the standard library
 alone carries per-architecture assembly in fourteen packages, and protobuf does `uintptr` arithmetic
 — and it would not imply architecture-independence if it were, since Go permits FMA contraction on
-arm64 and not amd64. Nor is the first-party tree free of what exposes such differences: the
-committed generated code uses `sync.Once`, and a `json.Decoder` token is a `float64` unless
-`UseNumber` is set. Two runners are a sample, chosen because a defect that shows on one architecture
-and not another is *unlikely* here today rather than impossible. Unlikely is a cost judgement, and
-that is the honest name for it.
+arm64 and not amd64. Nor is the first-party tree free of what exposes such differences — the
+committed generated code uses `sync.Once`, and `make test` runs `-race`, which is itself built per
+architecture. Two runners are a sample, chosen because a defect that shows on one architecture and
+not another is *unlikely* here today rather than impossible. Unlikely is a cost judgement, and that
+is the honest name for it.
 
 **M2 is where the judgement expires**: `pg_query_go` puts a C parser in the dependency graph, and a
 grammar that classifies a statement differently on one architecture is a soundness bug the
