@@ -228,11 +228,12 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 		echo "  - the ref does not meaningfully exist. github.event.before is the"; \
 		echo "    all-zeros SHA when a branch is created, and an orphaned commit"; \
 		echo "    after a force-push. No checkout depth helps, because the commit"; \
-		echo "    is unreachable from any ref. Compare against a commit that is:"; \
-		echo "    git rev-parse origin/main~1 — buf resolves an object id or a"; \
-		echo "    ref name, not a rev expression, so pass the resolved id. Note"; \
-		echo "    that after a force-push this is the parent of the new head,"; \
-		echo "    not the tip clients actually saw."; \
+		echo "    is unreachable from any ref. Compare against a commit that is,"; \
+		echo "    passing it resolved — buf fetches BASE_REF into a fresh clone,"; \
+		echo "    where a remote-tracking expression does not resolve:"; \
+		echo "      make breaking BASE_REF=\"\$$(git rev-parse origin/main~1)\""; \
+		echo "    Note that after a force-push that is the parent of the new"; \
+		echo "    head, not the tip clients actually saw."; \
 		exit 1; \
 	}
 	@git cat-file -e "$$BASE_REF:buf.yaml" 2>/dev/null || { \

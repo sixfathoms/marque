@@ -23,8 +23,10 @@ than left standing.
 ### Changed
 
 - **"Green in CI" now names three tiers.** Build-and-smoke on all four platforms; the test suite on
-  one runner per operating system, which is where the compiler and libc version change; integration
-  on linux/amd64, arriving with M1. Each tier carries the reason it stops where it does.
+  one runner per operating system, as a sample rather than a proof; integration on linux/amd64,
+  arriving with M1. Each tier carries the reason it stops where it does — and the test tier says
+  plainly that it is a cost decision, because two attempts to justify it by argument were both
+  false.
 - **Both milestone exit criteria read against those tiers** rather than against a phrase that meant
   whatever the reader assumed — and **M2's exit criterion now carries the obligation to widen the
   test tier**, since M2 is where the parser becomes C and the person implementing it will read M2's

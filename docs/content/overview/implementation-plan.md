@@ -48,23 +48,24 @@ reason it stops where it does:
 | Tier | Platforms | What it proves |
 |---|---|---|
 | **Build and smoke** | linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 | The release matrix builds on a native runner and the binary it produces runs. This is the tier that must not shrink: it is the only thing standing between a broken platform and a release. |
-| **Test suite** | linux/amd64, darwin/arm64 | One runner per operating system. Within an operating system the two architectures get the same compiler and libc version; across them, neither. Each runner asserts which platform it actually is, so the row cannot quietly stop being true when a runner label moves. |
+| **Test suite** | linux/amd64, darwin/arm64 | One runner per operating system — a **sample**, not a proof. Each runner asserts which platform it actually is, so the row cannot quietly stop being true when a runner label moves. |
 | **Integration** | linux/amd64 — *arrives with M1* | Containers. macOS is excluded by the platform: GitHub-hosted runners there have no Docker daemon and service containers are Linux-only. linux/arm64 has Docker and is excluded **by choice** — the suite exercises the driver and the schema, not the architecture. |
 
-The test tier is the one to revisit, and **M2 is when**: `pg_query_go` puts a C parser in the
-dependency graph, and a grammar that classifies a statement differently on one architecture is
-expensive to find late. That obligation is written into M2's exit criterion, not left here.
+**The test tier is a cost decision, not a proof, and it is written that way on purpose.** Two
+attempts to justify it by argument were both false, and the second was found by the review of the
+first. "No assembly, no unsafe, no cgo" is not true of the compiled program — the standard library
+alone carries per-architecture assembly in fourteen packages, and protobuf does `uintptr` arithmetic
+— and it would not imply architecture-independence if it were, since Go permits FMA contraction on
+arm64 and not amd64. Nor is the first-party tree free of what exposes such differences: the
+committed generated code uses `sync.Once`, and a `json.Decoder` token is a `float64` unless
+`UseNumber` is set. Two runners are a sample, chosen because a defect that shows on one architecture
+and not another is *unlikely* here today rather than impossible. Unlikely is a cost judgement, and
+that is the honest name for it.
 
-What justifies two runners rather than four *today* is narrower than it looks, and worth stating
-precisely because the obvious version of it is false. The dependency graph is full of
-architecture-specific code — the standard library alone carries per-architecture assembly in
-fourteen packages, and protobuf does `uintptr` arithmetic — so "no assembly, no unsafe, no cgo" is
-not true of the compiled program and would not imply architecture-independence if it were. Go
-permits FMA contraction on arm64 and not on amd64, and arm64's weaker memory model surfaces races
-amd64 hides. The real reason is that **the first-party tree has no concurrency and no
-floating-point arithmetic**, so there is nothing here yet for an architecture to disagree about.
-That is checkable, and it names the change that would invalidate it: the first goroutine or the
-first `float64`, whichever arrives before M2.
+**M2 is where the judgement expires**: `pg_query_go` puts a C parser in the dependency graph, and a
+grammar that classifies a statement differently on one architecture is a soundness bug the
+build-and-smoke tier cannot see. That obligation is written into M2's own exit criterion rather than
+left here, because whoever implements M2 will read M2.
 
 ## The milestones
 

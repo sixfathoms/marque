@@ -111,13 +111,9 @@ rather than an engine; it introduces no new verification case, only a narrower o
 operating system and architecture. `go install` continues to work and requires a C toolchain, which
 is stated in the installation instructions rather than discovered.
 
-Four platforms are supported — linux and darwin, amd64 and arm64 — and **from the milestone that
-links this parser in, the conformance corpus runs on all four**. Before it, the test suite runs on
-one runner per operating system, which is where the compiler and libc version change; a C parser is
-what makes the architectures worth separate runners, because a grammar that classifies a statement
-differently on one of them is a soundness bug no build-only check can see. The tiers, and what each
-one buys, are set out in the
-[implementation plan](../content/overview/implementation-plan.md#what-green-in-ci-covers).
+The CI tiers that stage this, and the milestone at which the test matrix widens, are set out in the
+[implementation plan](../content/overview/implementation-plan.md#what-green-in-ci-covers) and carried
+by that milestone's exit criterion.
 
 ## Consequences
 
@@ -180,8 +176,7 @@ one buys, are set out in the
   grammar that runs them still to come in M2. `implementation` stays `none` — nothing here parses a
   statement or decides anything — and the note is corrected, since it said no corpus existed. The
   decision is unchanged.
-- **2026-08-17**: The "cgo everywhere" section gains the platform set it had only implied, and the
-  rule that the corpus runs on all four from the milestone that links the parser in. The record
-  already said release builds run on a native runner per operating system and architecture; what was
-  missing was what the *tests* cover before that, which is what let the implementation plan claim
-  green on all supported platforms while the suite ran on two of them. The decision is unchanged.
+- **2026-08-17**: A pointer added from "cgo everywhere" to where the CI tiers are written down. No
+  policy is stated here: which platforms the tests cover before the parser is linked in, and the
+  milestone at which they widen, are sequencing, and the implementation plan is where sequencing
+  lives. The decision is unchanged.
