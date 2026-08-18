@@ -53,9 +53,10 @@ reason it stops where it does:
 
 **The test tier is a cost decision, not a proof, and it is written that way on purpose.** Two
 attempts to justify it by argument were both false, and the second was found by the review of the
-first. "No assembly, no unsafe, no cgo" is not true of the compiled program — the standard library
-alone carries per-architecture assembly in fourteen packages, and protobuf does `uintptr` arithmetic
-— and it would not imply architecture-independence if it were, since Go permits FMA contraction on
+first. "No assembly, no unsafe, no cgo" is not true of the compiled program — `go list -deps
+./cmd/marque` reaches nine standard-library packages carrying architecture-suffixed assembly,
+`runtime` and `syscall` among them, and protobuf does `uintptr` arithmetic — and it would not imply
+architecture-independence if it were, since Go permits FMA contraction on
 arm64 and not amd64. Nor is the first-party tree free of what exposes such differences — the
 committed generated code uses `sync.Once`, and `make test` runs `-race`, which is itself built per
 architecture. Two runners are a sample, chosen because a defect that shows on one architecture and
@@ -104,8 +105,7 @@ The rework-preventing milestone. Everything here is cheap now and expensive to r
 6. The conformance-vector harness: an empty vector file and the test that executes it.
 
 **Exit:** the build-and-smoke and test tiers green — the integration tier has no job until M1, and a
-criterion that cannot fail is not one; a snapshot build produces a binary on each of the four
-platforms and that binary runs; `buf breaking` rejects a deliberately-broken schema change.
+criterion that cannot fail is not one; `buf breaking` rejects a deliberately-broken schema change.
 
 ### M1 — Walking skeleton
 

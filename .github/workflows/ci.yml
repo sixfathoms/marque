@@ -39,9 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # make reads the working tree with git to stamp the version — five
-          # local commands, none of which contacts a remote — so nothing here
-          # needs the token to persist. Uniform with the other jobs: a
+          # make reads the working tree with git to stamp the version, on
+          # every invocation and before any recipe runs. Every one of those
+          # reads is local — rev-parse, status, describe, log — so nothing
+          # here needs the token to persist. Uniform with the other jobs: a
           # selectively-hardened workflow reads as though the jobs that set it
           # needed it for some particular reason, and none of them do.
           persist-credentials: false

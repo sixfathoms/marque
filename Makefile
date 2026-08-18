@@ -229,8 +229,9 @@ breaking: $(BUF) ## Check the schema against $(BASE_REF) for a breaking change
 		echo "    all-zeros SHA when a branch is created, and an orphaned commit"; \
 		echo "    after a force-push. No checkout depth helps, because the commit"; \
 		echo "    is unreachable from any ref. Compare against a commit that is,"; \
-		echo "    passing it resolved — buf fetches BASE_REF into a fresh clone,"; \
-		echo "    where a remote-tracking expression does not resolve:"; \
+		echo "    and resolve it here rather than passing the expression: buf"; \
+		echo "    re-clones the repository, and only HEAD and ref names survive"; \
+		echo "    that, so origin/main works and origin/main~1 does not."; \
 		echo "      make breaking BASE_REF=\"\$$(git rev-parse origin/main~1)\""; \
 		echo "    Note that after a force-push that is the parent of the new"; \
 		echo "    head, not the tip clients actually saw."; \
@@ -312,18 +313,22 @@ snapshot-check: platform-check build snapshot ## Fail if make and goreleaser dis
 	esac; \
 	echo "  commit and source date agree across both build paths: $$mine"
 
-# Ordered before `build snapshot`, so under serial make — which is what CI
-# runs — a mislabelled runner fails in a second rather than after a full cgo
-# build. Under `make -j` a build may start first; the assertion still fails
-# the target, just less cheaply. EXPECT_PLATFORM is unset for local use;
-# CI requires it, and checks that it required it — see .github/workflows/ci.yml.
+# Two callers: `snapshot-check`, where it is ordered before `build snapshot` so
+# that under serial make — which is what CI runs — a mislabelled runner fails in
+# a second rather than after a full cgo build; and the `build-test` job, whose
+# tier the implementation plan describes by platform, so something has to hold
+# that description true. Under `make -j` a build may start first; the assertion
+# still fails the target, just less cheaply. EXPECT_PLATFORM is unset for local
+# use; CI requires it, and checks that it required it — see
+# .github/workflows/ci.yml.
 platform-check: ## Fail if this host is not the platform EXPECT_PLATFORM names
 	@if [ -n "$$EXPECT_PLATFORM" ]; then \
 		actual="$$(go env GOOS)/$$(go env GOARCH)"; \
 		if [ "$$actual" != "$$EXPECT_PLATFORM" ]; then \
 			echo "this runner is $$actual, but the job says it is $$EXPECT_PLATFORM."; \
-			echo "--single-target builds whatever the host is, so the matrix would report a"; \
-			echo "platform it never built. Fix the runner label or the matrix entry."; \
+			echo "a matrix entry naming a platform it is not means CI reports coverage"; \
+			echo "it never had — a build never made, or a test never run there."; \
+			echo "Fix the runner label or the matrix entry."; \
 			exit 1; \
 		fi; \
 		echo "  platform: $$actual"; \
