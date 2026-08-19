@@ -35,7 +35,7 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   are written. Authoring happens in the control plane, and degrading `["tier = 'sandbox'"]` to `[]`
   is a total row-scope bypass costing one JSON edit — a rule the Harbourmaster enforces on itself is
   not a rule.
-- **Six records, the agents page and the conformance format carry the spelling**, each record with a
+- **Seven records, the agents page and the conformance format were amended**, each record with a
   dated changelog line. No record is superseded: every decision stands, and only its encoding was
   wrong.
 - **The grantor of a compiled delegation signs a list rather than a predicate.** A legibility cost
@@ -49,10 +49,13 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests `c2` alone and a row failing `c1` is never
   counted. The record now writes `<fence>` as the whole parenthesised conjunction, and the rule is in
   M5's exit criteria and in `CLAUDE.md`'s invariant list rather than only in the record that
-  introduced it.
+  introduced it. Two session settings turned out to be inert as written, too: the lexer reads
+  `standard_conforming_strings` before a `SET` in the same message takes effect, and a `BEFORE`
+  trigger on the target can move `search_path` out from under every check that runs after the
+  operator's statement.
 - **A relation had three spellings, not the two reported.**
   [EDR-0037](/edrs/0037-emergency-paths/) had already split the field and named the second half
-  `table`. Both halves now read `{ "schema": …, "relation": … }`.
+  `table`. Every grant now reads `{ "schema": …, "relation": … }`.
 - **[EDR-0007](/edrs/0007-delegation-by-containment-proof/) stopped contradicting itself.** Its
   attenuation rule called the fence an array eleven lines below an example showing a string.
 

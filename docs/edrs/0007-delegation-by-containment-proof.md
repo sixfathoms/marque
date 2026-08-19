@@ -116,22 +116,31 @@ operator who does not know why they are queueing will assume the tool is broken.
 
 ### 2. Row scope: the fence
 
-The fence never rewrites the operator's statement. The Pilot executes, in one transaction:
+The fence never rewrites the operator's statement. The Pilot settles the session, then executes in
+one transaction:
 
 ```sql
+-- Connection setup, its own round trip. standard_conforming_strings and
+-- backslash_quote are read by the LEXER, and PostgreSQL raw-parses a whole
+-- simple-query message before running any of it — so a SET sent beside the
+-- fence is inert while the GUC still reads back correct. The Pilot VERIFIES
+-- both with current_setting() and refuses the connection on a mismatch.
+SET standard_conforming_strings = on;       -- pinned: see rule 3
+SET backslash_quote             = off;      -- E'…' escapes regardless of it
+
 BEGIN ISOLATION LEVEL REPEATABLE READ;
-SET LOCAL search_path                = pg_catalog;   -- pinned: see rule 3
-SET LOCAL standard_conforming_strings = on;          -- pinned: see rule 3
-SET LOCAL statement_timeout          = …;
-SET LOCAL lock_timeout               = …;
+SET LOCAL search_path      = pg_catalog;    -- pinned: see rule 3
+SET LOCAL statement_timeout = …;
+SET LOCAL lock_timeout      = …;
 
 -- (a) pre-check: would this touch anything outside the fence?
 --     NOTE: `IS NOT TRUE`, never `NOT (…)`. A row whose fence expression is
 --     UNKNOWN is OUTSIDE the fence.
---     The fence is a list of conjuncts (EDR-0041), and `<fence>` below means
---     the WHOLE conjunction, wrapped: `((c1) AND (c2)) IS NOT TRUE`, never
---     `(c1) AND (c2) IS NOT TRUE`. `IS` binds tighter than `AND`, so the
---     second form tests c2 alone and lets a row failing c1 straight through.
+--     The fence is a list of conjuncts (EDR-0041). `<fence>` is the bare
+--     conjunction, each conjunct parenthesised: `(c1) AND (c2)`. The
+--     template's own parentheses are the outer wrap, so this composes to
+--     `((c1) AND (c2)) IS NOT TRUE` — and never `(c1) AND (c2) IS NOT TRUE`,
+--     which tests c2 alone, because `IS` binds tighter than `AND`.
 SELECT count(*) FROM public.accounts
  WHERE (<the statement's own predicate>) AND (<fence>) IS NOT TRUE;
 --   > 0  →  ROLLBACK, and report the count
@@ -163,10 +172,12 @@ Three rules govern how those checks are written, and each closes a way the fence
    admits only TRUE, and the row is silently *not counted* — so a NULL-fenced row passes the
    pre-check, the post-assert and the row count with no concurrency involved at all. Every fence
    comparison is therefore written `(<fence>) IS NOT TRUE`, and every future engine binding inherits
-   this rule ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)). `<fence>` is the whole
-   conjunction of the fence's conjuncts, each parenthesised and the conjunction parenthesised again
-   ([EDR-0041](./0041-one-spelling-for-a-scope.md)) — the TRUE-only test applies to the fence, never
-   to one conjunct of it.
+   this rule ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)). `<fence>` is the bare
+   conjunction of the fence's conjuncts, each conjunct parenthesised — `(c1) AND (c2)`
+   ([EDR-0041](./0041-one-spelling-for-a-scope.md)). It is always written inside the parentheses this
+   rule requires, so the TRUE-only test applies to the whole fence and never to one conjunct of it.
+   The parentheses belong to the template, not to `<fence>`; reading them into both yields
+   `X IS NOT TRUE IS NOT TRUE`, which is `X IS TRUE` and inverts the check.
 2. **The execution transaction runs at REPEATABLE READ or stricter.** At READ COMMITTED, (a) and (b)
    take different snapshots, and because the fence is deliberately *not* conjoined into the `WHERE`,
    PostgreSQL's `EvalPlanQual` re-check never re-evaluates it — so a concurrent update that moves a
@@ -179,14 +190,22 @@ Three rules govern how those checks are written, and each closes a way the fence
    unqualified names — relations, functions *and operators* — through `search_path`, so an
    unqualified fence like `tier = 'sandbox'` can be made to mean something else by anyone who can
    create an object in an earlier schema. The session sets `search_path = pg_catalog`, the grammar
-   already requires relations to be named directly (`public.accounts`), and a fence containing an
-   unqualified non-builtin reference is refused at compile time
-   ([EDR-0016](./0016-natural-language-delegations-are-compiled.md)). `standard_conforming_strings`
-   is pinned for the same reason: with it off, a backslash before the closing quote of a conjunct's
-   string literal swallows the quote, and the fence's conjuncts are composed as text.
-   Well-formedness of each conjunct is not a compile-time property alone — a hand-authored
-   delegation and an agent's declared scope never meet the compiler — so the Pilot revalidates every
-   conjunct before composing it ([EDR-0041](./0041-one-spelling-for-a-scope.md)).
+   already requires relations to be named directly (`public.accounts`). The pin does **not** reach an
+   explicitly-qualified operator — `tier OPERATOR(public.===) 'x'` resolves past it — and which
+   references a conjunct may make at all is undefined:
+   [issue #25](https://github.com/sixfathoms/marque/issues/25). An earlier version of this rule said
+   such a reference was "refused at compile time (EDR-0016)"; EDR-0016 states no such rule, and a
+   compile-time rule would not reach a hand-authored delegation or an agent's declared scope in any
+   case, neither of which meets the compiler.
+
+   `standard_conforming_strings` and `backslash_quote` are pinned for a related reason — the fence's
+   conjuncts are composed as text — and they are **verified with `current_setting()` rather than set
+   beside the fence**: both are read by the lexer, and PostgreSQL raw-parses a whole simple-query
+   message before executing any of it, so a `SET` in the same message is inert while the GUC reads
+   back correct. All three pins are re-verified immediately before **each** composed check, not once
+   at `BEGIN`: the operator's own statement runs between (a) and (c), and a `BEFORE` trigger calling
+   `set_config` moves them for everything that follows. The Pilot also revalidates each conjunct
+   before composing it ([EDR-0041](./0041-one-spelling-for-a-scope.md)).
 4. **Deferred constraint triggers are forced to fire before the write-set assertion.** A
    `DEFERRABLE INITIALLY DEFERRED` constraint fires at `COMMIT` — *after* check (e) has read a clean
    write set — so its writes would land inside the committed transaction unchecked, by a mechanism
@@ -269,4 +288,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated that `max_rows` bounds the named relation only, and added the write-set assertion as check (e) — see [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md).
 - **2026-08-16**: Amended after a second expert panel: pinned `search_path` (PostgreSQL resolves unqualified relations, functions **and operators** through it, so an unqualified fence can be redefined by anyone who can create an object in an earlier schema), forced deferred constraint triggers to fire before the write-set assertion, and restricted a fence to columns of the target relation — REPEATABLE READ protects only rows this transaction writes.
 - **2026-08-16**: Amended in the second panel's should-fix pass: attenuation compares fences by **syntactic conjunct-set inclusion**, not entailment — the undecidable check EDR-0029 was rewritten to avoid, which otherwise arrives once per hop in a chain.
-- **2026-08-19**: Amended so the worked delegation matches this record's own prose. The decision is unchanged — attenuation by syntactic conjunct-set inclusion, never by entailment — but the encoding contradicted it: `fence` was a string eleven lines above the sentence calling it an array, the relation was one dotted string, and the operation was uppercase. All three now follow [EDR-0041](./0041-one-spelling-for-a-scope.md), which also settles when two conjuncts are equal, and therefore what the inclusion test compares. The worked SQL now writes `<fence>` as the whole parenthesised conjunction: `IS` binds tighter than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests c2 alone and lets a row failing c1 through — the fail-open the 2026-08-15 `NOT (fence)` correction closed, reopened by the fence becoming a list. Rule 1 says what `<fence>` denotes; rule 3 pins `standard_conforming_strings` and has the Pilot revalidate each conjunct before composing it, since a hand-authored delegation and an agent's declared scope never meet the compiler; rule 5 is restated per conjunct; and a stale "see rule 4" against the `search_path` pin now says rule 3.
+- **2026-08-19**: Amended so the worked delegation matches this record's own prose. The decision is unchanged — attenuation by syntactic conjunct-set inclusion, never by entailment — but the encoding contradicted it: `fence` was a string eleven lines above the sentence calling it an array, the relation was one dotted string, and the operation was uppercase. All three now follow [EDR-0041](./0041-one-spelling-for-a-scope.md), which also settles when two conjuncts are equal, and therefore what the inclusion test compares. The worked SQL now writes `<fence>` as the whole parenthesised conjunction: `IS` binds tighter than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests c2 alone and lets a row failing c1 through — the fail-open the 2026-08-15 `NOT (fence)` correction closed, reopened by the fence becoming a list. Rule 1 says what `<fence>` denotes; rule 3 pins `standard_conforming_strings` and has the Pilot revalidate each conjunct before composing it, since a hand-authored delegation and an agent's declared scope never meet the compiler; rule 5 is restated per conjunct; and a stale "see rule 4" against the `search_path` pin now says rule 3. Rule 3 also drops a claim that was never true: it attributed the refusal of a non-builtin reference in a fence to EDR-0016, which states no such rule. What a conjunct may reference is undefined and is now tracked as [issue #25](https://github.com/sixfathoms/marque/issues/25). `standard_conforming_strings` and `backslash_quote` are pinned at connection setup and verified with `current_setting()`, because the lexer reads them and PostgreSQL raw-parses a whole simple-query message before running any of it — a `SET` beside the fence is inert while the GUC reads back correct; and all three pins are re-verified before each composed check, since a `BEFORE` trigger on the target can call `set_config` between the statement and the post-assert.

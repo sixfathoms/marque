@@ -199,14 +199,19 @@ The delegated row predicate is never conjoined into the operator's `WHERE`. Sile
 statement produces a partially-applied change nobody reviewed. Instead:
 
 ```sql
+-- first, its own round trip: the lexer reads these, and a simple-query
+-- message is raw-parsed whole, so a SET beside the fence is inert
+SET standard_conforming_strings = on;       -- verified with current_setting()
+SET backslash_quote             = off;
+
 BEGIN ISOLATION LEVEL REPEATABLE READ;      -- READ COMMITTED is unsound here
 SET LOCAL search_path = pg_catalog;         -- else an unqualified fence can be redefined
-SET LOCAL standard_conforming_strings = on;  -- conjuncts are composed as text
 -- capture write-set baseline (a delta, not a snapshot)
 
 -- (a) would this touch anything outside the fence?
 --     `IS NOT TRUE`, never `NOT (…)` — a NULL fence value is OUTSIDE the fence
---     `<fence>` is the WHOLE conjunction of the fence's conjuncts, wrapped:
+--     `<fence>` is the bare conjunction, each conjunct parenthesised:
+--     `(c1) AND (c2)`. The parens below are the outer wrap, giving
 --     `((c1) AND (c2)) IS NOT TRUE`. `IS` binds tighter than `AND`.
 SELECT count(*) FROM public.accounts
  WHERE (<statement's own predicate>) AND (<fence>) IS NOT TRUE;
@@ -223,9 +228,9 @@ COMMIT;
 
 Four things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
 fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md));
-composing a multi-conjunct fence as `(c1) AND (c2) IS NOT TRUE` rather than `((c1) AND (c2)) IS NOT
-TRUE` tests only the last conjunct
-([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md));
+composing a multi-conjunct fence as `(c1) AND (c2) IS NOT TRUE` rather than
+`((c1) AND (c2)) IS NOT TRUE` applies the TRUE-only test to the last conjunct alone, so a row failing
+any earlier one is never counted ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md));
 READ COMMITTED lets the pre-check and the statement see different snapshots; and **(e)** is what
 bounds writes the engine performs on the statement's behalf — a cascading delete returns one row and
 can destroy millions in a table no delegation names

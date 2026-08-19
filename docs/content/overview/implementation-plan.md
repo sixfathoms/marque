@@ -197,7 +197,9 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 [EDR-0033](../../edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
 
 1. Session setup: `REPEATABLE READ`, pinned `search_path`, `SET CONSTRAINTS ALL IMMEDIATE`, statement
-   and lock timeouts.
+   and lock timeouts — plus `standard_conforming_strings` and `backslash_quote`, which are read by
+   the lexer and so must be settled in an earlier round trip and **verified** with
+   `current_setting()` rather than assumed from the `SET`.
 2. The three checks — pre-check, post-assert, row-count assert — each **TRUE-only**, none of them
    `NOT (…)`. A fence is a list of conjuncts, so each is composed `(c1) AND (c2) AND …` and the
    whole conjunction is wrapped again before `IS NOT TRUE`
@@ -212,8 +214,11 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 moves *out* of scope; a cascade the fence never named; a deferred constraint trigger that would
 otherwise fire after the write set was read; a two-conjunct fence whose first conjunct carries a
 top-level `OR`, composed both correctly and as `c1 AND c2`, where only the second admits a row
-outside the fence; a conjunct that closes its own parenthesis; and a crash between claim and commit
-losing the attempt rather than the count.
+outside the fence; the same fence composed as `(c1) AND (c2) IS NOT TRUE` rather than
+`((c1) AND (c2)) IS NOT TRUE`, where a row failing `c1` alone goes uncounted; a conjunct that closes
+its own parenthesis; a `BEFORE` trigger on the target that calls `set_config` to move `search_path`
+out from under the checks that follow the statement; and a crash between claim and commit losing the
+attempt rather than the count.
 
 ### M6 — The logbook
 
