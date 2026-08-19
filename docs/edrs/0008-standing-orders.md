@@ -29,7 +29,9 @@ are typed and constrained; a value that fails its constraint is refused at invoc
     { "name": "account_id", "type": "uuid" },
     { "name": "tier", "type": "string", "one_of": ["sandbox", "trial"] }
   ],
-  "objects": [ { "schema": "public", "relation": "accounts" } ],  // write-set reference set (EDR-0033)
+  "objects": [
+    { "schema": "public", "relation": "accounts" }  // write-set reference set (EDR-0033)
+  ],
   "issued_at": "…", "roster_epoch": 47,            // signatures resolve against this epoch (EDR-0030)
   "max_rows": 1,
   "invokers": ["group:support"],
@@ -168,4 +170,4 @@ Renewal is a re-approval, which is the moment someone re-reads it — the whole 
 - **2026-08-16**: Amended after the expert panel's should-fix pass: required `max_rows` on every write standing order (or an explicit acknowledgement), specified `from_query`'s own constraints, and corrected the "unchanged" list, which named fencing rather than the assertions that actually apply.
 - **2026-08-16**: Amended after the second panel's synthesis: added the `objects` field [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md) sources the fast-path write-set reference set from, and corrected the residual, which counted budget and rate limits the compromised component itself enforces.
 - **2026-08-16**: Amended in the second panel's should-fix pass: added signed `issued_at` and `roster_epoch`, so a long-lived artefact verified against roster keys has a stated answer to whether the signing key was live.
-- **2026-08-19**: Amended: the order's `objects` name a relation as a `schema` and a `relation` field rather than one dotted string, and `operations` are lowercase ([EDR-0041](./0041-one-spelling-for-a-scope.md)). Nothing about the decision changes; a standing order has no fence, because its template is the bound.
+- **2026-08-19**: Amended: the order's `objects` name a relation as a `schema` and a `relation` field rather than one dotted string ([EDR-0041](./0041-one-spelling-for-a-scope.md)). Nothing about the decision changes; a standing order has no fence, because its template is the bound.

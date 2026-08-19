@@ -137,7 +137,9 @@ The foundation the rest of the authority model stands on
    `unsupported`. Start smaller than feels useful — single-relation `UPDATE` and `DELETE` with a
    conjunctive predicate over literals. A too-narrow subset produces a good error message; a
    too-broad one produces a soundness bug.
-3. Scope extraction: relation, columns written, and the predicate the fence will be built from.
+3. Scope extraction: relation, columns written, and the predicate the fence will be built from —
+   spelled as [EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md) has it, which is what the
+   loader already enforces.
 4. The conformance corpus, populated. Include the cases that should *fail* — a function call in a
    predicate, a CTE, a second relation appearing via `FROM`, a subquery — because a corpus of only
    happy paths tests nothing.
@@ -197,7 +199,10 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 1. Session setup: `REPEATABLE READ`, pinned `search_path`, `SET CONSTRAINTS ALL IMMEDIATE`, statement
    and lock timeouts.
 2. The three checks — pre-check, post-assert, row-count assert — each **TRUE-only**, none of them
-   `NOT (…)`.
+   `NOT (…)`. A fence is a list of conjuncts, so each is composed `(c1) AND (c2) AND …` and the
+   whole conjunction is wrapped again before `IS NOT TRUE`
+   ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md)). Both halves fail open if skipped, and
+   both look right without them.
 3. The write-set assertion over everything the engine wrote, not only the named relation.
 4. The execution nonce, claimed **before** the statement runs, with the budget consumed by the claim
    ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)).
@@ -205,8 +210,10 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 
 **Exit:** each escape route proven to abort — a row whose fence predicate is NULL; a row an `UPDATE`
 moves *out* of scope; a cascade the fence never named; a deferred constraint trigger that would
-otherwise fire after the write set was read; a crash between claim and commit losing the attempt
-rather than the count.
+otherwise fire after the write set was read; a two-conjunct fence whose first conjunct carries a
+top-level `OR`, composed both correctly and as `c1 AND c2`, where only the second admits a row
+outside the fence; a conjunct that closes its own parenthesis; and a crash between claim and commit
+losing the attempt rather than the count.
 
 ### M6 — The logbook
 

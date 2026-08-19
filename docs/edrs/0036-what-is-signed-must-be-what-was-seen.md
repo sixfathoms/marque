@@ -223,3 +223,4 @@ compromise tables claim.
 - **2026-08-16**: Accepted, following a second expert panel's finding that an authentic approver
   signature could be induced over a payload the approver never saw.
 - **2026-08-16**: Amended after the second panel's synthesis: bounded recomputation to signed payload fields; a rule depending on rehearsed magnitude is unimplementable offline and is refused at apply time.
+- **2026-08-19**: Amended with a pointer: a fence is a list of conjuncts ([EDR-0041](./0041-one-spelling-for-a-scope.md)), so the canonical `display` renders a list rather than a single predicate. The rendering rules are versioned and the version is in the payload, which is the mechanism that absorbs this; the decision is unchanged.
