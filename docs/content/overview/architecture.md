@@ -217,6 +217,7 @@ SELECT count(*) FROM public.accounts
  WHERE (<statement's own predicate>) AND (<fence>) IS NOT TRUE;
 --    > 0  →  ROLLBACK and report the count
 
+-- re-verify the pins: evaluating the fence above may have called a function
 UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
 -- re-verify the pins: a BEFORE trigger can call set_config and move them
@@ -232,9 +233,9 @@ Six things here are easy to get wrong and each fails **open**: `NOT (fence)` let
 fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md));
 joining conjuncts as `c1 AND c2` rather than `(c1) AND (c2)` lets one carrying a top-level `OR`
 rebind against the following `AND`; the
-session pins do not survive target-defined code, because a `BEFORE` trigger — or a deferred
-constraint trigger fired by `SET CONSTRAINTS` — can call `set_config`, so they are re-verified before
-every check that follows any of it;
+session pins do not survive code the Pilot did not compose — a fence conjunct may call a function, a
+`BEFORE` trigger may, and so may a deferred constraint trigger fired by `SET CONSTRAINTS` — so they
+are re-verified before every step that follows any of it;
 composing a multi-conjunct fence as `(c1) AND (c2) IS NOT TRUE` rather than
 `((c1) AND (c2)) IS NOT TRUE` applies the TRUE-only test to the last conjunct alone, so a row failing
 any earlier one is never counted ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md));

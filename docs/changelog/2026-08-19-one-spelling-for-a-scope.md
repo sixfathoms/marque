@@ -50,11 +50,13 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests `c2` alone and a row failing `c1` is never
   counted. The record now says what `<fence>` denotes — the bare conjunction, wrapped by the template
   — and the rule is in M5's exit criteria and in `CLAUDE.md`'s invariant list rather than only in the
-  record that introduced it. The session settings failed in two further ways:
-  `standard_conforming_strings` and
-  `backslash_quote` are read by the lexer, so a `SET` sent in the same message is inert while the GUC
-  still reads back correct; and a `BEFORE` trigger on the target can call `set_config` to move
-  `search_path` out from under every check that runs after the operator's statement.
+  record that introduced it. The session settings failed in three further ways:
+  `standard_conforming_strings` and `backslash_quote` are read by the lexer, so a `SET` sent in the
+  same message is inert while the GUC still reads back correct; a `BEFORE` trigger on the target can
+  call `set_config`; and so can a deferred constraint trigger, which `SET CONSTRAINTS ALL IMMEDIATE`
+  exists to fire immediately before the write-set assertion. The pins are re-verified before every
+  step that follows code the Pilot did not compose — including the fence's own evaluation, since a
+  conjunct may call a function.
 - **A relation had three spellings, not the two reported.**
   [EDR-0037](/edrs/0037-emergency-paths/) had already split the field and named the second half
   `table`. Every grant now reads `{ "schema": …, "relation": … }`.
@@ -66,12 +68,15 @@ changes a rule a different record decided. An agent's effective fence is the **u
 conjunct sets, so it is tighter than its delegation's and an identity check refuses it for being
 tighter ([#20](https://github.com/sixfathoms/marque/issues/20), Phase 3b). A wildcard relation is
 spelled `"*"`, which PostgreSQL also accepts as a real relation name
-([#22](https://github.com/sixfathoms/marque/issues/22), Phase 3, where fence-bearing grants land). The signed `display` renders a fence and now
+([#22](https://github.com/sixfathoms/marque/issues/22), before the first grant carrying one is
+signed). The signed `display` renders a fence and now
 has a list to render ([#23](https://github.com/sixfathoms/marque/issues/23), M3). The subset version a
 delegation is pinned to has no carrier on any artefact
 ([#24](https://github.com/sixfathoms/marque/issues/24), M2). And what a conjunct may *reference* —
 functions, casts to domains, subqueries, explicitly-qualified operators — is bounded by nothing at
-all ([#25](https://github.com/sixfathoms/marque/issues/25), M5); that one is largely pre-existing and
+all ([#25](https://github.com/sixfathoms/marque/issues/25), M5) — EDR-0007 rule 5 puts a fence
+needing another relation outside the *subset* at submission, which is a different check at a
+different time and detects nothing at composition. That one is largely pre-existing and
 is the reason to say plainly that this record bounds a conjunct's shape and not its behaviour. And
 break-glass lists the fence among the controls it leaves unchanged while no signed artefact on that
 path carries one ([#26](https://github.com/sixfathoms/marque/issues/26), Phase 2).

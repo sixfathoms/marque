@@ -58,8 +58,7 @@ inside a word no record defines.
 and says "the `fence` array is conjunctive" — eleven lines after its own worked example shows a
 string. If the authored form is a string, recovering its conjuncts means parsing SQL. The parser
 belongs in the Pilot anyway — EDR-0029 step 5 has it re-check object scope — so the cost is not a
-new
-dependency but a moving one: [EDR-0039](./0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)
+new dependency but a moving one: [EDR-0039](./0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)
 says a `pg_query_go` upgrade parses statements the previous one refused, and a fence comparison that
 went through the grammar would make an **already-signed delegation mean something different after a
 dependency bump**. A comparison over strings cannot move.
@@ -129,9 +128,10 @@ exists to prevent. Where that pin travels on a fence-bearing artefact is not sta
 **This rule bounds a conjunct's shape, not what it may do.** It closes the composition escape and
 nothing else. A conjunct that parses as a boolean may still call a function, cast to a domain whose
 `CHECK` calls one, read another relation through a subquery, or name an operator explicitly qualified
-past the `search_path` pin — all demonstrated. Reading another relation is already forbidden by
-EDR-0007 rule 5, which names no mechanism that enforces it, so the Pilot's revalidation is where that
-rule acquires one. The rest are bounded by nothing: EDR-0007 defines a *statement* subset
+past the `search_path` pin — all demonstrated, and none of them detected by any rule above. EDR-0007
+rule 5 does put a fence needing another relation outside the checkable subset, but that is a
+submission-time subset test carrying its own exception, not a refusal the Pilot makes, and no shape
+rule here sees a relation reference at all. So: EDR-0007 defines a *statement* subset
 and no record defines an *expression* subset for a fence, which is
 [issue #25](https://github.com/sixfathoms/marque/issues/25) and is due before M5. Saying so here is
 better than letting "the Pilot validates each conjunct" read as though the question were settled.
@@ -151,8 +151,8 @@ Pilot may not rely on.
 Note what this does **not** buy. Refusing `[]` is not a defence against an adversarial author: one
 that wanted an unfenced grant would delete the key, which this record says is legitimately no row
 restriction, at exactly the same cost. The refusal is for the reader — `"fence": []` looks like a
-restriction and is not. What check 7 defends against is the marque carrying a fence the artefact did
-not.
+restriction and is not. What check 7 defends against is a marque whose fence differs from its
+artefact's at all — including one that quietly drops it.
 
 ### Two conjuncts are equal when their decoded characters are equal
 
@@ -351,7 +351,8 @@ before Phase 3b, where agents land.
 PostgreSQL permits `"*"` as a quoted identifier — so a grant over one literal relation is
 indistinguishable from a grant over all of them. Renaming the field does not touch that, and an
 in-band sentinel wants replacing rather than renaming:
-[issue #22](https://github.com/sixfathoms/marque/issues/22), due before the first grant is signed.
+[issue #22](https://github.com/sixfathoms/marque/issues/22), due before the first grant carrying one
+is signed — which today means a break-glass grant, not a delegation.
 
 ## References
 
