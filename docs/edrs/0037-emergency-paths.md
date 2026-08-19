@@ -106,8 +106,8 @@ A signed artefact in the same family as a standing order
   "to": "theo@acme.example",              // a named principal, never a group
   "target": "prod-primary",
   "role": "settings_writer",              // or "*" where policy permits
-  "scope": { "operations": ["UPDATE"],
-             "objects": [ { "schema": "public", "table": "*" } ] },   // or "any"
+  "scope": { "operations": ["update"],
+             "objects": [ { "schema": "public", "relation": "*" } ] },   // or "any"
   "co_sign": "none",                      // | "any_break_glass_holder" | "group:data-oncall"
   "max_ttl": "15m",
   "not_after": "2026-11-30T00:00:00Z",
@@ -225,3 +225,4 @@ The requirement the operator asked for, stated as mechanism:
 ## Changelog
 
 - **2026-08-16**: Accepted.
+- **2026-08-19**: Amended for the artefact spelling ([EDR-0041](./0041-one-spelling-for-a-scope.md)): the grant's `operations` are lowercase, and its relation field is named `relation` rather than `table`. The wildcard is unaffected — it is a value of the field, not a different shape.

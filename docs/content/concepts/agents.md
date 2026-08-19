@@ -54,9 +54,9 @@ agent declares that, at the start of the task, and is held to it:
   "purpose": "Unstick order 88213 reported in ticket ACME-4471",
   "declared_scope": {
     "target": "prod-primary", "role": "support_writer",
-    "operations": ["SELECT", "UPDATE"],
-    "objects": [ { "table": "public.orders", "columns": ["status", "updated_at"] } ],
-    "fence": "id = '88213'",
+    "operations": ["select", "update"],
+    "objects": [ { "schema": "public", "relation": "orders", "columns": ["status", "updated_at"] } ],
+    "fence": ["id = '88213'"],
     "max_rows": 1
   },
   "expires_in": "30m"

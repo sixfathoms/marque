@@ -68,9 +68,11 @@ is unsure, correctness beats availability, and the answer is a human.
   "grants": ["submit", "self_approve"],   // or ["approve"] to delegate reviewing
   "target": "prod-primary",
   "role": "settings_writer",
-  "operations": ["UPDATE"],
-  "objects": [ { "table": "public.accounts", "columns": ["settings", "settings_updated_at"] } ],
-  "fence": "tier = 'sandbox'",
+  "operations": ["update"],
+  "objects": [
+    { "schema": "public", "relation": "accounts", "columns": ["settings", "settings_updated_at"] }
+  ],
+  "fence": ["tier = 'sandbox'"],
   "max_rows": 100,
   "not_after": "2026-11-30T00:00:00Z",
   "granted_by": "theo@acme.example"
@@ -251,3 +253,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated that `max_rows` bounds the named relation only, and added the write-set assertion as check (e) — see [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md).
 - **2026-08-16**: Amended after a second expert panel: pinned `search_path` (PostgreSQL resolves unqualified relations, functions **and operators** through it, so an unqualified fence can be redefined by anyone who can create an object in an earlier schema), forced deferred constraint triggers to fire before the write-set assertion, and restricted a fence to columns of the target relation — REPEATABLE READ protects only rows this transaction writes.
 - **2026-08-16**: Amended in the second panel's should-fix pass: attenuation compares fences by **syntactic conjunct-set inclusion**, not entailment — the undecidable check EDR-0029 was rewritten to avoid, which otherwise arrives once per hop in a chain.
+- **2026-08-19**: Amended so the worked delegation matches this record's own prose. The decision is unchanged — attenuation by syntactic conjunct-set inclusion, never by entailment — but the encoding contradicted it: `fence` was a string eleven lines above the sentence calling it an array, and the relation was one dotted string. Both now follow [EDR-0041](./0041-one-spelling-for-a-scope.md), which also settles when two conjuncts are equal, and therefore what the inclusion test compares.

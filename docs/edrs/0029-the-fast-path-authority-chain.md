@@ -132,9 +132,10 @@ the compilation).
    For `fence`, "within" is **not** left to an implementer, because predicate containment is undecidable
    and a semantic reading would be an approximation in the permissive direction (the exact error
    [EDR-0007](./0007-delegation-by-containment-proof.md) exists to avoid). The rule is **syntactic
-   identity after canonicalisation**: `marque.fence == artefact.fence`. A correctly-minted fast-path
-   marque produces that anyway, since the fence is copied from the artefact. A marque may never be
-   more permissive than the artefact it claims authority from.
+   identity after canonicalisation**: `marque.fence == artefact.fence`, and what canonicalisation
+   means is [EDR-0041](./0041-one-spelling-for-a-scope.md)'s. A correctly-minted fast-path marque
+   produces that anyway, since the fence is copied from the artefact. A marque may never be more
+   permissive than the artefact it claims authority from.
 
 Any failure is a refusal. The fence, the magnitude assertion and the nonce all still run afterwards
 ([EDR-0007](./0007-delegation-by-containment-proof.md),
@@ -247,3 +248,4 @@ state that an offline Pilot cannot resolve. So:
 - **2026-08-16**: Amended after the second panel's should-fix pass: made "within" decidable for a fence (syntactic identity after canonicalisation, since predicate containment is undecidable and a semantic reading would approximate in the permissive direction), corrected the artefact signature count — only a standing order carries two — and struck rate limits and budgets from the compromised-control-plane residual, since both are enforced by the compromised component.
 - **2026-08-16**: Amended in the second panel's should-fix pass: said what check 7 compares per artefact kind, required a signed compilation to authorise a delegation-kind marque, and required a delegation **chain** to ship whole so attenuation is verifiable at every hop.
 - **2026-08-16**: Amended for the emergency paths and operator surfaces: added `auth.kind: break_glass`, which reuses this record's verification wholesale — a break-glass grant is a signed artefact of the same family, so the emergency path introduces no new verification case ([EDR-0037](./0037-emergency-paths.md)).
+- **2026-08-19**: Amended with a pointer: what "canonicalisation" means in check 7 is defined in [EDR-0041](./0041-one-spelling-for-a-scope.md). The rule is unchanged.
