@@ -26,7 +26,7 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   different question and is still open.)
 - **A conjunct must parse standalone, and the Pilot checks it before composing.** Wrapping an element
   in parentheses is only sound if the element is one expression: `tier = 'sandbox') OR (1=1` survives
-  wrapping, erases the tier bound, and is byte-identical to the artefact it came from.
+  wrapping, erases the tier bound, and is identical to the artefact it came from.
 
 ### Changed
 
@@ -47,22 +47,30 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   [EDR-0007](/edrs/0007-delegation-by-containment-proof/)'s worked transaction reads
   `AND (fence) IS NOT TRUE`, which is correct for one conjunct and wrong for two: `IS` binds tighter
   than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests `c2` alone and a row failing `c1` is never
-  counted. The record now writes `<fence>` as the whole parenthesised conjunction, and the rule is in
-  M5's exit criteria and in `CLAUDE.md`'s invariant list rather than only in the record that
-  introduced it. Two session settings turned out to be inert as written, too: the lexer reads
-  `standard_conforming_strings` before a `SET` in the same message takes effect, and a `BEFORE`
-  trigger on the target can move `search_path` out from under every check that runs after the
-  operator's statement.
+  counted. The record now says what `<fence>` denotes — the bare conjunction, wrapped by the template
+  — and the rule is in M5's exit criteria and in `CLAUDE.md`'s invariant list rather than only in the
+  record that introduced it. The session settings failed in two further ways: `standard_conforming_strings` and
+  `backslash_quote` are read by the lexer, so a `SET` sent in the same message is inert while the GUC
+  still reads back correct; and a `BEFORE` trigger on the target can call `set_config` to move
+  `search_path` out from under every check that runs after the operator's statement.
 - **A relation had three spellings, not the two reported.**
   [EDR-0037](/edrs/0037-emergency-paths/) had already split the field and named the second half
   `table`. Every grant now reads `{ "schema": …, "relation": … }`.
 - **[EDR-0007](/edrs/0007-delegation-by-containment-proof/) stopped contradicting itself.** Its
   attenuation rule called the fence an array eleven lines below an example showing a string.
 
-Two questions surfaced by making the spellings agree are deliberately left open, because settling
-either changes a rule a different record decided: an agent's effective fence is the **union** of
-three conjunct sets, so it is tighter than its delegation's and an identity check refuses it for
-being tighter ([#20](https://github.com/sixfathoms/marque/issues/20)); and a wildcard relation is
+Five questions surfaced by writing the encoding down, and each is left open here because settling it
+changes a rule a different record decided. An agent's effective fence is the **union** of three
+conjunct sets, so it is tighter than its delegation's and an identity check refuses it for being
+tighter ([#20](https://github.com/sixfathoms/marque/issues/20), Phase 3b). A wildcard relation is
 spelled `"*"`, which PostgreSQL also accepts as a real relation name
-([#22](https://github.com/sixfathoms/marque/issues/22)). Until the first is settled an agent has no
-fast path, which is the fail-closed answer and is stated so nobody reaches for the other one.
+([#22](https://github.com/sixfathoms/marque/issues/22)). The signed `display` renders a fence and now
+has a list to render ([#23](https://github.com/sixfathoms/marque/issues/23), M3). The subset version a
+delegation is pinned to has no carrier on any artefact
+([#24](https://github.com/sixfathoms/marque/issues/24), M2). And what a conjunct may *reference* —
+functions, casts to domains, subqueries, explicitly-qualified operators — is bounded by nothing at
+all ([#25](https://github.com/sixfathoms/marque/issues/25), M5); that one is largely pre-existing and
+is the reason to say plainly that this record bounds a conjunct's shape and not its behaviour.
+
+Until the first is settled an agent has no fast path, which is the fail-closed answer and is written
+down so nobody reaches for the other one.

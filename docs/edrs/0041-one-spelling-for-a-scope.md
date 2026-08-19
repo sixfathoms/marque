@@ -27,8 +27,9 @@ picks the spelling and defines the comparison.
 - A **relation** is a `schema` field and a `relation` field. Never one dotted string.
 - An **operation** is lowercase.
 
-Whoever implements the containment proof at M2, or check 7 on the fast path, implements these. The
-records carrying the losing spelling are corrected by the same change that adds this one.
+Whoever extracts scope at M2, or implements the containment proof or check 7 on the fast path,
+implements these. The records carrying the losing spelling are corrected by the same change that adds
+this one.
 
 ## Context
 
@@ -55,8 +56,8 @@ inside a word no record defines.
 
 **EDR-0007's attenuation rule** requires *"syntactic conjunct-set inclusion, never by entailment"*
 and says "the `fence` array is conjunctive" — eleven lines after its own worked example shows a
-string. If the authored form is a string, recovering its conjuncts means parsing SQL. The parser is
-already in the Pilot — EDR-0029 step 5 has it re-check object scope — so the cost is not a new
+string. If the authored form is a string, recovering its conjuncts means parsing SQL. The parser
+belongs in the Pilot anyway — EDR-0029 step 5 has it re-check object scope — so the cost is not a new
 dependency but a moving one: [EDR-0039](./0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)
 says a `pg_query_go` upgrade parses statements the previous one refused, and a fence comparison that
 went through the grammar would make an **already-signed delegation mean something different after a
@@ -137,9 +138,10 @@ they are looking at an unfenced grant.
 **These are Pilot refusals, not authoring conventions.** An empty array, a duplicate conjunct, an
 empty-string conjunct and a malformed one are all refused by the Pilot, on the marque payload and on
 every artefact, before any comparison runs. Stating them as authoring rules would put them in the
-Harbourmaster — the component whose copy of a payload is authored by the adversary it defends against
-([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)) — and degrading `["tier = 'sandbox'"]`
-to `[]` is a complete row-scope bypass costing one JSON edit.
+Harbourmaster — the component that authors the artefact, so the rule would be one the control plane
+enforces on itself, which is what [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md) says a
+Pilot may not rely on. Degrading `["tier = 'sandbox'"]` to `[]` is a complete row-scope bypass
+costing one JSON edit.
 
 ### Two conjuncts are equal when their decoded characters are equal
 
@@ -156,17 +158,18 @@ bytes; decoding twice, or composing from a second read of the payload, means the
 the thing executed are different objects — which is
 [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)'s subject one layer down.
 
-The decode refuses: unknown fields; **duplicate keys**; keys that differ only in case; `null` where an
-array is expected; invalid UTF-8; and **unpaired surrogate escapes**. Each of the last three is a
+The decode refuses: unknown fields; **duplicate keys**; invalid UTF-8; keys that differ only in case;
+`null` where an array is expected; and **unpaired surrogate escapes**. Each of the last three is a
 demonstrated bypass rather than a precaution. Go matches field names case-insensitively, so `"Fence"`
 is neither unknown nor a duplicate — and `{"fence": [...], "Fence": null}` decodes clean to *no row
 restriction*, which is the total bypass this record refuses `[]` to prevent, by the one spelling an
 exact-match check misses. `null` and absent decode to the same value, so `"fence": null` does it
 alone. And a lone `\ud800` is ASCII on the wire, so a UTF-8 check passes it and Go substitutes
 U+FFFD — making two artefacts that differ compare equal, while a stricter reader elsewhere keeps them
-apart. The conformance format already implements all three and says why
-([`testdata/conformance/README.md`](https://github.com/sixfathoms/marque/blob/main/testdata/conformance/README.md));
-this record was weaker than its own cited precedent until it did.
+apart. The conformance format already implements all three — the first two with their reasons in
+[`testdata/conformance/README.md`](https://github.com/sixfathoms/marque/blob/main/testdata/conformance/README.md),
+the surrogate rule in `checkEscapes` in `internal/conformance/vectors.go` — and this record was
+weaker than its own cited precedent until it matched them.
 
 Beyond decoding, nothing is normalised: no whitespace folding, no identifier case folding, no
 reordering, no SQL normalisation, and no Unicode normalisation — NFC and NFD spellings of one
@@ -260,12 +263,12 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
 
 - **Check 7 becomes evaluable.** Comparing two lists of strings needs no parser, no schema and no
   catalogue, which is the budget an offline Pilot has.
-- **Attenuation becomes a set operation over strings**, so a delegation chain verifies at every hop
-  without going through the grammar — and therefore without inheriting the grammar's version. A
-  parser upgrade cannot change what an already-signed delegation permits by changing how its fence
-  compares.
+- **The comparison at every hop is a set operation over strings**, so a parser upgrade cannot change
+  what an already-signed delegation permits by changing how its fence *compares*. The conjunct
+  revalidation below does parse, and is pinned to the signed subset version for exactly that
+  reason — the comparison is what this buys, not the whole verification.
 - **The relation and the operation are spelled the same on both sides of the containment proof**, so
-  M2 compares those rather than translating them.
+  it compares those rather than translating them.
 
 **Harder.**
 
@@ -283,6 +286,10 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
   conjunct means a parse per conjunct per verification, and it means a Pilot must be able to evaluate
   the subset version each artefact was signed against — so retaining old subsets is a maintenance
   obligation, and refusing when it cannot is an availability cost taken deliberately.
+- **A malformed fence now fails at execution rather than at authoring.** A marque a human read,
+  approved and signed can still abort at the Pilot on an empty array, a duplicate conjunct or an
+  unparseable one, and the operator meets that after the approval instead of before it. The
+  alternative is a check run by the component that authored the artefact, which is not a check.
 - **Refusing unknown fields makes artefact evolution version-sensitive.** A new optional field is no
   longer free: an older Pilot refuses an artefact carrying it. That is the right direction for a
   signed authority artefact and it is still a cost, paid whenever the shape grows.
@@ -294,8 +301,8 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
 - **M2** extracts scope in this spelling, and its vectors carry it.
 - **The fast path** — [EDR-0029](./0029-the-fast-path-authority-chain.md) check 7 — implements the
   comparison as decoded-string equality. It arrives with `delegation`- and `surveyed`-kind marques,
-  which [scope](../content/overview/scope.md) puts in **Phase 3** — not with the interactive marques
-  of M3. A standing order is not affected either way: check 7 has no fence to compare for one,
+  which [scope](../content/overview/scope.md) puts in **Phase 3** for `delegation` and **Phase 3b**
+  for `surveyed` — not with the interactive marques of M3. A standing order is not affected either way: check 7 has no fence to compare for one,
   because the order's template is the bound.
 - **M5 builds the fence, and is where the per-element parentheses have to be.** Furthest from here
   and the rule likeliest to be lost, because by then a list of strings joined with `AND` will look

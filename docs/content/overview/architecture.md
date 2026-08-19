@@ -219,6 +219,7 @@ SELECT count(*) FROM public.accounts
 
 UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
+-- re-verify the pins: a BEFORE trigger can call set_config and move them
 -- (c) did any affected row end up outside the fence?   (catches tier := 'production')
 -- (d) affected rows <= max_rows                        (named relation only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire before (e)
@@ -226,8 +227,10 @@ SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire befor
 COMMIT;
 ```
 
-Four things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
-fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md));
+Five things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
+fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md)); the
+session pins do not survive the operator's own statement, because a `BEFORE` trigger on the target
+can call `set_config`, so they are re-verified before every check that follows it;
 composing a multi-conjunct fence as `(c1) AND (c2) IS NOT TRUE` rather than
 `((c1) AND (c2)) IS NOT TRUE` applies the TRUE-only test to the last conjunct alone, so a row failing
 any earlier one is never counted ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md));

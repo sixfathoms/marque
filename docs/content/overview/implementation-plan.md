@@ -199,7 +199,9 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 1. Session setup: `REPEATABLE READ`, pinned `search_path`, `SET CONSTRAINTS ALL IMMEDIATE`, statement
    and lock timeouts — plus `standard_conforming_strings` and `backslash_quote`, which are read by
    the lexer and so must be settled in an earlier round trip and **verified** with
-   `current_setting()` rather than assumed from the `SET`.
+   `current_setting()` rather than assumed from the `SET`. All three pins are re-verified before each
+   composed check, not once at `BEGIN`: a `BEFORE` trigger can call `set_config` between the
+   statement and the post-assert.
 2. The three checks — pre-check, post-assert, row-count assert — each **TRUE-only**, none of them
    `NOT (…)`. A fence is a list of conjuncts, so each is composed `(c1) AND (c2) AND …` and the
    whole conjunction is wrapped again before `IS NOT TRUE`
