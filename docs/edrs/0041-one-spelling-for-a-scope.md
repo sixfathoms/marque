@@ -57,7 +57,8 @@ inside a word no record defines.
 **EDR-0007's attenuation rule** requires *"syntactic conjunct-set inclusion, never by entailment"*
 and says "the `fence` array is conjunctive" — eleven lines after its own worked example shows a
 string. If the authored form is a string, recovering its conjuncts means parsing SQL. The parser
-belongs in the Pilot anyway — EDR-0029 step 5 has it re-check object scope — so the cost is not a new
+belongs in the Pilot anyway — EDR-0029 step 5 has it re-check object scope — so the cost is not a
+new
 dependency but a moving one: [EDR-0039](./0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)
 says a `pg_query_go` upgrade parses statements the previous one refused, and a fence comparison that
 went through the grammar would make an **already-signed delegation mean something different after a
@@ -86,7 +87,10 @@ EDR-0029's break-glass verification enumerates what the Pilot checks — the gra
 digest, its `not_after`, the statement against its `scope`, `sub`, the marque's `exp`, and the bound
 justification — with no fence among them. A fence written on a break-glass grant would therefore be
 a bound nothing compares. Giving break-glass a fence means giving its verification a case for it,
-which is EDR-0029's decision to make.
+which is EDR-0029's decision to make. EDR-0037 meanwhile lists the fence among the controls
+break-glass leaves unchanged, which is true of the mechanism and hollow as a control while no signed
+artefact carries one — [issue #26](https://github.com/sixfathoms/marque/issues/26), due before
+Phase 2.
 
 ```jsonc
 "fence": ["tier = 'sandbox'", "region = 'eu'"]     // tier = 'sandbox' AND region = 'eu'
@@ -120,12 +124,14 @@ not linked in yet), and it runs against the **subset version the artefact was si
 the version the Pilot happens to ship. A Pilot that cannot evaluate that version refuses. Otherwise a
 `pg_query_go` upgrade changes which already-signed conjuncts compose, which is the widening EDR-0039
 exists to prevent. Where that pin travels on a fence-bearing artefact is not stated by any record —
-[issue #24](https://github.com/sixfathoms/marque/issues/24).
+[issue #24](https://github.com/sixfathoms/marque/issues/24), due before M2.
 
 **This rule bounds a conjunct's shape, not what it may do.** It closes the composition escape and
-nothing else. A conjunct may still call a function, cast to a domain whose `CHECK` calls one, read
-another relation through a subquery, or name an operator explicitly qualified past the `search_path`
-pin — all demonstrated, all admitted by "parses as a boolean". EDR-0007 defines a *statement* subset
+nothing else. A conjunct that parses as a boolean may still call a function, cast to a domain whose
+`CHECK` calls one, read another relation through a subquery, or name an operator explicitly qualified
+past the `search_path` pin — all demonstrated. Reading another relation is already forbidden by
+EDR-0007 rule 5, which names no mechanism that enforces it, so the Pilot's revalidation is where that
+rule acquires one. The rest are bounded by nothing: EDR-0007 defines a *statement* subset
 and no record defines an *expression* subset for a fence, which is
 [issue #25](https://github.com/sixfathoms/marque/issues/25) and is due before M5. Saying so here is
 better than letting "the Pilot validates each conjunct" read as though the question were settled.
@@ -140,8 +146,13 @@ empty-string conjunct and a malformed one are all refused by the Pilot, on the m
 every artefact, before any comparison runs. Stating them as authoring rules would put them in the
 Harbourmaster — the component that authors the artefact, so the rule would be one the control plane
 enforces on itself, which is what [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md) says a
-Pilot may not rely on. Degrading `["tier = 'sandbox'"]` to `[]` is a complete row-scope bypass
-costing one JSON edit.
+Pilot may not rely on.
+
+Note what this does **not** buy. Refusing `[]` is not a defence against an adversarial author: one
+that wanted an unfenced grant would delete the key, which this record says is legitimately no row
+restriction, at exactly the same cost. The refusal is for the reader — `"fence": []` looks like a
+restriction and is not. What check 7 defends against is the marque carrying a fence the artefact did
+not.
 
 ### Two conjuncts are equal when their decoded characters are equal
 
@@ -162,9 +173,11 @@ The decode refuses: unknown fields; **duplicate keys**; invalid UTF-8; keys that
 `null` where an array is expected; and **unpaired surrogate escapes**. Each of the last three is a
 demonstrated bypass rather than a precaution. Go matches field names case-insensitively, so `"Fence"`
 is neither unknown nor a duplicate — and `{"fence": [...], "Fence": null}` decodes clean to *no row
-restriction*, which is the total bypass this record refuses `[]` to prevent, by the one spelling an
-exact-match check misses. `null` and absent decode to the same value, so `"fence": null` does it
-alone. And a lone `\ud800` is ASCII on the wire, so a UTF-8 check passes it and Go substitutes
+restriction* while the document plainly carries a fence. The same bytes, two values, depending on who
+reads them: exactly the divergence a signed artefact cannot afford, since the thing a human reviewed
+and the thing a Pilot enforces are then different objects. `null` and absent decode alike, so
+`"fence": null` does it with one key. And a lone `\ud800` is ASCII on the wire, so a UTF-8 check
+passes it and Go substitutes
 U+FFFD — making two artefacts that differ compare equal, while a stricter reader elsewhere keeps them
 apart. The conformance format already implements all three — the first two with their reasons in
 [`testdata/conformance/README.md`](https://github.com/sixfathoms/marque/blob/main/testdata/conformance/README.md),
@@ -279,8 +292,9 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
 - **Two fences differing only in spacing are different fences.** `tier='sandbox'` and
   `tier = 'sandbox'` are not equal, and an operator meets that as a refusal that looks like a bug —
   so the refusal must say the strings differ and show both.
-- **The containment proof still translates a predicate into a fence.** A vector's `predicate` is one
-  string and a grant's `fence` is a list, deliberately, so M2 composes rather than compares. This
+- **The containment proof composes the extracted predicate with the fence rather than comparing
+  them.** A vector's `predicate` is one string and a grant's `fence` is a list, deliberately, and
+  they meet at M5 where the fence is built. This
   record narrows what has to be translated; it does not remove the seam.
 - **Every Pilot now parses on the authority path, not only the statement path.** Revalidating each
   conjunct means a parse per conjunct per verification, and it means a Pilot must be able to evaluate
@@ -289,7 +303,10 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
 - **A malformed fence now fails at execution rather than at authoring.** A marque a human read,
   approved and signed can still abort at the Pilot on an empty array, a duplicate conjunct or an
   unparseable one, and the operator meets that after the approval instead of before it. The
-  alternative is a check run by the component that authored the artefact, which is not a check.
+  Harbourmaster can run the same checks as an advisory preflight so the common case is caught while
+  someone is still typing — but it is advisory, the Pilot repeats them authoritatively, and a check
+  run only by the component that authored the artefact is not a check. Late refusal is the residual,
+  not the design.
 - **Refusing unknown fields makes artefact evolution version-sensitive.** A new optional field is no
   longer free: an older Pilot refuses an artefact carrying it. That is the right direction for a
   signed authority artefact and it is still a cost, paid whenever the shape grows.
@@ -302,14 +319,16 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
 - **The fast path** — [EDR-0029](./0029-the-fast-path-authority-chain.md) check 7 — implements the
   comparison as decoded-string equality. It arrives with `delegation`- and `surveyed`-kind marques,
   which [scope](../content/overview/scope.md) puts in **Phase 3** for `delegation` and **Phase 3b**
-  for `surveyed` — not with the interactive marques of M3. A standing order is not affected either way: check 7 has no fence to compare for one,
+  for `surveyed` — not with the interactive marques of M3. A standing order is not affected either
+  way: check 7 has no fence to compare for one,
   because the order's template is the bound.
 - **M5 builds the fence, and is where the per-element parentheses have to be.** Furthest from here
   and the rule likeliest to be lost, because by then a list of strings joined with `AND` will look
   obviously correct. M5's exit criteria carry it, and so does EDR-0007's worked SQL.
 - **The signed `display`** ([EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)) renders a
   fence for the human who signs it. Its rendering rules are canonical and versioned, and they now
-  have a list to render rather than a predicate.
+  have a list to render rather than a predicate —
+  [issue #23](https://github.com/sixfathoms/marque/issues/23), due before M3.
 - **An agent has no fast path while the question below is open.** That is the fail-closed reading,
   and stating it is what stops the alternative: an implementer meeting a refusal on a legitimate
   agent marque and relaxing check 7 to clear it. It bounds **fast-path minting only** — an agent's
@@ -332,7 +351,7 @@ before Phase 3b, where agents land.
 PostgreSQL permits `"*"` as a quoted identifier — so a grant over one literal relation is
 indistinguishable from a grant over all of them. Renaming the field does not touch that, and an
 in-band sentinel wants replacing rather than renaming:
-[issue #22](https://github.com/sixfathoms/marque/issues/22).
+[issue #22](https://github.com/sixfathoms/marque/issues/22), due before the first grant is signed.
 
 ## References
 

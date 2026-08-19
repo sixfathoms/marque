@@ -125,7 +125,8 @@ one transaction:
 -- simple-query message before running any of it — so a SET sent beside the
 -- fence is inert while the GUC still reads back correct. The Pilot VERIFIES
 -- both with current_setting() and refuses on a mismatch — at connection
--- setup, and again before each composed check below (see rule 3).
+-- setup, and again before every check that follows target-defined code
+-- (the operator's statement, and SET CONSTRAINTS). See rule 3.
 SET standard_conforming_strings = on;       -- pinned: see rule 3
 SET backslash_quote             = off;      -- E'…' escapes regardless of the above
 
@@ -155,6 +156,8 @@ UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 --     same TRUE-only rule; catches an update that moves a row out of scope
 -- (d) affected rows <= max_rows            (of the NAMED RELATION only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire BEFORE (e)
+-- re-verify the three pins again (rule 3): SET CONSTRAINTS just ran
+--     user-defined trigger code, which can call set_config too
 -- (e) write-set assert                      (EDR-0033)
 
 COMMIT;
@@ -167,8 +170,8 @@ COMMIT;
 - Any of (a) through (e) failing rolls the transaction back. **Nothing is partially applied**, and the
   operator is told which check failed and by how much.
 
-Three rules govern how those checks are written, and each closes a way the fence would otherwise fail
-**open**:
+Six rules govern how those checks are written. The first four each close a way the fence would
+otherwise fail **open**; the last two bound what a fence and a row count may cover:
 
 1. **A row is inside the fence only when the fence predicate evaluates TRUE. UNKNOWN is outside.**
    Written as `NOT (tier = 'sandbox')`, a row with `tier IS NULL` yields `NOT NULL` = `NULL`, `WHERE`
@@ -207,9 +210,11 @@ Three rules govern how those checks are written, and each closes a way the fence
    conjuncts are composed as text — and they are **verified with `current_setting()` rather than set
    beside the fence**: both are read by the lexer, and PostgreSQL raw-parses a whole simple-query
    message before executing any of it, so a `SET` in the same message is inert while the GUC reads
-   back correct. All three pins are re-verified immediately before **each** composed check, not once
-   at `BEGIN`: the operator's own statement runs between (a) and (c), and a `BEFORE` trigger calling
-   `set_config` moves them for everything that follows. The Pilot also revalidates each conjunct
+   back correct. All three pins are re-verified immediately before **every check that follows
+   target-defined code**, not once at `BEGIN`. Two places run such code: the operator's own
+   statement, whose `BEFORE` trigger can call `set_config`, and `SET CONSTRAINTS ALL IMMEDIATE`,
+   whose whole purpose is to fire deferred constraint triggers. Check (a) needs no re-verification
+   because nothing has run between it and `BEGIN`. The Pilot also revalidates each conjunct
    before composing it ([EDR-0041](./0041-one-spelling-for-a-scope.md)).
 4. **Deferred constraint triggers are forced to fire before the write-set assertion.** A
    `DEFERRABLE INITIALLY DEFERRED` constraint fires at `COMMIT` — *after* check (e) has read a clean

@@ -31,10 +31,11 @@ knew what the design meant. Only someone reading the artefacts as an implementer
 ### Changed
 
 - **The structural rules are Pilot refusals, not authoring conventions.** An empty fence array, a
-  duplicate conjunct and a malformed one are refused where they are verified rather than where they
-  are written. Authoring happens in the control plane, and degrading `["tier = 'sandbox'"]` to `[]`
-  is a total row-scope bypass costing one JSON edit — a rule the Harbourmaster enforces on itself is
-  not a rule.
+  duplicate conjunct, an empty-string conjunct and a malformed one are refused where they are
+  verified rather than where they are written — a rule the Harbourmaster enforces on itself is not a
+  rule. What they buy is stated narrowly: they are for the reader, not against an adversarial author,
+  who would simply omit the key, which is legitimately no row restriction. `"fence": []` looks like a
+  restriction and is none.
 - **Seven records, the agents page and the conformance format were amended**, each record with a
   dated changelog line. No record is superseded: every decision stands, and only its encoding was
   wrong.
@@ -49,7 +50,8 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests `c2` alone and a row failing `c1` is never
   counted. The record now says what `<fence>` denotes — the bare conjunction, wrapped by the template
   — and the rule is in M5's exit criteria and in `CLAUDE.md`'s invariant list rather than only in the
-  record that introduced it. The session settings failed in two further ways: `standard_conforming_strings` and
+  record that introduced it. The session settings failed in two further ways:
+  `standard_conforming_strings` and
   `backslash_quote` are read by the lexer, so a `SET` sent in the same message is inert while the GUC
   still reads back correct; and a `BEFORE` trigger on the target can call `set_config` to move
   `search_path` out from under every check that runs after the operator's statement.
@@ -59,18 +61,20 @@ knew what the design meant. Only someone reading the artefacts as an implementer
 - **[EDR-0007](/edrs/0007-delegation-by-containment-proof/) stopped contradicting itself.** Its
   attenuation rule called the fence an array eleven lines below an example showing a string.
 
-Five questions surfaced by writing the encoding down, and each is left open here because settling it
+Six questions surfaced by writing the encoding down, and each is left open here because settling it
 changes a rule a different record decided. An agent's effective fence is the **union** of three
 conjunct sets, so it is tighter than its delegation's and an identity check refuses it for being
 tighter ([#20](https://github.com/sixfathoms/marque/issues/20), Phase 3b). A wildcard relation is
 spelled `"*"`, which PostgreSQL also accepts as a real relation name
-([#22](https://github.com/sixfathoms/marque/issues/22)). The signed `display` renders a fence and now
+([#22](https://github.com/sixfathoms/marque/issues/22), Phase 3, where fence-bearing grants land). The signed `display` renders a fence and now
 has a list to render ([#23](https://github.com/sixfathoms/marque/issues/23), M3). The subset version a
 delegation is pinned to has no carrier on any artefact
 ([#24](https://github.com/sixfathoms/marque/issues/24), M2). And what a conjunct may *reference* —
 functions, casts to domains, subqueries, explicitly-qualified operators — is bounded by nothing at
 all ([#25](https://github.com/sixfathoms/marque/issues/25), M5); that one is largely pre-existing and
-is the reason to say plainly that this record bounds a conjunct's shape and not its behaviour.
+is the reason to say plainly that this record bounds a conjunct's shape and not its behaviour. And
+break-glass lists the fence among the controls it leaves unchanged while no signed artefact on that
+path carries one ([#26](https://github.com/sixfathoms/marque/issues/26), Phase 2).
 
 Until the first is settled an agent has no fast path, which is the fail-closed answer and is written
 down so nobody reaches for the other one.

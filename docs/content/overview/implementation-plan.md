@@ -199,11 +199,11 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 1. Session setup: `REPEATABLE READ`, pinned `search_path`, `SET CONSTRAINTS ALL IMMEDIATE`, statement
    and lock timeouts — plus `standard_conforming_strings` and `backslash_quote`, which are read by
    the lexer and so must be settled in an earlier round trip and **verified** with
-   `current_setting()` rather than assumed from the `SET`. All three pins are re-verified before each
-   composed check, not once at `BEGIN`: a `BEFORE` trigger can call `set_config` between the
-   statement and the post-assert.
-2. The three checks — pre-check, post-assert, row-count assert — each **TRUE-only**, none of them
-   `NOT (…)`. A fence is a list of conjuncts, so each is composed `(c1) AND (c2) AND …` and the
+   `current_setting()` rather than assumed from the `SET`. All three pins are re-verified before every
+   check that follows target-defined code, not once at `BEGIN`: both a `BEFORE` trigger and a
+   deferred constraint trigger fired by `SET CONSTRAINTS` can call `set_config`.
+2. The pre-check and the post-assert are **TRUE-only**, neither of them `NOT (…)`; the row-count
+   assertion is the separate numeric one that enforces `max_rows`. A fence is a list of conjuncts, so each is composed `(c1) AND (c2) AND …` and the
    whole conjunction is wrapped again before `IS NOT TRUE`
    ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md)). Both halves fail open if skipped, and
    both look right without them.
@@ -218,9 +218,11 @@ otherwise fire after the write set was read; a two-conjunct fence whose first co
 top-level `OR`, composed both correctly and as `c1 AND c2`, where only the second admits a row
 outside the fence; the same fence composed as `(c1) AND (c2) IS NOT TRUE` rather than
 `((c1) AND (c2)) IS NOT TRUE`, where a row failing `c1` alone goes uncounted; a conjunct that closes
-its own parenthesis; a `BEFORE` trigger on the target that calls `set_config` to move `search_path`
-out from under the checks that follow the statement; and a crash between claim and commit losing the
-attempt rather than the count.
+its own parenthesis; a conjunct carrying a `$n` parameter reference, a comment token or a control
+character; an empty fence array, an empty-string conjunct and a duplicate conjunct, each refused by
+the Pilot rather than assumed away at authoring; a `BEFORE` trigger on the target that calls
+`set_config` to move `search_path` out from under the checks that follow the statement; and a crash
+between claim and commit losing the attempt rather than the count.
 
 ### M6 — The logbook
 

@@ -223,14 +223,18 @@ UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 -- (c) did any affected row end up outside the fence?   (catches tier := 'production')
 -- (d) affected rows <= max_rows                        (named relation only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire before (e)
+-- re-verify the pins again: that just ran user-defined trigger code
 -- (e) write-set assert: nothing outside the marque's `objects` was written
 COMMIT;
 ```
 
-Five things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
-fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md)); the
-session pins do not survive the operator's own statement, because a `BEFORE` trigger on the target
-can call `set_config`, so they are re-verified before every check that follows it;
+Six things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
+fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md));
+joining conjuncts as `c1 AND c2` rather than `(c1) AND (c2)` lets one carrying a top-level `OR`
+rebind against the following `AND`; the
+session pins do not survive target-defined code, because a `BEFORE` trigger — or a deferred
+constraint trigger fired by `SET CONSTRAINTS` — can call `set_config`, so they are re-verified before
+every check that follows any of it;
 composing a multi-conjunct fence as `(c1) AND (c2) IS NOT TRUE` rather than
 `((c1) AND (c2)) IS NOT TRUE` applies the TRUE-only test to the last conjunct alone, so a row failing
 any earlier one is never counted ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md));

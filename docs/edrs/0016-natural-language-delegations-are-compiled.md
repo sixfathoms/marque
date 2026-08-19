@@ -142,9 +142,15 @@ come from a database that operators and customers write to. They are passed as a
 escaped data block, never in an instruction position**, and the compiler's *output* is constrained
 rather than its input trusted:
 
-- every literal in an emitted fence predicate must come from the supplied distinct-value set;
-- every named column must exist in the supplied schema;
-- the predicate must parse under [EDR-0007](./0007-delegation-by-containment-proof.md)'s grammar.
+- every literal in an emitted fence conjunct must come from the supplied distinct-value set;
+- every named column must exist in the supplied schema, and belong to the target relation
+  ([EDR-0007](./0007-delegation-by-containment-proof.md) rule 5);
+- **each conjunct** must satisfy the shape rules in
+  [EDR-0041](./0041-one-spelling-for-a-scope.md) — it parses standalone as a boolean expression, and
+  carries no comment token, newline, control character or parameter reference. An earlier version of
+  this list said "the predicate must parse under EDR-0007's grammar", which is a *statement* grammar;
+  no expression subset for a fence exists yet, and that gap is
+  [issue #25](https://github.com/sixfathoms/marque/issues/25).
 
 A compilation failing any of those is refused. **What those constraints actually buy is narrower than
 it first reads**: they make a compilation *ungroundable in fabricated evidence* — a literal it did not
