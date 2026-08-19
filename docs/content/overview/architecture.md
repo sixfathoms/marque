@@ -224,7 +224,7 @@ UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 -- (c) did any affected row end up outside the fence?   (catches tier := 'production')
 -- (d) affected rows <= max_rows                        (named relation only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire before (e)
--- re-verify the pins again: that just ran user-defined trigger code
+-- re-verify the pins: (c) evaluated the fence and this ran trigger code
 -- (e) write-set assert: nothing outside the marque's `objects` was written
 COMMIT;
 ```

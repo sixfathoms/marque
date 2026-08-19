@@ -28,8 +28,8 @@ picks the spelling and defines the comparison.
 - An **operation** is lowercase.
 
 Whoever extracts scope at M2, or implements the containment proof or check 7 on the fast path,
-implements these. The records carrying the losing spelling are corrected by the same change that adds
-this one.
+implements these. The records carrying the losing spelling are corrected by the same change that
+adds this one.
 
 ## Context
 
@@ -41,11 +41,11 @@ descends from:
 | `"fence": ["tier = 'sandbox'"]` | the marque payload — [EDR-0004](./0004-marques-are-signed-leases.md), [EDR-0029](./0029-the-fast-path-authority-chain.md) |
 | `"fence": "tier = 'sandbox'"` | the delegation ([EDR-0007](./0007-delegation-by-containment-proof.md)), the compiled delegation ([EDR-0016](./0016-natural-language-delegations-are-compiled.md)), an agent's declared scope ([EDR-0018](./0018-agents-are-submitters-under-intersected-scope.md)) |
 
-A relation had three spellings, not two: `"table": "public.accounts"` in most grants,
-`{"schema": "public", "table": "*"}` in [EDR-0037](./0037-emergency-paths.md), and
-`{"schema": "public", "relation": "accounts"}` in the conformance *format*. Operations were uppercase
-in every record and lowercase in that format. (The corpus itself is empty until M2; what disagreed
-was the format and its loader.)
+A relation had three spellings, not two: `"table": "public.accounts"` in most grants, `{"schema":
+"public", "table": "*"}` in [EDR-0037](./0037-emergency-paths.md), and `{"schema": "public",
+"relation": "accounts"}` in the conformance *format*. Operations were uppercase in every record and
+lowercase in that format. (The corpus itself is empty until M2; what disagreed was the format and
+its loader.)
 
 Two checks are specified across the split.
 
@@ -68,10 +68,10 @@ string invites a coercion, and a fence comparison that resolves permissively is 
 both records say they exist to avoid. How a given implementation would break is not knowable from
 here, which is the reason to define it rather than to predict it.
 
-This is the discipline of [ZFN-14](https://zrz.io/zfn/14-schema-first-apis-generate-clients/) applied
-where the schema does not reach. [EDR-0020](./0020-one-schema-generates-every-client.md) makes one
-schema the source of every client, so the clients cannot disagree with each other about a field; these
-artefacts are hand-authored in records, and hand-authored is what drifts.
+This is the discipline of [ZFN-14](https://zrz.io/zfn/14-schema-first-apis-generate-clients/)
+applied where the schema does not reach. [EDR-0020](./0020-one-schema-generates-every-client.md)
+makes one schema the source of every client, so the clients cannot disagree with each other about a
+field; these artefacts are hand-authored in records, and hand-authored is what drifts.
 
 ## Decision
 
@@ -88,58 +88,57 @@ justification — with no fence among them. A fence written on a break-glass gra
 a bound nothing compares. Giving break-glass a fence means giving its verification a case for it,
 which is EDR-0029's decision to make. EDR-0037 meanwhile lists the fence among the controls
 break-glass leaves unchanged, which is true of the mechanism and hollow as a control while no signed
-artefact carries one — [issue #26](https://github.com/sixfathoms/marque/issues/26), due before
-Phase 2.
+artefact carries one — [issue #26](https://github.com/sixfathoms/marque/issues/26), due before Phase
+2.
 
 ```jsonc
 "fence": ["tier = 'sandbox'", "region = 'eu'"]     // tier = 'sandbox' AND region = 'eu'
 ```
 
-**Each element is parenthesised on its own when the fence becomes SQL.** The Pilot builds
-`(c1) AND (c2) AND …`, never `c1 AND c2`. A conjunct containing a top-level `OR` otherwise rebinds
-against the following `AND` — `tier = 'sandbox' OR tier = 'trial'` beside `region = 'eu'` binds as
-`tier = 'sandbox' OR (tier = 'trial' AND region = 'eu')`, which admits every sandbox row in every
-region. The fence comes out **wider than it was written** — a different mechanism from the
-`NOT (fence)` bug EDR-0007 corrected, and the same class of defect: a predicate composed into SQL
-without regard for how SQL will read it. The TRUE-only rule applies to the whole conjunction:
-`((c1) AND (c2)) IS NOT TRUE`. The rule is about a *fence's conjuncts*: it does not make every
-`(A) AND (B) IS NOT TRUE` in the corpus wrong, and
-[EDR-0028](./0028-statement-pipeline-and-provider-spi.md)'s comparison of two whole predicates is
-correct as written.
+**Each element is parenthesised on its own when the fence becomes SQL.** The Pilot builds `(c1) AND
+(c2) AND …`, never `c1 AND c2`. A conjunct containing a top-level `OR` otherwise rebinds against the
+following `AND` — `tier = 'sandbox' OR tier = 'trial'` beside `region = 'eu'` binds as `tier =
+'sandbox' OR (tier = 'trial' AND region = 'eu')`, which admits every sandbox row in every region.
+The fence comes out **wider than it was written** — a different mechanism from the `NOT (fence)` bug
+EDR-0007 corrected, and the same class of defect: a predicate composed into SQL without regard for
+how SQL will read it. The TRUE-only rule applies to the whole conjunction: `((c1) AND (c2)) IS NOT
+TRUE`. The rule is about a *fence's conjuncts*: it does not make every `(A) AND (B) IS NOT TRUE` in
+the corpus wrong, and [EDR-0028](./0028-statement-pipeline-and-provider-spi.md)'s comparison of two
+whole predicates is correct as written.
 
 **A conjunct is a complete boolean expression, and the Pilot proves it before composing.** Wrapping
-an element in parentheses is sound only if the element is one expression. `tier = 'sandbox') OR (1=1`
-survives wrapping, rebinds the composition and erases the tier bound — valid SQL, identical to the
-artefact, past every check. So a conjunct must parse standalone as a boolean expression; must carry
-no comment token, no newline and no character of Unicode category Cc or Cf; and must contain **no
-parameter reference**, because the composed statement already carries the operator's own `$n`
+an element in parentheses is sound only if the element is one expression. `tier = 'sandbox') OR
+(1=1` survives wrapping, rebinds the composition and erases the tier bound — valid SQL, identical to
+the artefact, past every check. So a conjunct must parse standalone as a boolean expression; must
+carry no comment token, no newline and no character of Unicode category Cc or Cf; and must contain
+**no parameter reference**, because the composed statement already carries the operator's own `$n`
 bindings and `["id = $1"]` is a fence that reads as precise and binds whatever the submitter passes.
 
 The Pilot revalidates each conjunct immediately before composition rather than trusting that an
 author did — a hand-authored delegation and an agent's declared scope never pass through EDR-0016's
 compiler. The parse is the Pilot's own
 ([EDR-0039](./0039-the-grammar-is-parsed-by-postgresqls-own-parser.md) puts the parser there; it is
-not linked in yet), and it runs against the **subset version the artefact was signed against**, never
-the version the Pilot happens to ship. A Pilot that cannot evaluate that version refuses. Otherwise a
-`pg_query_go` upgrade changes which already-signed conjuncts compose, which is the widening EDR-0039
-exists to prevent. Where that pin travels on a fence-bearing artefact is not stated by any record —
-[issue #24](https://github.com/sixfathoms/marque/issues/24), due before M2.
+not linked in yet), and it runs against the **subset version the artefact was signed against**,
+never the version the Pilot happens to ship. A Pilot that cannot evaluate that version refuses.
+Otherwise a `pg_query_go` upgrade changes which already-signed conjuncts compose, which is the
+widening EDR-0039 exists to prevent. Where that pin travels on a fence-bearing artefact is not
+stated by any record — [issue #24](https://github.com/sixfathoms/marque/issues/24), due before M2.
 
 **This rule bounds a conjunct's shape, not what it may do.** It closes the composition escape and
 nothing else. A conjunct that parses as a boolean may still call a function, cast to a domain whose
-`CHECK` calls one, read another relation through a subquery, or name an operator explicitly qualified
-past the `search_path` pin — all demonstrated, and none of them detected by any rule above. EDR-0007
-rule 5 does put a fence needing another relation outside the checkable subset, but that is a
-submission-time subset test carrying its own exception, not a refusal the Pilot makes, and no shape
-rule here sees a relation reference at all. So: EDR-0007 defines a *statement* subset
-and no record defines an *expression* subset for a fence, which is
-[issue #25](https://github.com/sixfathoms/marque/issues/25) and is due before M5. Saying so here is
-better than letting "the Pilot validates each conjunct" read as though the question were settled.
+`CHECK` calls one, read another relation through a subquery, or name an operator explicitly
+qualified past the `search_path` pin — all demonstrated, and none of them detected by any rule
+above. EDR-0007 rule 5 does put a fence needing another relation outside the checkable subset, but
+that is a submission-time subset test carrying its own exception, not a refusal the Pilot makes, and
+no shape rule here sees a relation reference at all. So: EDR-0007 defines a *statement* subset and
+no record defines an *expression* subset for a fence, which is [issue
+#25](https://github.com/sixfathoms/marque/issues/25) and is due before M5. Saying so here is better
+than letting "the Pilot validates each conjunct" read as though the question were settled.
 
-**An absent `fence` is no row restriction. An empty array is refused.** Both would mean
-the same thing under conjunction, and one of them reads as a restriction — a reviewer scanning a
-grant for a fence sees `"fence": []` and has to know the semantics of the empty conjunction to know
-they are looking at an unfenced grant.
+**An absent `fence` is no row restriction. An empty array is refused.** Both would mean the same
+thing under conjunction, and one of them reads as a restriction — a reviewer scanning a grant for a
+fence sees `"fence": []` and has to know the semantics of the empty conjunction to know they are
+looking at an unfenced grant.
 
 **These are Pilot refusals, not authoring conventions.** An empty array, a duplicate conjunct, an
 empty-string conjunct and a malformed one are all refused by the Pilot, on the marque payload and on
@@ -169,27 +168,27 @@ bytes; decoding twice, or composing from a second read of the payload, means the
 the thing executed are different objects — which is
 [EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md)'s subject one layer down.
 
-The decode refuses: unknown fields; **duplicate keys**; invalid UTF-8; keys that differ only in case;
-`null` where an array is expected; and **unpaired surrogate escapes**. Each of the last three is a
-demonstrated bypass rather than a precaution. Go matches field names case-insensitively, so `"Fence"`
-is neither unknown nor a duplicate — and `{"fence": [...], "Fence": null}` decodes clean to *no row
-restriction* while the document plainly carries a fence. The same bytes, two values, depending on who
-reads them: exactly the divergence a signed artefact cannot afford, since the thing a human reviewed
-and the thing a Pilot enforces are then different objects. `null` and absent decode alike, so
-`"fence": null` does it with one key. And a lone `\ud800` is ASCII on the wire, so a UTF-8 check
-passes it and Go substitutes
-U+FFFD — making two artefacts that differ compare equal, while a stricter reader elsewhere keeps them
-apart. The conformance format already implements all three — the first two with their reasons in
+The decode refuses: unknown fields; **duplicate keys**; invalid UTF-8; keys that differ only in
+case; `null` where an array is expected; and **unpaired surrogate escapes**. Each of the last three
+is a demonstrated bypass rather than a precaution. Go matches field names case-insensitively, so
+`"Fence"` is neither unknown nor a duplicate — and `{"fence": [...], "Fence": null}` decodes clean
+to *no row restriction* while the document plainly carries a fence. The same bytes, two values,
+depending on who reads them: exactly the divergence a signed artefact cannot afford, since the thing
+a human reviewed and the thing a Pilot enforces are then different objects. `null` and absent decode
+alike, so `"fence": null` does it with one key. And a lone `\ud800` is ASCII on the wire, so a UTF-8
+check passes it and Go substitutes U+FFFD — making two artefacts that differ compare equal, while a
+stricter reader elsewhere keeps them apart. The conformance format already implements all three —
+the first two with their reasons in
 [`testdata/conformance/README.md`](https://github.com/sixfathoms/marque/blob/main/testdata/conformance/README.md),
 the surrogate rule in `checkEscapes` in `internal/conformance/vectors.go` — and this record was
 weaker than its own cited precedent until it matched them.
 
 Beyond decoding, nothing is normalised: no whitespace folding, no identifier case folding, no
 reordering, no SQL normalisation, and no Unicode normalisation — NFC and NFD spellings of one
-predicate are **not** equal, which fails closed and is meant to. Every
-normalisation rule is a claim that two different texts denote the same predicate; deciding that is
-the parser's job, and the parser is what a syntactic rule exists to keep out of this path. An
-approximate answer here is approximate in the permissive direction.
+predicate are **not** equal, which fails closed and is meant to. Every normalisation rule is a claim
+that two different texts denote the same predicate; deciding that is the parser's job, and the
+parser is what a syntactic rule exists to keep out of this path. An approximate answer here is
+approximate in the permissive direction.
 
 So **canonicalisation adds nothing**, and that is the answer to what EDR-0029 check 7 left open.
 Three things follow.
@@ -205,9 +204,9 @@ Three things follow.
   `["tier = 'sandbox'", "region = 'eu'"]` are different fences, and nothing splits an element on
   `AND`, because splitting is parsing. An author who wants two conjuncts writes two elements.
 
-**A repeated element is refused.** It changes nothing under conjunction and nothing
-under set inclusion, so the only thing a duplicate can do is make an ordered comparison and a set
-comparison disagree about the same two fences.
+**A repeated element is refused.** It changes nothing under conjunction and nothing under set
+inclusion, so the only thing a duplicate can do is make an ordered comparison and a set comparison
+disagree about the same two fences.
 
 ### A relation is two fields
 
@@ -226,8 +225,8 @@ The field is `relation` rather than `table` because that is what the *extracted 
 the extracted scope is the thing a grant is compared against. One name for the two sides of one
 comparison is the point; two names is how the mismatch got here.
 
-A wildcard stays a value of the field rather than a different shape: EDR-0037's grant reads
-`{ "schema": "public", "relation": "*" }`.
+A wildcard stays a value of the field rather than a different shape: EDR-0037's grant reads `{
+"schema": "public", "relation": "*" }`.
 
 ### An operation is lowercase
 
@@ -258,17 +257,16 @@ Four asymmetries are correct, and are written down here so they are not refiled 
 ### The records this corrects
 
 Amended in the change that adds this record, each with a dated Changelog line:
-[EDR-0007](./0007-delegation-by-containment-proof.md),
-[EDR-0008](./0008-standing-orders.md),
+[EDR-0007](./0007-delegation-by-containment-proof.md), [EDR-0008](./0008-standing-orders.md),
 [EDR-0016](./0016-natural-language-delegations-are-compiled.md),
 [EDR-0018](./0018-agents-are-submitters-under-intersected-scope.md),
-[EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md),
-[EDR-0037](./0037-emergency-paths.md), and the agents concept page. EDR-0029 gains a pointer to this
-record for what canonicalisation means; its rule is unchanged.
+[EDR-0036](./0036-what-is-signed-must-be-what-was-seen.md), [EDR-0037](./0037-emergency-paths.md),
+and the agents concept page. EDR-0029 gains a pointer to this record for what canonicalisation
+means; its rule is unchanged.
 
 No record is superseded. Every decision stands — containment and never entailment, syntactic and
-never semantic, the fence as a bound the Pilot applies. What was wrong was the encoding, which is the
-same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` correction.
+never semantic, the fence as a bound the Pilot applies. What was wrong was the encoding, which is
+the same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` correction.
 
 ## Consequences
 
@@ -342,17 +340,17 @@ same instrument EDR-0007's 2026-08-15 amendment used for the `NOT (fence)` corre
 scope as the **intersection** of three grants, and for fences an intersection is the *union* of
 conjunct sets — more conjuncts is tighter. A marque minted for an agent under its effective fence
 would therefore carry conjuncts the delegation it claims authority from does not, and check 7's
-identity comparison would refuse it for being tighter. Making the spellings agree is what brings that
-into view; resolving it means deciding whether check 7 stays identity, which is EDR-0029's decision
-and not this one's. It is [issue #20](https://github.com/sixfathoms/marque/issues/20), and it is due
-before Phase 3b, where agents land.
+identity comparison would refuse it for being tighter. Making the spellings agree is what brings
+that into view; resolving it means deciding whether check 7 stays identity, which is EDR-0029's
+decision and not this one's. It is [issue #20](https://github.com/sixfathoms/marque/issues/20), and
+it is due before Phase 3b, where agents land.
 
 **A hazard this record inherits and does not fix.** EDR-0037 spells a wildcard relation `"*"`, and
 PostgreSQL permits `"*"` as a quoted identifier — so a grant over one literal relation is
 indistinguishable from a grant over all of them. Renaming the field does not touch that, and an
-in-band sentinel wants replacing rather than renaming:
-[issue #22](https://github.com/sixfathoms/marque/issues/22), due before the first grant carrying one
-is signed — which today means a break-glass grant, not a delegation.
+in-band sentinel wants replacing rather than renaming: [issue
+#22](https://github.com/sixfathoms/marque/issues/22), due before the first grant carrying one is
+signed — which today means a break-glass grant, not a delegation.
 
 ## References
 

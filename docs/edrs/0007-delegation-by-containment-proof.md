@@ -125,8 +125,9 @@ one transaction:
 -- simple-query message before running any of it — so a SET sent beside the
 -- fence is inert while the GUC still reads back correct. The Pilot VERIFIES
 -- both with current_setting() and refuses on a mismatch — at connection
--- setup, and again before every check that follows target-defined code
--- (the operator's statement, and SET CONSTRAINTS). See rule 3.
+-- setup, and again before every step that follows code the Pilot did not
+-- compose: the fence's own evaluation, the operator's statement, and
+-- SET CONSTRAINTS. See rule 3.
 SET standard_conforming_strings = on;       -- pinned: see rule 3
 SET backslash_quote             = off;      -- E'…' escapes regardless of the above
 
@@ -158,8 +159,8 @@ UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 --     same TRUE-only rule; catches an update that moves a row out of scope
 -- (d) affected rows <= max_rows            (of the NAMED RELATION only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire BEFORE (e)
--- re-verify the three pins again (rule 3): SET CONSTRAINTS just ran
---     user-defined trigger code, which can call set_config too
+-- re-verify the three pins again (rule 3): (c) evaluated the fence again,
+--     and SET CONSTRAINTS just ran user-defined trigger code
 -- (e) write-set assert                      (EDR-0033)
 
 COMMIT;
@@ -221,9 +222,18 @@ transaction never writes — and the sixth bounds what a row count covers:
    deferred constraint triggers. So the pins are re-verified before (b), before (c) and before (e).
    Check (a) needs none, because between `BEGIN` and it only the Pilot's own `SET LOCAL`s have run.
 
-   **Re-verification cannot repair the check it follows.** A conjunct that moves `search_path` while
-   (a) is being evaluated has already spoiled (a)'s own result, and no later `current_setting()` call
-   undoes that. Only bounding what a conjunct may *do* closes that, and nothing does yet —
+   **Re-verification bounds the damage; it does not prevent it.** Not for the obvious reason: a
+   `set_config` called during (a) cannot rebind (a)'s own identifiers, because PostgreSQL resolves
+   those at parse analysis, before execution begins. Two mechanisms survive that, and both apply to
+   (c) as well as (a), since both evaluate the fence. A function carrying its own `SET search_path`
+   clause **restores it on exit**, so every later `current_setting()` check passes while resolution
+   inside that function — and inside any function body first parsed during the same statement — has
+   already happened under the attacker's path. And more simply, with no setting involved at all: a
+   volatile conjunct function can read or write whatever it likes and return whatever it likes, so it
+   can spoil the count (a) produces without touching a pin.
+
+   So the pins are worth re-verifying, and re-verification is not the control. Bounding what a
+   conjunct may *do* is, and nothing does yet —
    [issue #25](https://github.com/sixfathoms/marque/issues/25). Revalidating a conjunct's shape
    before composing it is a different control, and not a substitute.
 4. **Deferred constraint triggers are forced to fire before the write-set assertion.** A
@@ -231,11 +241,11 @@ transaction never writes — and the sixth bounds what a row count covers:
    write set — so its writes would land inside the committed transaction unchecked, by a mechanism
    designed to defer until commit. `SET CONSTRAINTS ALL IMMEDIATE` immediately before (e) pulls them
    forward into the checked window ([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
-5. **Every conjunct may reference only columns of the target relation.** The rule is per conjunct,
-   and it holds for each of them separately — one conjunct naming a column of some other relation in
-   the grant's `objects` puts the fence outside the subset just as a single-predicate fence would.
-   REPEATABLE READ makes the pre-check and the statement agree about rows *this* transaction
-   writes; it does not protect a
+5. **Every conjunct may reference only columns of the target relation**, tested at submission with
+   §1's subset test rather than by the Pilot. The rule is per conjunct, and it holds for each
+   separately — one conjunct naming a column of some other relation in the grant's `objects` puts the
+   fence outside the subset just as a single-predicate fence would. REPEATABLE READ makes the
+   pre-check and the statement agree about rows *this* transaction writes; it does not protect a
    fence that depends on some other row — a tenant row, a parent — which a concurrent transaction may
    change between (a) and (b). A fence needing another relation is outside the checkable subset
    unless the engine can lock the referenced rows for the transaction's duration.
@@ -309,4 +319,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 - **2026-08-16**: Amended after a second expert panel: pinned `search_path` (PostgreSQL resolves unqualified relations, functions **and operators** through it, so an unqualified fence can be redefined by anyone who can create an object in an earlier schema), forced deferred constraint triggers to fire before the write-set assertion, and restricted a fence to columns of the target relation — REPEATABLE READ protects only rows this transaction writes.
 - **2026-08-16**: Amended in the second panel's should-fix pass: attenuation compares fences by **syntactic conjunct-set inclusion**, not entailment — the undecidable check EDR-0029 was rewritten to avoid, which otherwise arrives once per hop in a chain.
 - **2026-08-19**: Amended so the worked delegation matches this record's own prose. The decision is unchanged — attenuation by syntactic conjunct-set inclusion, never by entailment — but the encoding contradicted it: `fence` was a string eleven lines above the sentence calling it an array, the relation was one dotted string, and the operation was uppercase. All three now follow [EDR-0041](./0041-one-spelling-for-a-scope.md), which also settles when two conjuncts are equal, and therefore what the inclusion test compares. The worked SQL now says what `<fence>` denotes — the bare conjunction `(c1) AND (c2)`, wrapped by the template so the comparison reads `((c1) AND (c2)) IS NOT TRUE`. `IS` binds tighter than `AND`, so the unwrapped `(c1) AND (c2) IS NOT TRUE` tests c2 alone and lets a row failing c1 through — the fail-open the 2026-08-15 `NOT (fence)` correction closed, reopened by the fence becoming a list. Rule 1 says what `<fence>` denotes; rule 3 pins `standard_conforming_strings` and has the Pilot revalidate each conjunct before composing it, since a hand-authored delegation and an agent's declared scope never meet the compiler; rule 5 is restated per conjunct; and a stale "see rule 4" against the `search_path` pin now says rule 3. Rule 3 also drops a claim that was never true: it attributed the refusal of a non-builtin reference in a fence to EDR-0016, which states no such rule. What a conjunct may reference is undefined and is now tracked as [issue #25](https://github.com/sixfathoms/marque/issues/25). `standard_conforming_strings` and `backslash_quote` are pinned at connection setup and verified with `current_setting()`, because the lexer reads them and PostgreSQL raw-parses a whole simple-query message before running any of it — a `SET` beside the fence is inert while the GUC reads back correct; and all three pins are re-verified before each composed check, since a `BEFORE` trigger on the target can call `set_config` between the statement and the post-assert.
-- **2026-08-19**: Amended again after the same review found the pin rule too narrow. It named two sources of code the Pilot does not compose — the operator's statement and the deferred triggers `SET CONSTRAINTS ALL IMMEDIATE` fires — and missed a third: a fence conjunct may call a function, so evaluating the fence in (a) can move the pins before the statement runs. They are now re-verified before (b), (c) and (e), and the record says plainly that re-verification cannot repair the check it follows — which is why bounding a conjunct's behaviour ([issue #25](https://github.com/sixfathoms/marque/issues/25)) is load-bearing rather than tidying. Rule 5 is no longer described as something the Pilot enforces; it is a submission-time subset test with its own exception. And the list's preamble said "Three rules" above six.
+- **2026-08-19**: Amended again after the same review found the pin rule too narrow. It named two sources of code the Pilot does not compose — the operator's statement and the deferred triggers `SET CONSTRAINTS ALL IMMEDIATE` fires — and missed a third: a fence conjunct may call a function, so evaluating the fence in (a) can move the pins before the statement runs. They are now re-verified before (b), (c) and (e), and the record says plainly that re-verification cannot repair the check it follows — which is why bounding a conjunct's behaviour ([issue #25](https://github.com/sixfathoms/marque/issues/25)) is load-bearing rather than tidying. Rule 5 now says it is tested at submission, and the list's preamble — which said "Three rules" above six — counts it among the rules closing a fail-open and names its own: a concurrent change to a row the fence depends on and this transaction never writes. The correction that rule 5 is not a refusal the *Pilot* makes belongs to [EDR-0041](./0041-one-spelling-for-a-scope.md) and [EDR-0016](./0016-natural-language-delegations-are-compiled.md), which is where it was made.

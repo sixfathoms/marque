@@ -206,9 +206,8 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 2. The pre-check and the post-assert are **TRUE-only**, neither of them `NOT (…)`; the row-count
    assertion is the separate numeric one that enforces `max_rows`. A fence is a list of conjuncts, so
    each is composed `(c1) AND (c2) AND …` and the whole conjunction is wrapped again before
-   `IS NOT TRUE`
-   ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md)). Both halves fail open if skipped, and
-   both look right without them.
+   `IS NOT TRUE` ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md)). Both halves fail open if
+   skipped, and both look right without them.
 3. The write-set assertion over everything the engine wrote, not only the named relation.
 4. The execution nonce, claimed **before** the statement runs, with the budget consumed by the claim
    ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)).
@@ -225,9 +224,14 @@ character; an empty fence array, an empty-string conjunct and a duplicate conjun
 the Pilot rather than assumed away at authoring; a `BEFORE` trigger on the target that calls
 `set_config` to move `search_path` out from under the checks that follow the statement; a deferred
 constraint trigger that calls `set_config` between `SET CONSTRAINTS ALL IMMEDIATE` and the write-set
-assertion; a fence conjunct that calls `set_config` during the pre-check itself, which
-re-verification cannot repair and which is why bounding a conjunct's behaviour is tracked separately;
-and a crash between claim and commit losing the attempt rather than the count.
+assertion; a fence conjunct that calls `set_config` during the pre-check and leaves the pins moved,
+caught before (b); and a crash between claim and commit losing the attempt rather than the count.
+
+One escape route is deliberately **not** on that list, because it does not abort: a conjunct whose
+function restores `search_path` on exit, or which simply returns a spoiled answer, defeats the
+pre-check without leaving anything for a later check to see. That is the gap pinned to
+[issue #25](https://github.com/sixfathoms/marque/issues/25), and M5 records it rather than implying a
+control it does not have.
 
 ### M6 — The logbook
 

@@ -50,13 +50,14 @@ knew what the design meant. Only someone reading the artefacts as an implementer
   than `AND`, so `(c1) AND (c2) IS NOT TRUE` tests `c2` alone and a row failing `c1` is never
   counted. The record now says what `<fence>` denotes — the bare conjunction, wrapped by the template
   — and the rule is in M5's exit criteria and in `CLAUDE.md`'s invariant list rather than only in the
-  record that introduced it. The session settings failed in three further ways:
+  record that introduced it. The session settings then failed in four further ways.
   `standard_conforming_strings` and `backslash_quote` are read by the lexer, so a `SET` sent in the
-  same message is inert while the GUC still reads back correct; a `BEFORE` trigger on the target can
-  call `set_config`; and so can a deferred constraint trigger, which `SET CONSTRAINTS ALL IMMEDIATE`
-  exists to fire immediately before the write-set assertion. The pins are re-verified before every
-  step that follows code the Pilot did not compose — including the fence's own evaluation, since a
-  conjunct may call a function.
+  same message is inert while the GUC still reads back correct. And three kinds of code the Pilot
+  does not compose can move a pin out from under the checks that follow: a `BEFORE` trigger on the
+  target, a deferred constraint trigger fired by `SET CONSTRAINTS ALL IMMEDIATE`, and the fence's own
+  evaluation, since a conjunct may call a function. The pins are re-verified before every step that
+  follows any of them, which bounds the damage without preventing it — a function that restores the
+  setting on exit leaves every later check passing.
 - **A relation had three spellings, not the two reported.**
   [EDR-0037](/edrs/0037-emergency-paths/) had already split the field and named the second half
   `table`. Every grant now reads `{ "schema": …, "relation": … }`.
