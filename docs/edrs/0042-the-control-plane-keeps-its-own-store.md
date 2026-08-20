@@ -4,7 +4,7 @@ title: "Give the control plane's store a schema, a migrator, and a driver rule t
 summary: "The store was already fixed to PostgreSQL. What M1 owed was the schema, a forward-only digest-checked migrator, and a replacement for EDR-0005's no-driver-linked rule, which PostgreSQL for Marque's own state makes unachievable."
 status: accepted
 implementation: partial
-implementation_note: "The schema, the migrator, the confinement test and the depguard block exist, in the same change as store.Open — the obligation this record set. CI runs the loader offline and the migrator against a real PostgreSQL behind a build tag. Nothing serves yet: no binary links the store."
+implementation_note: "The schema, the migrator, the confinement test and the depguard block exist, in the same change as store.Open. `harbourmaster migrate` is an explicit command and `harbourmaster serve` verifies and refuses rather than migrating. CI runs the loader offline and the whole store against a real PostgreSQL behind a build tag, including M1's six steps end to end."
 date: 2026-08-20
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
