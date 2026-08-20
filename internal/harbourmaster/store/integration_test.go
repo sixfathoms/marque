@@ -481,11 +481,17 @@ func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 		add(table, "DELETE", false)
 		add(table, "TRUNCATE", false)
 		// REFERENCES lets a role point a foreign key at the table, TRIGGER lets
-		// it attach code that runs on every write, and MAINTAIN — added in
-		// PostgreSQL 17, which is the version this pins — lets it VACUUM,
+		// it attach code that runs on every write, and MAINTAIN lets it VACUUM,
 		// ANALYSE, REINDEX and CLUSTER. "Every privilege" named five of eight,
 		// then seven of eight, each time because someone counted from memory
 		// instead of asking the server.
+		//
+		// Ask it with aclexplode, not information_schema. Measured on 18.3:
+		// aclexplode over pg_class.relacl after GRANT ALL reports eight, and
+		// information_schema.table_privileges reports seven — it omits MAINTAIN
+		// because that view is the SQL standard's and MAINTAIN is not in it.
+		// Whoever next checks this count will reach for information_schema and
+		// conclude there are seven.
 		add(table, "REFERENCES", false)
 		add(table, "TRIGGER", false)
 		add(table, "MAINTAIN", false)
