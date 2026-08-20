@@ -112,13 +112,17 @@ plane holds no target credential — is untouched.
 
 - **Embedded** with `embed.FS`, so the binary carries its migrations and a deployment cannot arrive
   missing half of itself. This is **not** a guard against a deleted migration file: deleting the last
-  unapplied one produces a binary whose embedded and applied sets still agree. What catches that is
-  contiguous numbering.
-- **Numbered contiguously from 1**, with a gap refused. Combined with the digest below, an edited,
-  reordered or removed migration is a refusal rather than a silent difference between two
-  deployments.
+  unapplied one produces a binary whose embedded and applied sets still agree — and **nothing here
+  catches that**, because no record of it having existed survives. Contiguous numbering catches a
+  gap, not a truncation. The honest boundary is that these rules protect *applied* history.
+- **Numbered contiguously from 1**, with a gap refused. A gap means a migration was removed from the
+  middle, which the digest check below would otherwise notice only once it had been applied
+  somewhere.
 - **Each migration records the SHA-256 of its raw bytes**, and the applied set must be an exact
-  prefix of the embedded set with matching digests.
+  prefix of the embedded set with matching digests. So an edit, a reordering or a removal **within
+  applied history** is a refusal rather than a silent difference between two deployments. A migration
+  that has never been applied anywhere is outside this: nothing has recorded it, so nothing misses
+  it.
 - **Forward only.** No down migrations: a rollback plan nobody has run, against the only copy of the
   state, is not a plan.
 - **The record of a migration commits in the same transaction as its DDL.** PostgreSQL supports
@@ -209,8 +213,9 @@ Named individually, because a reader who sees only one will assume the rest is r
   withheld `UPDATE` grant and non-ownership — so M6 has no second transactional store and no dual
   write, which is the thing [ZFN-24](https://zrz.io/zfn/24-one-transactional-store-per-write/)
   forbids and EDR-0013 was designed around.
-- The request-state vocabulary and the tenant column arrive at migration one, where the column
-  costs a column.
+- Both vocabularies and the tenant column arrive at migration one — the request states borrowed
+  whole from EDR-0038, the execution outcomes fixed here — so none of the three is a later migration
+  to widen a constrained column.
 
 **Harder.**
 

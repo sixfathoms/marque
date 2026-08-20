@@ -81,9 +81,10 @@ that looks like a Marque bug.
 connection, are excluded from every error path and log line, and are never returned over any API. A
 Pilot exposes no endpoint that reads a credential, by construction and not by permission.
 
-**The Harbourmaster cannot connect, and does not try.** Anything requiring a connection — a rehearsal
-([EDR-0010](./0010-rehearse-before-you-sign.md)), a schema introspection for the analyser, a
-health check — is a request *to a Pilot*, and comes back as data. It holds no target credential and
+**The Harbourmaster cannot connect to a target, and does not try.** Anything requiring a *target*
+connection — a rehearsal ([EDR-0010](./0010-rehearse-before-you-sign.md)), a schema introspection for
+the analyser, a health check — is a request *to a Pilot*, and comes back as data. It connects to one
+database only, its own ([EDR-0042](./0042-the-control-plane-keeps-its-own-store.md)). It holds no target credential and
 no target connection parameters, which is what makes that true.
 
 This originally read *"it has no database driver for target engines linked in"*, which was a stronger
@@ -92,8 +93,9 @@ Marque's own state on PostgreSQL, PostgreSQL is also a target engine, and one dr
 sentence was never achievable after that record was accepted and went unchallenged only while the
 Harbourmaster had no storage code and so linked no drivers at all.
 [EDR-0042](./0042-the-control-plane-keeps-its-own-store.md) replaces it with import discipline — a
-driver confined by lint to the one package that needs it, no exception at all for an engine Marque
-does not store its own state in — and is explicit that this is weaker: a linter reads imports, not
+driver confined by lint to the two packages that need one — the Harbourmaster's store and the
+Pilot's adapter, which must have it — with no exception at all for an engine Marque does not store
+its own state in — and is explicit that this is weaker: a linter reads imports, not
 capability.
 
 **Verify positively after any change.** A lazily-initialised connection pool hides broken database
@@ -119,8 +121,8 @@ the session's actual database user on the target — not the configuration's opi
   concentrated in the Pilot, which must therefore be the most boring, smallest, least-featured
   component in the system. Every feature request aimed at it should be read as an attempt to widen
   the one component that holds credentials.
-- **The Harbourmaster cannot do anything requiring a connection**, which makes several convenient
-  features into round trips: schema autocomplete, rehearsal, table metadata for the analyser. Each
+- **The Harbourmaster cannot do anything requiring a *target* connection**, which makes several
+  convenient features into round trips: schema autocomplete, rehearsal, table metadata for the analyser. Each
   becomes a Pilot API, and each of those is new surface on the component that must stay small.
 - Identity-based database auth has to be configured on the target, which is real work per target and
   not always available on managed engines.
@@ -147,4 +149,4 @@ the session's actual database user on the target — not the configuration's opi
   ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)). This line was missing when the
   amendment was made, which is the corpus's own rule 1 broken in the one place it is most visible.
 - **2026-08-16**: Amended after the second panel's synthesis: extended the blast-radius bullet to name the read channel and the fast-path residual.
-- **2026-08-20**: Amended. The driver sentence — "no database driver for target engines linked in" — is replaced, because it had been unachievable since [EDR-0013](./0013-async-work-rides-the-wal.md) fixed Marque's own state on PostgreSQL: PostgreSQL is also a target engine and one driver serves both. It survived only while the Harbourmaster had no storage code. The decision is unchanged — the control plane holds no target credential and cannot reach a target — and the mechanism is now import discipline ([EDR-0042](./0042-the-control-plane-keeps-its-own-store.md)), which that record states plainly is weaker. `implementation_note` corrected for the same reason. Where a target's connection parameters live is [issue #36](https://github.com/sixfathoms/marque/issues/36).
+- **2026-08-20**: Amended. The driver sentence — "no database driver for target engines linked in" — is replaced, because it had been unachievable since [EDR-0013](./0013-async-work-rides-the-wal.md) fixed Marque's own state on PostgreSQL: PostgreSQL is also a target engine and one driver serves both. It survived only while the Harbourmaster had no storage code. The decision is unchanged — the control plane holds no target credential and cannot mint authority to reach one, which is not the same as "cannot reach a target": the bounded operator-signed read channel this record already carves out survives — and the mechanism is now import discipline ([EDR-0042](./0042-the-control-plane-keeps-its-own-store.md)), which that record states plainly is weaker. `implementation_note` corrected for the same reason. Where a target's connection parameters live is [issue #36](https://github.com/sixfathoms/marque/issues/36).
