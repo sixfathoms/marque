@@ -488,9 +488,13 @@ type RecordExecutionRequest struct {
 	// nonce identifies one attempt. Repeating it returns the stored outcome.
 	Nonce   string           `protobuf:"bytes,2,opt,name=nonce,proto3" json:"nonce,omitempty"`
 	Outcome ExecutionOutcome `protobuf:"varint,3,opt,name=outcome,proto3,enum=marque.v1.ExecutionOutcome" json:"outcome,omitempty"`
-	// rows_affected is what the statement reported. It is M1's whole notion of a
-	// result (EDR-0042).
-	RowsAffected  int64 `protobuf:"varint,4,opt,name=rows_affected,json=rowsAffected,proto3" json:"rows_affected,omitempty"`
+	// rows_affected is what the statement reported, and is M1's whole notion of a
+	// result (EDR-0042). **Optional**, and absent exactly when the outcome is
+	// INDETERMINATE: a presence-less int64 could only say zero, and zero is a
+	// count. The schema enforces the same equivalence with a CHECK, because the
+	// one thing not to do about an outcome meaning "nobody knows" is invent a
+	// number for it.
+	RowsAffected  *int64 `protobuf:"varint,4,opt,name=rows_affected,json=rowsAffected,proto3,oneof" json:"rows_affected,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -547,8 +551,8 @@ func (x *RecordExecutionRequest) GetOutcome() ExecutionOutcome {
 }
 
 func (x *RecordExecutionRequest) GetRowsAffected() int64 {
-	if x != nil {
-		return x.RowsAffected
+	if x != nil && x.RowsAffected != nil {
+		return *x.RowsAffected
 	}
 	return 0
 }
@@ -611,10 +615,11 @@ func (x *RecordExecutionResponse) GetExecution() *Execution {
 
 // Execution is one recorded attempt.
 type Execution struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Nonce         string                 `protobuf:"bytes,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	Outcome       ExecutionOutcome       `protobuf:"varint,2,opt,name=outcome,proto3,enum=marque.v1.ExecutionOutcome" json:"outcome,omitempty"`
-	RowsAffected  int64                  `protobuf:"varint,3,opt,name=rows_affected,json=rowsAffected,proto3" json:"rows_affected,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Nonce   string                 `protobuf:"bytes,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Outcome ExecutionOutcome       `protobuf:"varint,2,opt,name=outcome,proto3,enum=marque.v1.ExecutionOutcome" json:"outcome,omitempty"`
+	// Absent exactly when outcome is INDETERMINATE. See RecordExecutionRequest.
+	RowsAffected  *int64 `protobuf:"varint,3,opt,name=rows_affected,json=rowsAffected,proto3,oneof" json:"rows_affected,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -664,8 +669,8 @@ func (x *Execution) GetOutcome() ExecutionOutcome {
 }
 
 func (x *Execution) GetRowsAffected() int64 {
-	if x != nil {
-		return x.RowsAffected
+	if x != nil && x.RowsAffected != nil {
+		return *x.RowsAffected
 	}
 	return 0
 }
@@ -905,19 +910,21 @@ const file_marque_v1_harbourmaster_proto_rawDesc = "" +
 	"\bapprover\x18\x02 \x01(\tR\bapprover\x12\x14\n" +
 	"\x05stage\x18\x03 \x01(\rR\x05stage\"?\n" +
 	"\x0fApproveResponse\x12,\n" +
-	"\arequest\x18\x01 \x01(\v2\x12.marque.v1.RequestR\arequest\"\xa8\x01\n" +
+	"\arequest\x18\x01 \x01(\v2\x12.marque.v1.RequestR\arequest\"\xbf\x01\n" +
 	"\x16RecordExecutionRequest\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x14\n" +
 	"\x05nonce\x18\x02 \x01(\tR\x05nonce\x125\n" +
-	"\aoutcome\x18\x03 \x01(\x0e2\x1b.marque.v1.ExecutionOutcomeR\aoutcome\x12#\n" +
-	"\rrows_affected\x18\x04 \x01(\x03R\frowsAffected\"{\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2\x1b.marque.v1.ExecutionOutcomeR\aoutcome\x12(\n" +
+	"\rrows_affected\x18\x04 \x01(\x03H\x00R\frowsAffected\x88\x01\x01B\x10\n" +
+	"\x0e_rows_affected\"{\n" +
 	"\x17RecordExecutionResponse\x12,\n" +
 	"\arequest\x18\x01 \x01(\v2\x12.marque.v1.RequestR\arequest\x122\n" +
-	"\texecution\x18\x02 \x01(\v2\x14.marque.v1.ExecutionR\texecution\"}\n" +
+	"\texecution\x18\x02 \x01(\v2\x14.marque.v1.ExecutionR\texecution\"\x94\x01\n" +
 	"\tExecution\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\tR\x05nonce\x125\n" +
-	"\aoutcome\x18\x02 \x01(\x0e2\x1b.marque.v1.ExecutionOutcomeR\aoutcome\x12#\n" +
-	"\rrows_affected\x18\x03 \x01(\x03R\frowsAffected\"\xd6\x01\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2\x1b.marque.v1.ExecutionOutcomeR\aoutcome\x12(\n" +
+	"\rrows_affected\x18\x03 \x01(\x03H\x00R\frowsAffected\x88\x01\x01B\x10\n" +
+	"\x0e_rows_affected\"\xd6\x01\n" +
 	"\aRequest\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\x12\x1c\n" +
 	"\tstatement\x18\x02 \x01(\tR\tstatement\x12\x16\n" +
@@ -1020,6 +1027,8 @@ func file_marque_v1_harbourmaster_proto_init() {
 		return
 	}
 	file_marque_v1_common_proto_init()
+	file_marque_v1_harbourmaster_proto_msgTypes[6].OneofWrappers = []any{}
+	file_marque_v1_harbourmaster_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

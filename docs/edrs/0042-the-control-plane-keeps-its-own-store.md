@@ -80,7 +80,7 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
    about it. No other package imports either, and **no Harbourmaster package imports the Pilot
    adapter**, which is the boundary that carries the weight.
-2. **Enforced by a dependency-graph test.** `depguard` was this record's first answer and it does
+2. **Enforced by a test that parses every file.** `depguard` was this record's first answer and it does
    not work: it does not report **blank imports**, and a database driver is imported blank
    essentially always, because the point of importing it is the registration side effect. Measured,
    not reasoned — a blank import of a denied package produces no diagnostic and a named import of the
@@ -250,11 +250,10 @@ Named individually, because a reader who sees only one will assume the rest is r
   does not look at. It buys "the capability arrives by a reviewed edit rather than by accident", and
   no more. Anyone touching the permitted list is touching a security control.
 
-  One defeat an earlier draft listed is **gone**: a lint rule could not see a blank import, and this
-  mechanism can. A second — a file behind a build tag — survived the first replacement and was
-  removed only by the third: `go list` evaluates build constraints, so the graph test that replaced
-  `depguard` was blind to exactly the file M1 puts its integration test in. Parsing the files
-  directly is what closed it.
+  Two defeats earlier drafts listed are **gone**, and it took three mechanisms. A lint rule could not
+  see a blank import. The graph test that replaced it could not see a file behind a build tag —
+  `go list` evaluates build constraints, so it was blind to exactly the file M1 puts its integration
+  test in. Parsing every file directly closed both.
 
   Two mechanisms failed on the import shape they existed to police, both after being specified and
   reviewed. That is the part worth remembering: neither failure was visible in review, and both were
@@ -291,4 +290,4 @@ Named individually, because a reader who sees only one will assume the rest is r
 ## Changelog
 
 - **2026-08-20**: Accepted.
-- **2026-08-20**: Amended when M1 built it. The driver rule was specified as a `depguard` block and does not work: `depguard` does not report blank imports, and a database driver is imported blank essentially always. The mechanism is now a dependency-graph test over `go list -deps`, which sees every import — the instrument EDR-0005's original sentence relied on, kept even though *absence* was lost. The defeats list drops from four to three accordingly: a lint rule could see neither a blank import nor a file behind a build tag, and a graph test sees both. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger. The decision is unchanged.
+- **2026-08-20**: Amended when M1 built it, twice. The rule was specified as a `depguard` block and does not work: `depguard` does not report blank imports, and a driver is imported blank essentially always. The replacement, a `go list -deps` graph test, does not work either: `go list` evaluates build constraints — host GOOS, no tags — so it cannot see a file behind `//go:build integration`, which is where M1's own integration test lives. Both were measured, and both were specified and reviewed before anyone ran them. The mechanism now parses every `.go` file with `go/parser`, which has neither blind spot and reaches `_test.go` and generated code as well. The allowlist is per driver and per package rather than per directory tree, and a second check refuses a Harbourmaster package importing a Pilot adapter — the transitive path no direct-import check can see. The defeats list is three: an edit to the permitted list, a `sql.Open` by driver name, and a transitive dependency. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger, and that `rows_affected` is absent exactly when the outcome is `indeterminate`. The decision is unchanged.

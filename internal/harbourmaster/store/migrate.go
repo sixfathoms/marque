@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
 	"encoding/hex"
 	"errors"
@@ -228,27 +229,54 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("taking a connection for the migration lock: %w", err)
 	}
-	defer func() { _ = conn.Close() }()
+	// Discarded, not returned. This connection carries a moved search_path, and
+	// sql.Conn.Close() returns a live session to the pool — the advisory lock
+	// does NOT die with it, contrary to what an earlier comment here claimed.
+	defer func() {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		_ = conn.Close()
+	}()
 
 	// Pinned before anything is read or written. The migrator and the runtime
 	// deliberately run as different roles, and a $user-dependent search_path
 	// resolves different tables for each — while a writable earlier schema can
 	// shadow schema_migrations and let a decoy history verify. EDR-0007 pins it
 	// on the fence for the same class of reason.
+	// Session-scoped deliberately: every statement on this connection needs it,
+	// and the connection is discarded at the end of the run rather than
+	// returned to the pool carrying it.
 	if _, err := conn.ExecContext(ctx, `SET search_path = public, pg_catalog`); err != nil {
 		return fmt.Errorf("pinning search_path: %w", err)
 	}
-	// Bounded. pg_advisory_lock waits forever, and a CLI passing
+	// LOCAL, so it dies with the surrounding transaction rather than leaking
+	// onto the pooled connection — pgx's reset hook does not reset session
+	// GUCs, and a later borrower inheriting a 30-second lock failure would be a
+	// gift from a function it never called.
+	//
+	// pg_advisory_lock waits forever otherwise, and a CLI passing
 	// context.Background() would wait with it rather than saying another
 	// migrator holds the lock.
-	if _, err := conn.ExecContext(ctx, `SET lock_timeout = '30s'`); err != nil {
+	lockTx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning the lock transaction: %w", err)
+	}
+	if _, err := lockTx.ExecContext(ctx, `SET LOCAL lock_timeout = '30s'`); err != nil {
+		_ = lockTx.Rollback()
 		return fmt.Errorf("setting lock_timeout: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
+	// A session lock taken inside a transaction outlives it, which is what is
+	// wanted: the timeout is transactional, the lock is not.
+	if _, err := lockTx.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
+		_ = lockTx.Rollback()
 		return fmt.Errorf("taking the migration lock (another migrator may hold it): %w", err)
 	}
+	if err := lockTx.Commit(); err != nil {
+		return fmt.Errorf("committing the lock transaction: %w", err)
+	}
 	defer func() {
-		// Best effort: the lock also dies with the session.
+		// Explicit, because a session lock does not die when the connection is
+		// returned to the pool. WithoutCancel so a cancelled caller still
+		// releases it.
 		_, _ = conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, lockKey)
 	}()
 

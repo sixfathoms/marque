@@ -155,9 +155,13 @@ message RecordExecutionRequest {
 
   ExecutionOutcome outcome = 3;
 
-  // rows_affected is what the statement reported. It is M1's whole notion of a
-  // result (EDR-0042).
-  int64 rows_affected = 4;
+  // rows_affected is what the statement reported, and is M1's whole notion of a
+  // result (EDR-0042). **Optional**, and absent exactly when the outcome is
+  // INDETERMINATE: a presence-less int64 could only say zero, and zero is a
+  // count. The schema enforces the same equivalence with a CHECK, because the
+  // one thing not to do about an outcome meaning "nobody knows" is invent a
+  // number for it.
+  optional int64 rows_affected = 4;
 }
 
 message RecordExecutionResponse {
@@ -174,7 +178,9 @@ message RecordExecutionResponse {
 message Execution {
   string nonce = 1;
   ExecutionOutcome outcome = 2;
-  int64 rows_affected = 3;
+
+  // Absent exactly when outcome is INDETERMINATE. See RecordExecutionRequest.
+  optional int64 rows_affected = 3;
 }
 
 // Request is a submitted statement and what has happened to it.
