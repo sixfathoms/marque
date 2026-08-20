@@ -116,7 +116,7 @@ a commit message.
 - **The control plane holds no target credential**, and no target connection parameters. Any feature
   needing a *target* connection is a Pilot API, not a Harbourmaster one (EDR-0005) — the
   Harbourmaster connects to one database, its own (EDR-0042). The old form of this —
-  "no target database driver linked in" — was stronger and is not available: Marque's own state is
+  "it has no database driver for target engines linked in" — was stronger and is not available: Marque's own state is
   PostgreSQL (EDR-0013), which is also a target engine, so one driver serves both. It is now import
   discipline confining the driver to the store package and the Pilot's adapter (EDR-0042), which is
   weaker, and a change to that

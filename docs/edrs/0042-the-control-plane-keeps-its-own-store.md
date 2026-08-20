@@ -171,8 +171,8 @@ this record's to shorten.
 and `indeterminate`, closes no set and settles no successful token, so a first migration cannot be
 written from it. This record fixes the column as `committed`, `rolled_back`, `aborted_not_applied`
 and `indeterminate`. Three of those match `execution.*` kinds
-[EDR-0012](./0012-the-logbook-is-append-only.md) illustrates — and *illustrates* is that record's own
-word, since its list is explicitly not closed — while `aborted_not_applied` comes from EDR-0011.
+[EDR-0012](./0012-the-logbook-is-append-only.md) illustrates — and that record calls its own list
+*illustrative* rather than closed — while `aborted_not_applied` comes from EDR-0011.
 `in_progress` is deliberately absent: a control-plane report is written when an attempt ends, and
 in-flight state belongs to the Pilot's own ledger.
 
@@ -225,7 +225,9 @@ Named individually, because a reader who sees only one will assume the rest is r
   column and one discipline" is honest about the column and quiet about the discipline.
 - **The control plane now needs a database of its own**, migrated before it will serve. M1 already
   required a PostgreSQL for the *target* — the plan's exit is a testcontainers test against a real
-  one — so the marginal cost is a second database or role and a migration step, not a first server.
+  one — so the marginal cost is a database of its own and a migration step, not a first server. Not a
+  role in the target's: the whole point of the boundary above is that the control plane never opens a
+  connection to a target at all.
   `make test` stays offline because unit tests do not touch the store.
 - **EDR-0005's guarantee is weaker than it was on paper**, and the paper version was never
   achievable. Import discipline is defeated four ways where absence was defeated by none: an
