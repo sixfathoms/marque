@@ -52,6 +52,11 @@ const pilotPostgres = "internal/pilot/postgres"
 // and watched `go list -deps` grow twelve pgx packages while this test stayed
 // green — the prefix was internal/harbourmaster alone, so the check covered
 // every package except the one being built.
+// maxVisits bounds the walk so a pathological tree of nested symlink aliases
+// fails with its cause named rather than appearing to hang. A var, so a test
+// can lower it and watch it bite rather than build three-to-the-n directories.
+var maxVisits = 200_000
+
 var harbourmasterPrefixes = []string{"internal/harbourmaster", "cmd/harbourmaster"}
 
 func inHarbourmaster(dir string) bool {
@@ -201,8 +206,9 @@ func driverHome(imp string) (string, bool) {
 
 // firstPartyGoFiles maps every repository-relative .go path to its imports.
 // `gen/` is NOT skipped: the test binaries and schemacheck compile it — no
-// shipped binary does (EDR-0042) — so a generated file importing a driver
-// would link one into a binary this repository builds.
+// SHIPPED binary does (EDR-0042) — so a generated file importing a driver
+// would link one into a binary this repository builds, just not one it
+// releases.
 // skipDir skips ONLY .git, and only because walking a large object store is
 // slow. It is a performance trade with a stated residue, not a claim about what
 // compiles.
@@ -321,7 +327,6 @@ func goFilesUnder(t *testing.T, root string) (map[string][]string, []string) {
 	// real walk is a tenth of a second, because nothing here nests symlink sets.
 	// A bound so a pathological tree fails with its cause named rather than
 	// appearing to hang.
-	const maxVisits = 200_000
 	visits := 0
 
 	var walk func(dir, rel string, ancestry map[string]bool)
@@ -673,5 +678,28 @@ func TestAnUnreadableFileIsAProblemNotASkip(t *testing.T) {
 		if !strings.Contains(p, "unchecked") {
 			t.Errorf("the problem should say the file is unchecked; got %q", p)
 		}
+	}
+}
+
+// The visit bound reports rather than stopping silently. Deleting the report
+// left the suite green, because reaching 200,000 directories needs a
+// pathological tree; lowering the bound reaches it in three.
+func TestTheVisitBoundIsReported(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"a", "b", "c"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatalf("building the tree: %v", err)
+		}
+	}
+	restore := maxVisits
+	maxVisits = 2
+	t.Cleanup(func() { maxVisits = restore })
+
+	_, problems := goFilesUnder(t, root)
+	if len(problems) == 0 {
+		t.Fatal("the walk stopped at its bound without saying so, leaving the rest unchecked")
+	}
+	if !strings.Contains(problems[0], "unchecked") {
+		t.Errorf("the problem should say what is unchecked; got %q", problems[0])
 	}
 }

@@ -151,10 +151,14 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // fails as SQLSTATE 25001 at migration time, which is what this reduces, not
 // what it eliminates.
 //
-// What it gets wrong, stated rather than discovered: a bare identifier equal to
-// one of these words — a column named `reindex` — is refused, because the word
-// stands alone there exactly as it does in the statement. `vacuum_log` is fine,
-// since the underscore makes it one identifier. This is an accident-guard for
+// What it gets wrong, stated rather than discovered. A bare identifier equal to
+// one of these words — a column named `vacuum` — is refused, because the word
+// stands alone there exactly as it does in the statement; `vacuum_log` and
+// `log_vacuum` are fine, since the underscore makes each one identifier. And
+// a concurrent REFRESH of a materialised view is refused although PostgreSQL
+// runs it inside a transaction perfectly well, because the list matches
+// CONCURRENTLY on its own. Both over-refuse, which is the direction to be wrong
+// in, and both are a reworded migration away from passing. This is an accident-guard for
 // the people who write these migrations, not a security control; nothing stops
 // someone determined from spelling a statement in a way it does not match.
 func rejectNonTransactional(name, body string) error {
@@ -209,7 +213,8 @@ func rejectNonTransactional(name, body string) error {
 			continue
 		}
 		return fmt.Errorf(
-			"migrations/%s contains %s, which PostgreSQL refuses to run inside a transaction block.\n"+
+			"migrations/%s contains %s, which PostgreSQL refuses to run inside a transaction\n"+
+				"  block in the forms this list is about.\n"+
 				"  Every migration is applied inside one, so this would fail as SQLSTATE 25001 part-way\n"+
 				"  through a migration rather than here. Running statements outside a transaction is a\n"+
 				"  decision this migrator has not taken (EDR-0042)", name, s)
