@@ -529,13 +529,17 @@ func TestTheWalkReachesEveryPlaceThatHasEscapedIt(t *testing.T) {
 		plant("vendorish/probe"),
 	}
 
-	// The real directory sorts AFTER both aliases, so a global visited set
-	// keyed on the resolved path would examine only the first alias to be read
-	// and silently drop the other — which is the bug this reproduces. Both
-	// names must be reported.
+	// A global visited set keyed on the resolved path would examine only
+	// whichever of the three names os.ReadDir reached first and silently drop
+	// the other two — which is the bug this reproduces. All three must be
+	// reported.
 	target := "zz_real"
 	plant(target)
-	for _, alias := range []string{"aa_alias", "mm_alias"} {
+	// Named to sort on EITHER side of it, because a global visited set keyed on
+	// the resolved path records only whichever os.ReadDir reaches first — so an
+	// alias before and an alias after are different cases, and only one of them
+	// is the shape a reviewer used.
+	for _, alias := range []string{"aa_alias", "zzz_alias"} {
 		if err := os.Symlink(filepath.Join(root, target), filepath.Join(root, alias)); err != nil {
 			t.Fatalf("linking %s: %v", alias, err)
 		}

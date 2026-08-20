@@ -658,6 +658,48 @@ func TestTheSchemaRefusesWhatItSaysItRefuses(t *testing.T) {
 				`INSERT INTO approvals (tenant_id, reference, stage, approver) VALUES ('other', 'req_ok', 1, 'sam')`)
 			return err
 		},
+		// The constraints that carry the proto's idempotency declarations:
+		// Approve is NATURAL because the row is keyed (request, stage,
+		// approver), and RecordExecution is KEYED on the nonce. Both deleted
+		// green until these existed.
+		"the same approver approving the same stage twice": func() error {
+			if _, err := db.ExecContext(ctx,
+				`INSERT INTO approvals (tenant_id, reference, stage, approver) VALUES ('development', 'req_ok', 1, 'sam')`); err != nil {
+				t.Fatalf("setting up the first approval: %v", err)
+			}
+			_, err := db.ExecContext(ctx,
+				`INSERT INTO approvals (tenant_id, reference, stage, approver) VALUES ('development', 'req_ok', 1, 'sam')`)
+			return err
+		},
+		"the same nonce reported twice": func() error {
+			if _, err := db.ExecContext(ctx, `
+				INSERT INTO executions (tenant_id, reference, nonce, outcome, rows_affected)
+				VALUES ('development', 'req_ok', 'nonce_twice', 'committed', 1)`); err != nil {
+				t.Fatalf("setting up the first execution: %v", err)
+			}
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO executions (tenant_id, reference, nonce, outcome, rows_affected)
+				VALUES ('development', 'req_ok', 'nonce_twice', 'committed', 1)`)
+			return err
+		},
+		"an execution whose tenant differs from its request's": func() error {
+			if _, err := db.ExecContext(ctx,
+				`INSERT INTO tenants (id, name) VALUES ('other_exec', 'Other')`); err != nil {
+				t.Fatalf("setting up a second tenant: %v", err)
+			}
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO executions (tenant_id, reference, nonce, outcome, rows_affected)
+				VALUES ('other_exec', 'req_ok', 'n_cross', 'committed', 1)`)
+			return err
+		},
+		"a whitespace-only tenant id": func() error {
+			_, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name) VALUES ('   ', 'Whitespace')`)
+			return err
+		},
+		"a whitespace-only tenant name": func() error {
+			_, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name) VALUES ('t_ws', '   ')`)
+			return err
+		},
 		"an anonymous approver": func() error {
 			_, err := db.ExecContext(ctx,
 				`INSERT INTO approvals (tenant_id, reference, stage, approver) VALUES ('development', 'req_ok', 1, '')`)
