@@ -270,7 +270,7 @@ Named individually, because a reader who sees only one will assume the rest is r
   constraint on every relationship in the schema from here on, not a one-off cost. EDR-0025's "one
   column and one discipline" is honest about the column and quiet about the discipline.
 - **The control plane now needs a database of its own**, migrated before it will serve. M1 already
-  required a PostgreSQL for the *target* — the plan's exit is a testcontainers test against a real
+  required a PostgreSQL for the *target* — the plan's exit is an integration test against a real
   one — so the marginal cost is a database of its own and a migration step, not a first server. Not a
   role in the target's: the whole point of the boundary above is that the control plane never opens a
   connection to a target at all.

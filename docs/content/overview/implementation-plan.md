@@ -131,7 +131,7 @@ and the Pilot's adapter — landing in the **same change** as the first package 
 connection. That rule is a test that parses every first-party file, with a `depguard` block beside it
 as a cheaper edit-time report.
 
-**Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
+**Exit:** an integration test against a real PostgreSQL running the six steps and asserting
 the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
 package that is not the store and watching the confinement test refuse it. It parses every file
 rather than asking a linter, and not because a linter is incapable — three claims of that shape were
@@ -140,7 +140,13 @@ and a test's is its own code, so neither may be asserted and both are probed. Th
 lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
 signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
-above.
+above. `make test-integration` starts a disposable PostgreSQL in Docker on an ephemeral port,
+creates the runtime role before the first migration because the schema grants unconditionally, and
+removes the container on exit. No testcontainers dependency: a library that drives Docker is a
+large dependency graph in the module the control plane ships from, and a Makefile target and a CI
+job do the same job here. The DSN comes from the environment, and its absence is a **failure**
+rather than a skip — a build-tagged suite that skips itself when unconfigured reports success
+having run nothing.
 
 ### M2 — The grammar
 
