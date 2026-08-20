@@ -21,8 +21,11 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   that ends that, which is why M1 is where the rule had to be re-expressed.
 
   EDR-0042 replaces **absence** with **containment** — the driver confined to `internal/store` by a
-  `depguard` rule — and keeps the property EDR-0005 protects, which is that the control plane holds
-  no target credential and no target connection parameters. The record says plainly what is lost:
+  `depguard` rule, covering **any** target engine's driver rather than PostgreSQL's alone, since
+  EDR-0005's sentence is engine-agnostic and
+  [EDR-0026](/edrs/0026-a-second-engine-is-a-capability-matrix/) plans MySQL. It keeps the property
+  EDR-0005 protects, which is that the control plane holds no target credential and no target
+  connection parameters. The record says plainly what is lost:
   absence needed no allowlist and could not be widened by editing one, and anyone reviewing a change
   to that lint rule is reviewing a security control.
 
