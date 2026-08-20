@@ -36,6 +36,18 @@ that one of the corpus's mechanisms had been unachievable for five days without 
 
 ### Added
 
+- **The migrator runs against a real PostgreSQL**, behind `//go:build integration` so `make test`
+  stays offline, and run by `make test-integration` and a CI job. It watches the things only a
+  database decides: that four concurrent migrators serialise to one applied row and leave no advisory
+  lock; that the connection the migrator poisons carries neither its `search_path` nor its
+  `lock_timeout` back to the pool; that a held `ACCESS EXCLUSIVE` lock produces a bounded refusal
+  rather than an indefinite wait; that the grants land and the runtime role owns nothing and holds no
+  `DELETE`; that a decoy `schema_migrations` in an earlier schema does not become the history; that
+  an edited applied migration is refused; and that each closed vocabulary, each length bound and each
+  composite foreign key refuses what it says it refuses. Every one was chosen by deleting the code it
+  covers and watching the test go red — and two of the tests failed that check because **they** were
+  wrong, one planting a decoy function where only a decoy table could have worked, and one setting a
+  deadline shorter than the timeout it was testing.
 - **A tenant-partitioned schema from migration one**, per
   [EDR-0025](/edrs/0025-tenants-are-partitioned-from-day-one/) — `tenant_id` leading every index that
   matters and present in every unique constraint, filled from one configured development tenant while
