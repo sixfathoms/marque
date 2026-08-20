@@ -16,7 +16,7 @@ aliases: []
 
 ## TL;DR
 
-The [implementation plan](../content/overview/implementation-plan.md) lists *"the control-plane
+The [implementation plan](../content/overview/implementation-plan.md) lists *"The control-plane
 storage schema and its migration tooling"* as decision debt owed before M1 closes. Read as *"which
 database"*, that debt does not exist: [EDR-0013](./0013-async-work-rides-the-wal.md) fixed Marque's
 own state on **PostgreSQL** and the architecture page says so in its own section. What was genuinely
@@ -40,8 +40,8 @@ undecided is the rest of the sentence, plus a problem the corpus had not noticed
 The plan's phrasing invites the question "which database", and the first draft of this record answered
 it — with SQLite, on the argument that an embedded store keeps EDR-0005's driver sentence checkable.
 Review found the premise false twice over:
-[EDR-0013](./0013-async-work-rides-the-wal.md) states *"this ties Marque to PostgreSQL for its own
-state. That is an accepted constraint, not a regrettable one"*, and
+[EDR-0013](./0013-async-work-rides-the-wal.md) states: *"This ties Marque to PostgreSQL for its own
+state. That is an accepted constraint, not a regrettable one."*, and
 [the architecture page](../content/overview/architecture.md) opens a **Storage** section with
 *"Marque's own state is PostgreSQL, and that is fixed"*.
 

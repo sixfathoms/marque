@@ -4,7 +4,7 @@ tags: [ops, security, docs]
 order: 2
 ---
 
-The [implementation plan](/overview/implementation-plan/) listed *"the control-plane storage schema
+The [implementation plan](/overview/implementation-plan/) listed *"The control-plane storage schema
 and its migration tooling"* as decision debt owed before M1 closes.
 [EDR-0042](/edrs/0042-the-control-plane-keeps-its-own-store/) discharges it — and found, on the way,
 that one of the corpus's mechanisms had been unachievable for five days without anyone noticing.

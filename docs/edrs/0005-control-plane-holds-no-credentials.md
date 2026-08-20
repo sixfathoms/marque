@@ -88,7 +88,7 @@ the analyser, a health check — is a request *to a Pilot*, and comes back as da
 database only, its own ([EDR-0042](./0042-the-control-plane-keeps-its-own-store.md)). It holds no target credential and
 no target connection parameters, which is what makes that true.
 
-This originally read *"it has no database driver for target engines linked in"*, which was a stronger
+This originally read: *"It has no database driver for target engines linked in."*, which was a stronger
 and cleaner mechanism and is **not available**: [EDR-0013](./0013-async-work-rides-the-wal.md) fixes
 Marque's own state on PostgreSQL, PostgreSQL is also a target engine, and one driver serves both. The
 sentence was never achievable after that record was accepted and went unchallenged only while the
