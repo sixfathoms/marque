@@ -1,0 +1,79 @@
+# Dependabot, configured before the dependency it exists to guard.
+#
+# CLAUDE.md and EDR-0039 legislate a rule about `pg_query_go` that had nothing
+# to attach to: a newer grammar parses statements the previous one refused,
+# which silently widens the checkable subset and therefore widens what an
+# already-signed delegation permits. That upgrade is a reviewed change on the
+# order of a schema migration. It arrives with M2; the guard arrives here, so
+# the first bump meets a configuration rather than the other way round.
+#
+# The strategy throughout is CONSOLIDATION. One pull request per directory per
+# dependency is the pattern that produces a queue nobody reads, and an unread
+# queue is worse than no queue: security updates arrive by this same path, so
+# noise here is a security problem rather than an annoyance.
+version: 2
+
+updates:
+  # The service's own module. Two direct dependencies today, so a group is
+  # nearly a no-op — it exists for when that stops being true.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      go:
+        patterns: ["*"]
+        # pg_query_go is deliberately OUTSIDE the group, so its bump always
+        # arrives as its own pull request rather than one line inside a batch
+        # of six. It does not exist yet; the entry is here first on purpose.
+        exclude-patterns:
+          - "github.com/pganalyze/pg_query_go*"
+    # Deliberately NOT an `ignore` entry. Ignoring majors would stop Dependabot
+    # proposing exactly the upgrade that most needs a human to know exists,
+    # including a security-motivated one — and majors are not the risky case
+    # anyway: EDR-0039's hazard is a newer grammar admitting statements the old
+    # one refused, which a minor does just as well. The rule is that the bump is
+    # reviewed, not that it is invisible.
+    #
+    # Dependabot cannot enforce "never auto-merge"; that is a repository setting,
+    # and the two have to agree. Today `allow_auto_merge` is false for the whole
+    # repository, so nothing merges itself. If that is ever turned on, this
+    # exclusion is not sufficient on its own and a branch-protection rule has to
+    # carry the weight.
+
+  # The tools module is separate on purpose (see the Makefile): buf,
+  # golangci-lint and goreleaser drag in a dependency graph that has no business
+  # in the service's. That graph is large, so ungrouped updates here would be
+  # the whole of the noise problem.
+  - package-ecosystem: gomod
+    directory: /tools
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      tools:
+        patterns: ["*"]
+
+  # The documentation site. pnpm lockfile v9.
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      website:
+        patterns: ["*"]
+
+  # Actions are pinned to a full-length commit SHA, enforced by a repository
+  # setting rather than by review. Dependabot updates a pinned SHA and the
+  # version comment beside it together, which is why those comments are not
+  # decoration.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
