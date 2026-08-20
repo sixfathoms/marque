@@ -20,7 +20,7 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   code, so it linked no drivers of any kind and the rule was true by vacancy. M1 is the milestone
   that ends that, which is why M1 is where the rule had to be re-expressed.
 
-  EDR-0042 replaces **absence** with **import discipline** — a driver confined by `depguard` to the
+  EDR-0042 replaces **absence** with **import discipline** — a driver confined by `depguard` to
   the two packages that need one — the Harbourmaster's store and the Pilot's adapter, which must have
   it — with **no exception at all** for an engine Marque does not store its own
   state in, so MySQL stays wholly absent when
@@ -66,6 +66,7 @@ Where the Pilot keeps that ledger is undecided, and no record says —
 the wrong answer for a reason worth knowing: a role that can write a Marque-owned table is a role
 with more grants than the operator's statement needs, which is the opposite of what EDR-0005 is for.
 
-This is the first record in the corpus forced by implementation rather than by review, and it shows.
-A design read end to end looks consistent; a design you try to build tells you which of its sentences
-were never load-bearing.
+This is the first record forced by *storage* implementation, and it shows — though not the first
+forced by implementation at all: [EDR-0040](/edrs/0040-a-methods-declared-behaviour-may-only-strengthen/)
+came out of trying to defeat a guard rather than reading it. A design read end to end looks
+consistent; a design you try to build tells you which of its sentences were never load-bearing.

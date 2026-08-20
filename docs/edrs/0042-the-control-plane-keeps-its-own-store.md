@@ -210,21 +210,23 @@ Named individually, because a reader who sees only one will assume the rest is r
 - EDR-0013's mechanism stays available: the WAL is there when async work arrives, rather than needing
   a store migration first.
 - EDR-0012's logbook is implementable in the same database with the permission model it requires — a
-  withheld `UPDATE` grant and non-ownership — so M6 has no second transactional store and no dual
+  withheld `UPDATE`/`DELETE` grant and non-ownership — so M6 has no second transactional store and no dual
   write, which is the thing [ZFN-24](https://zrz.io/zfn/24-one-transactional-store-per-write/)
   forbids and EDR-0013 was designed around.
-- Both vocabularies and the tenant column arrive at migration one — the request states borrowed
-  whole from EDR-0038, the execution outcomes fixed here — so none of the three is a later migration
-  to widen a constrained column.
+- Both vocabularies arrive at migration one — the request states borrowed whole from EDR-0038, the
+  execution outcomes fixed here — so neither is a later migration to widen a constrained column. The
+  tenant column arrives with them, which avoids a different migration: adding a column, and then
+  rebuilding every unique constraint and foreign key around it.
 
 **Harder.**
 
 - **Tenancy is not one column.** Every foreign key is composite and carries `tenant_id` — a
   constraint on every relationship in the schema from here on, not a one-off cost. EDR-0025's "one
   column and one discipline" is honest about the column and quiet about the discipline.
-- **Running the control plane now requires a PostgreSQL**, including for a developer trying M1 on a
-  laptop. `make test` stays offline because unit tests do not touch the store, but the walking
-  skeleton is no longer a single binary and a file.
+- **The control plane now needs a database of its own**, migrated before it will serve. M1 already
+  required a PostgreSQL for the *target* — the plan's exit is a testcontainers test against a real
+  one — so the marginal cost is a second database or role and a migration step, not a first server.
+  `make test` stays offline because unit tests do not touch the store.
 - **EDR-0005's guarantee is weaker than it was on paper**, and the paper version was never
   achievable. Import discipline is defeated four ways where absence was defeated by none: an
   allowlist edit; a `sql.Open` by driver name in a package that imports nothing the linter sees; a

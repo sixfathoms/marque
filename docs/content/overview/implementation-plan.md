@@ -124,7 +124,9 @@ This milestone deliberately builds something insecure, so it is contained by con
 Three things arrive with the store
 ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)): the tenant-partitioned schema
 and its first migration; a migrator that is an explicit command, refuses a divergent history, and
-records each migration's content digest in the transaction that applies it; and the `depguard` rule
+records each migration's content digest in the transaction that applies it and runs as its own role
+rather than the runtime one, which M6 needs and which costs nothing at migration one; and the
+`depguard` rule
 confining a target engine's driver to the two packages that need one — the Harbourmaster's store and
 the Pilot's adapter, which must have it — landing in the **same change** as the first package that
 opens a connection.

@@ -29,7 +29,8 @@ The consequence that matters: **an attacker who owns the entire Harbourmaster ob
 and no ability to commit a change.** They can read requests and approvals, and — because the control
 plane legitimately relays rehearsals — they can relay *operator-signed* reads, so a bounded, quota'd,
 target-visible read channel remains ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)).
-They cannot connect to anything themselves.
+They cannot connect to a *target* themselves — the Harbourmaster reaches one database, its own
+([EDR-0042](./0042-the-control-plane-keeps-its-own-store.md)).
 
 ## Context
 
