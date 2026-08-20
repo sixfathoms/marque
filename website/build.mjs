@@ -846,7 +846,15 @@ function readVocabularyTable(text, marker, file, problems, headerLabel) {
     visit(node, (n) => {
       if (n.type === 'text' || n.type === 'inlineCode') out += n.value;
     });
-    return { text: out.trim(), code: node.children?.length === 1 && node.children[0].type === 'inlineCode' };
+    // `raw` is deliberately untrimmed: String.trim() strips U+FEFF and NBSP,
+    // so trimming before the pattern test would let `shipped\uFEFF` through as
+    // `shipped` while `shipped\u200B` failed. The value is matched raw; only
+    // the header, which is prose, is trimmed.
+    return {
+      raw: out,
+      text: out.trim(),
+      code: node.children?.length === 1 && node.children[0].type === 'inlineCode',
+    };
   };
 
   // Only TOP-LEVEL html nodes count, so a marker inside a code fence is not one:
@@ -882,18 +890,37 @@ function readVocabularyTable(text, marker, file, problems, headerLabel) {
     return null;
   }
 
+  // Every value in all three vocabularies is a lowercase kebab identifier, and
+  // requiring that outright is what closes the invisible-character cases.
+  // Trimming decided equality before, and `String.trim()` strips U+FEFF and
+  // NBSP while leaving U+200B alone — so `shipped\uFEFF` compared equal to
+  // `shipped` and `shipped\u200B` did not. Three spellings, three behaviours,
+  // none of them stated. A pattern has one behaviour and it is visible.
+  const VALUE_RE = /^[a-z][a-z0-9-]*$/;
   const values = [];
   for (const [i, row] of rows.entries()) {
-    const { text: value, code } = cellText(row.children[0]);
-    if (!code || !value) {
+    const { raw: value, code } = cellText(row.children[0]);
+    if (!code || !VALUE_RE.test(value)) {
       problems.push(
-        `${file}: row ${i + 1} under <!-- @vocabulary:${marker} --> is not a single \`backticked\` value\n` +
-          `  got: ${JSON.stringify(value)}\n` +
-          `  Every row is a value; annotations belong in the second column.`,
+        `${file}: row ${i + 1} under <!-- @vocabulary:${marker} --> is not a single \`backticked\` ` +
+          `lowercase value\n` +
+          `  got: ${JSON.stringify(value)}${code ? '' : ' (not inline code)'}\n` +
+          `  Every row is one value matching ${VALUE_RE}; annotations belong in the second column.`,
       );
       return null;
     }
     values.push(value);
+  }
+
+  // A second table straight after the vocabulary one reads, to a person, as
+  // more of the same vocabulary — and would be silently unchecked.
+  const after = tree.children[tree.children.indexOf(table) + 1];
+  if (after && after.type === 'table') {
+    problems.push(
+      `${file}: a second table follows the one under <!-- @vocabulary:${marker} -->.\n` +
+        `  Only the first is compared, so rows in the second would go unchecked.`,
+    );
+    return null;
   }
   if (!values.length) {
     problems.push(`${file}: the table under <!-- @vocabulary:${marker} --> has no value rows`);

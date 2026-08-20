@@ -51,8 +51,15 @@ top-level HTML node, so a fence cannot hold one; the header is a row like any ot
 rather than skipped; and the shape of a row is a fact about the tree rather than a guess about the
 text.
 
+A third round found two more, and they are the reason a value is now matched against an explicit
+lowercase pattern rather than trimmed: `String.trim()` strips U+FEFF and NBSP but leaves U+200B
+alone, so an invisible character inside a value was accepted, rejected, or silently normalised
+depending on which invisible character it was — three behaviours, none of them chosen. And a second
+table immediately after the vocabulary one, which reads to a person as more of the same vocabulary,
+went unchecked.
+
 The lesson is not that the mutations were wrong. It is that they were chosen from the same mental
 model that wrote the code, so they tested the four failures its author had thought of — which is
 exactly how a guard ends up trusted for more than it does, and is the same defect one level up as
-the arrangement it replaces. All eight directions now fail, and are recorded here so the next
+the arrangement it replaces. All twelve directions now fail, and are recorded here so the next
 person to extend this knows which ones were not obvious.
