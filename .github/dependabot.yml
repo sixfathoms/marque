@@ -1,0 +1,114 @@
+# Dependabot, configured before the dependency it exists to guard.
+#
+# CLAUDE.md and EDR-0039 legislate a rule about `pg_query_go` that had nothing
+# to attach to: a newer grammar parses statements the previous one refused,
+# which silently widens the checkable subset and therefore widens what an
+# already-signed delegation permits. That upgrade is a reviewed change on the
+# order of a schema migration. It arrives with M2; the guard arrives here, so
+# the first bump meets a configuration rather than the other way round.
+#
+# The strategy throughout is CONSOLIDATION. One pull request per directory per
+# dependency is the pattern that produces a queue nobody reads, and an unread
+# queue is worse than no queue, because security fixes arrive in it too.
+#
+# Every group below declares `applies-to` EXPLICITLY, including where the value
+# is the default. A group with no `applies-to` covers version updates only —
+# so a file that groups without saying so silently leaves security updates
+# ungrouped while reading as though it had covered them.
+version: 2
+
+updates:
+  # The service's own module. Two direct dependencies today, so the group is
+  # nearly a no-op — it exists for when that stops being true.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    # Bounds scheduled version-update PRs only; security updates are not capped
+    # by it, which is the correct behaviour and worth knowing.
+    open-pull-requests-limit: 5
+    groups:
+      go:
+        applies-to: version-updates
+        patterns: ["*"]
+        # pg_query_go sits OUTSIDE the group, so its bump arrives as its own
+        # pull request rather than one line inside a batch. It does not exist
+        # yet; the entry is here first on purpose.
+        exclude-patterns:
+          - "github.com/pganalyze/pg_query_go*"
+      go-security:
+        applies-to: security-updates
+        patterns: ["*"]
+        # Repeated rather than aliased. A YAML anchor would save two lines and
+        # cost more than it saves in a file whose purpose is to be read.
+        exclude-patterns:
+          - "github.com/pganalyze/pg_query_go*"
+
+  # The tools module is separate on purpose (see the Makefile): buf,
+  # golangci-lint and goreleaser drag in a dependency graph that has no business
+  # in the service's — 537 indirect requirements at the time of writing. That
+  # size is why grouping here is not optional.
+  - package-ecosystem: gomod
+    directory: /tools
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      tools:
+        applies-to: version-updates
+        patterns: ["*"]
+      tools-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The documentation site. pnpm lockfile v9, which the npm ecosystem covers.
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      website:
+        applies-to: version-updates
+        patterns: ["*"]
+      website-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # Actions are pinned to a full-length commit SHA, enforced by a repository
+  # setting rather than by review. Dependabot updates a pinned SHA and the
+  # version comment beside it together, which is why those comments are not
+  # decoration.
+  #
+  # There is NO security-updates group here, and its absence is the decision:
+  # Dependabot does not raise alerts for an action pinned to a SHA, and a
+  # security update is driven by an alert. So SHA pinning — enabled
+  # deliberately, and the right call — costs Dependabot-driven security updates
+  # for this ecosystem. A group would have been inert while reading as coverage.
+  # What remains is the weekly version update, which does move the pin.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]
+
+# Two limits, stated because the file reads stronger than it is.
+#
+# 1. WHAT THE EXCLUSION COVERS. `pg_query_go` uses semantic import versioning:
+#    the module is `…/pg_query_go/v6`, and `/v7` is a DIFFERENT module path.
+#    Dependabot does not migrate Go imports across a major suffix, so it will
+#    never propose that upgrade at all — with or without an `ignore` entry,
+#    which is why there isn't one. What this file isolates is same-module minor
+#    and patch bumps. The major-version upgrade needs a human watching releases,
+#    and M2 is where that obligation lands.
+#
+# 2. WHAT IT CANNOT ENFORCE. Dependabot cannot require review. `allow_auto_merge`
+#    is false for this repository today, which disables GitHub's native
+#    auto-merge — it does not stop an installed app or a workflow holding write
+#    permission from calling the merge API. The invariant "a pg_query_go bump is
+#    read by a human" needs a branch-protection rule with no automation bypass,
+#    and this file is not that rule.
