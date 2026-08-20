@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -83,11 +84,11 @@ func goList(t *testing.T, c buildConfig) []listedPackage {
 	cmd := exec.CommandContext(t.Context(), "go", args...)
 	cmd.Dir = repoRoot(t)
 	// Explicit, because Go defaults CGO_ENABLED to 0 when no C compiler is on
-	// PATH, and with it off `go list` reports a cgo file under IgnoredGoFiles
-	// with CgoFiles empty. CgoLDFLAGS is NOT empty — a reviewer measured it,
-	// correcting an earlier version of this comment that said it was — so the
-	// -lpq half of TestCgoIsConfined would still fire. The CgoFiles half would
-	// not, which is reason enough to force it.
+	// PATH. With it off, a package whose only files are cgo files has no
+	// buildable files at all, so `go list` EXITS NON-ZERO and goList below
+	// t.Fatals — TestCgoIsConfined would not run rather than run and see
+	// nothing. Two earlier versions of this comment got that wrong in opposite
+	// directions; this one was measured.
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	out, err := cmd.Output()
 	if err != nil {
@@ -394,26 +395,81 @@ func TestTheGraphContainsTheDriverEdge(t *testing.T) {
 // whole of what import discipline claims to buy.
 var cgoHomes []string
 
+// cgoViolations reports every first-party package using cgo outside a reviewed
+// home. Factored out, like reachesDriver and violations, because no package
+// here uses cgo — so on this repository the loop body never executes, and a
+// reviewer replaced the whole test with `return` and watched the suite pass.
+func cgoViolations(pkgs []listedPackage) []string {
+	var out []string
+	for _, p := range pkgs {
+		path := normalise(p.ImportPath)
+		if !isFirstParty(path) || slices.Contains(cgoHomes, path) {
+			continue
+		}
+		if len(p.CgoFiles) > 0 {
+			out = append(out, fmt.Sprintf("%s uses cgo", path))
+		}
+		for _, f := range p.CgoLDFLAGS {
+			out = append(out, fmt.Sprintf("%s passes %q to the linker", path, f))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func TestCgoViolationsReportsAnUnreviewedCgoPackage(t *testing.T) {
+	got := cgoViolations([]listedPackage{
+		{ImportPath: modulePath + "/internal/harbourmaster/wal", CgoFiles: []string{"tail.go"}, CgoLDFLAGS: []string{"-lpq"}},
+		{ImportPath: modulePath + "/internal/version"},
+		// Third-party cgo is not this rule's business.
+		{ImportPath: "github.com/someone/else", CgoFiles: []string{"x.go"}},
+	})
+	want := []string{
+		modulePath + "/internal/harbourmaster/wal passes \"-lpq\" to the linker",
+		modulePath + "/internal/harbourmaster/wal uses cgo",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("cgoViolations() =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
+// UNPINNED glue, like the two named in driver_confinement_test.go: replacing
+// this loop with an empty one leaves the suite green, because no package here
+// uses cgo and a test cannot observe its own reporting. What it reports is
+// pinned by TestCgoViolationsReportsAnUnreviewedCgoPackage.
 func TestCgoIsConfined(t *testing.T) {
 	for _, c := range buildConfigs {
 		t.Run(c.name, func(t *testing.T) {
-			for _, p := range goList(t, c) {
-				path := normalise(p.ImportPath)
-				if !isFirstParty(path) || slices.Contains(cgoHomes, path) {
-					continue
-				}
-				if len(p.CgoFiles) > 0 {
-					t.Errorf(
-						"%s uses cgo, and no first-party package may.\n"+
-							"  A #cgo LDFLAGS line links a C library with no Go import for any\n"+
-							"  import-based check to see — -lpq is the reference PostgreSQL driver.\n"+
-							"  EDR-0042 lists this; adding a package here is a reviewed edit.",
-						path)
-				}
-				for _, f := range p.CgoLDFLAGS {
-					t.Errorf("%s passes %q to the linker, outside any reviewed cgo home", path, f)
-				}
+			for _, v := range cgoViolations(goList(t, c)) {
+				t.Errorf(
+					"%s, and no first-party package may.\n"+
+						"  A #cgo LDFLAGS line links a C library with no Go import for any\n"+
+						"  import-based check to see — -lpq is the reference PostgreSQL driver.\n"+
+						"  EDR-0042 lists this; adding a package to cgoHomes is a reviewed edit.",
+					v)
 			}
 		})
+	}
+}
+
+// normalise is tested directly because its two behaviours pull in opposite
+// directions and neither can fire on this repository: nothing is named
+// something.test, and no external test package here imports a driver.
+func TestNormalise(t *testing.T) {
+	for in, want := range map[string]string{
+		// go list -test's three decorations for package p.
+		"example.com/p.test":                      "example.com/p.test",
+		"example.com/p [example.com/p.test]":      "example.com/p",
+		"example.com/p_test [example.com/p.test]": "example.com/p",
+		// A real directory named test, or ending in _test, is left alone —
+		// stripping unconditionally turned a package at
+		// internal/harbourmaster/store.test into the permitted store package.
+		"example.com/store.test": "example.com/store.test",
+		"example.com/thing_test": "example.com/thing_test",
+		"example.com/plain":      "example.com/plain",
+	} {
+		if got := normalise(in); got != want {
+			t.Errorf("normalise(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

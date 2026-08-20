@@ -599,9 +599,17 @@ func TestTheWalkTerminatesOnASymlinkLoop(t *testing.T) {
 	if err := os.Symlink(filepath.Join(root, "a"), filepath.Join(root, "a", "loop")); err != nil {
 		t.Fatalf("linking: %v", err)
 	}
-	got, _ := goFilesUnder(t, root)
+	got, problems := goFilesUnder(t, root)
 	if _, ok := got["a/p.go"]; !ok {
 		t.Error("the walk did not reach a/p.go")
+	}
+	// No problems: a loop is a loop and must be stepped over quietly, not
+	// reported. Without the ancestry check the walk descends until the OS
+	// refuses the Stat at SYMLOOP_MAX, which produces problems — so asserting
+	// there are none is what pins the guard rather than the operating system.
+	if len(problems) != 0 {
+		t.Errorf("the loop was not detected; the walk descended until the OS stopped it:\n%s",
+			strings.Join(problems, "\n"))
 	}
 }
 
@@ -630,15 +638,19 @@ func TestAnUnreadableFileIsAProblemNotASkip(t *testing.T) {
 		}
 	})
 
-	t.Run("a symlink that resolves to nothing readable", func(t *testing.T) {
+	t.Run("a root that cannot be resolved", func(t *testing.T) {
+		// AS THE ROOT, not as an entry inside one. The walk calls EvalSymlinks
+		// on the root before it Stats anything, so this is the only way to
+		// reach that branch — an earlier version planted the link inside a
+		// directory, where the os.Stat branch reported it first and the
+		// EvalSymlinks report could be deleted with the suite green.
 		root := t.TempDir()
-		// A self-referential symlink: EvalSymlinks refuses it, and the walk
-		// must say so rather than move on.
-		if err := os.Symlink(filepath.Join(root, "loop"), filepath.Join(root, "loop")); err != nil {
+		loop := filepath.Join(root, "loop")
+		if err := os.Symlink(loop, loop); err != nil {
 			t.Skipf("this platform will not create the link: %v", err)
 		}
-		if _, problems := goFilesUnder(t, root); len(problems) == 0 {
-			t.Error("an unresolvable symlink was skipped silently")
+		if _, problems := goFilesUnder(t, loop); len(problems) == 0 {
+			t.Error("an unresolvable root was walked silently, so everything under it is unchecked")
 		}
 	})
 

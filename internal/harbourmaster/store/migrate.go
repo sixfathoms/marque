@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,12 @@ import (
 
 	// The driver, imported for its side effect of registering with
 	// database/sql. EDR-0042 confines this import to this package.
+	//
+	// The comment must stay ADJACENT to the import: it is what silences
+	// revive's blank-imports rule, and with revive silenced depguard's
+	// diagnostic is the one that prints. A formatter moved "regexp" between
+	// them once and the build failed, which is the tidiest demonstration of
+	// EDR-0042's retraction anyone could ask for.
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -132,6 +139,18 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // how this migrator runs statements outside a transaction, not a quiet
 // exception here.
 //
+// **This is a denylist of spellings, not a decision procedure.** It catches the
+// statements a migration author here would plausibly reach for. It does not
+// enumerate everything PostgreSQL refuses inside a transaction block, and it
+// cannot: `ALTER DATABASE … SET TABLESPACE` is non-transactional while every
+// other `ALTER DATABASE … SET` is fine, and no phrase distinguishes them
+// without refusing the transactional ones. A reviewer found `CLUSTER`,
+// `DISCARD ALL`, `CREATE SUBSCRIPTION` and `REINDEX (VERBOSE) DATABASE` missing
+// — the first three are on the list now, the fourth needed a pattern, and
+// `ALTER DATABASE … SET TABLESPACE` is knowingly absent. What is left over
+// fails as SQLSTATE 25001 at migration time, which is what this reduces, not
+// what it eliminates.
+//
 // What it gets wrong, stated rather than discovered: a bare identifier equal to
 // one of these words — a column named `reindex` — is refused, because the word
 // stands alone there exactly as it does in the statement. `vacuum_log` is fine,
@@ -154,6 +173,19 @@ func rejectNonTransactional(name, body string) error {
 	// migration contains none of these words.
 	stripped := collapseSpace(stripSQLComments(body))
 	raw := collapseSpace(body)
+	// REINDEX needs a pattern rather than a phrase: the non-transactional forms
+	// are DATABASE, SCHEMA and SYSTEM, and PostgreSQL allows an option list
+	// between the keyword and the target, so `REINDEX (VERBOSE) DATABASE x`
+	// matched no phrase and loaded cleanly. Found by a reviewer running it.
+	for _, body := range []string{stripped, raw} {
+		if reindexNonTransactional.MatchString(strings.ToUpper(body)) {
+			return fmt.Errorf(
+				"migrations/%s contains a REINDEX of a DATABASE, SCHEMA or SYSTEM, which PostgreSQL\n"+
+					"  refuses to run inside a transaction block. REINDEX TABLE and REINDEX INDEX are fine\n"+
+					"  and are deliberately not refused (EDR-0042)", name)
+		}
+	}
+
 	for _, s := range []string{
 		// Every entry measured on PostgreSQL 18, not assumed. Bare REINDEX was
 		// on this list and should not have been: REINDEX TABLE and REINDEX
@@ -163,13 +195,14 @@ func rejectNonTransactional(name, body string) error {
 		// record claimed it did.
 		"CONCURRENTLY",
 		"VACUUM",
-		"REINDEX DATABASE",
-		"REINDEX SCHEMA",
-		"REINDEX SYSTEM",
+		"CLUSTER",
+		"DISCARD",
 		"CREATE DATABASE",
 		"DROP DATABASE",
 		"CREATE TABLESPACE",
 		"DROP TABLESPACE",
+		"CREATE SUBSCRIPTION",
+		"DROP SUBSCRIPTION",
 		"ALTER SYSTEM",
 	} {
 		if !containsPhrase(stripped, s) && !containsPhrase(raw, s) {
@@ -277,6 +310,9 @@ func stripSQLComments(body string) string {
 	return out.String()
 }
 
+// The option list is optional and may contain anything but a closing paren.
+var reindexNonTransactional = regexp.MustCompile(`\bREINDEX\s*(\([^)]*\)\s*)?(DATABASE|SCHEMA|SYSTEM)\b`)
+
 // dollarTag returns the $tag$ opening s, if s starts with one. A tag is $ then
 // zero or more identifier characters then $, which makes both $$ and $body$
 // tags and neither of them arithmetic.
@@ -365,12 +401,18 @@ type applied struct {
 	digest string
 }
 
-// Every reference to schema_migrations is schema-qualified. Verify runs on the
-// pool, where the migrator's one-off SET search_path cannot reach, and an
-// unqualified name there lets a role whose search_path names an earlier
+// Every reference to the schema_migrations TABLE is schema-qualified. Verify
+// runs on the pool, where the migrator's one-off SET search_path cannot reach,
+// and an unqualified name there lets a role whose search_path names an earlier
 // writable schema satisfy the check against a decoy history — measured, not
 // theorised. Qualifying works on any connection with no DSN dependence; the
 // session pin in Migrate stays as defence in depth.
+//
+// The `pg_catalog.` on to_regclass is a different thing and buys nothing
+// checkable: pg_catalog is searched implicitly FIRST unless it is named, so a
+// decoy public.to_regclass never wins on any sane search_path. It is written
+// for symmetry, it is untestable, and saying so is better than leaving a
+// reader to assume a test covers it.
 //
 // querier is whatever the history is read through. Migrate reads it on the
 // connection holding the advisory lock; Verify reads it on the pool, which is

@@ -263,11 +263,21 @@ func TestNonTransactionalDetectionReadsSQLNotSubstrings(t *testing.T) {
 		"a keyword split by a block comment": "CREATE/* split */DATABASE probe;",
 		"a keyword split across lines":       "CREATE\nDATABASE probe;",
 		"a keyword after a line comment":     "-- harmless\nVACUUM FULL t;",
-		"CREATE TABLESPACE":                  "CREATE TABLESPACE ts LOCATION '/x';",
 		"DROP DATABASE":                      "DROP DATABASE probe;",
 		"CREATE DATABASE":                    "CREATE DATABASE probe;",
 		"REINDEX DATABASE":                   "REINDEX DATABASE x;",
 		"REINDEX SCHEMA":                     "REINDEX SCHEMA public;",
+		"REINDEX SYSTEM":                     "REINDEX SYSTEM x;",
+		// Options sit between the keyword and the target, so no phrase matches.
+		"REINDEX with an option list":      "REINDEX (VERBOSE) DATABASE x;",
+		"REINDEX with a tablespace option": "REINDEX (TABLESPACE pg_default) SCHEMA public;",
+		"CLUSTER":                          "CLUSTER;",
+		"DISCARD ALL":                      "DISCARD ALL;",
+		"CREATE SUBSCRIPTION":              "CREATE SUBSCRIPTION s CONNECTION 'x' PUBLICATION p;",
+		"DROP SUBSCRIPTION":                "DROP SUBSCRIPTION s;",
+		"CREATE TABLESPACE":                "CREATE TABLESPACE ts LOCATION '/x';",
+		"DROP TABLESPACE":                  "DROP TABLESPACE ts;",
+		"ALTER SYSTEM":                     "ALTER SYSTEM SET work_mem = '1GB';",
 		// The lexer under-refused on each of these — an escape string, a $tag$
 		// inside an unquoted identifier, a Unicode dollar tag. The raw-body
 		// pass refuses them whatever the lexer makes of them.
