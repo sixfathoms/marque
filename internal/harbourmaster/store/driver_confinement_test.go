@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,11 +18,16 @@ import (
 // Drivers this project could plausibly link, mapped to the ONE package allowed
 // to import each. A driver with no entry is allowed nowhere.
 //
-// This is a denylist and therefore not engine-complete: anything published
-// tomorrow is not on it. EDR-0042 says so rather than implying otherwise — a
-// denylist is the weaker shape and it is the shape available. What it buys is
-// that the drivers anyone here would actually reach for cannot arrive by
-// accident.
+// This is a denylist and therefore not engine-complete: a driver with no entry
+// here is caught by nothing. A reviewer imported go-mssqldb, go-ora, sqlite and
+// clickhouse-go and watched both this test and depguard stay silent. That is
+// the fourth way EDR-0042 lists the rule being defeated, and it is listed there
+// because a comment claiming the record admits something the record does not
+// say is its own small version of the problem this file is about.
+//
+// A denylist is the weaker shape and it is the shape available: an allowlist
+// over every import would refuse the standard library. What it buys is that the
+// drivers anyone here would actually reach for cannot arrive by accident.
 var driverHomes = map[string]string{
 	"github.com/jackc/pgx":           "internal/harbourmaster/store",
 	"github.com/jackc/pgconn":        "internal/harbourmaster/store",
@@ -39,7 +45,22 @@ const pilotPostgres = "internal/pilot/postgres"
 // adapters "the boundary that carries the weight": a Harbourmaster package
 // importing an adapter links its driver transitively, which no direct-import
 // check can see.
-const harbourmasterPrefix = "internal/harbourmaster"
+//
+// cmd/harbourmaster is in the list because it is the binary that actually
+// ships. A reviewer blank-imported a Pilot adapter into cmd/harbourmaster/main.go
+// and watched `go list -deps` grow twelve pgx packages while this test stayed
+// green — the prefix was internal/harbourmaster alone, so the check covered
+// every package except the one being built.
+var harbourmasterPrefixes = []string{"internal/harbourmaster", "cmd/harbourmaster"}
+
+func inHarbourmaster(dir string) bool {
+	for _, p := range harbourmasterPrefixes {
+		if dir == p || strings.HasPrefix(dir, p+"/") {
+			return true
+		}
+	}
+	return false
+}
 
 // TestDriverConfinement is EDR-0042's mechanism, in its third shape.
 //
@@ -177,7 +198,7 @@ func pilotImports(files map[string][]string) []string {
 	var out []string
 	for rel, imports := range files {
 		dir := filepath.ToSlash(filepath.Dir(rel))
-		if !strings.HasPrefix(dir, harbourmasterPrefix) {
+		if !inHarbourmaster(dir) {
 			continue
 		}
 		for _, imp := range imports {
@@ -211,15 +232,15 @@ func firstPartyGoFiles(t *testing.T) map[string][]string {
 
 	var walk func(dir, rel string)
 	walk = func(dir, rel string) {
-		real, err := filepath.EvalSymlinks(dir)
+		resolved, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			t.Errorf("%s could not be resolved, so its contents are unchecked: %v", rel, err)
 			return
 		}
-		if visited[real] {
+		if visited[resolved] {
 			return
 		}
-		visited[real] = true
+		visited[resolved] = true
 
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -321,5 +342,79 @@ func repoRoot(t *testing.T) string {
 			t.Fatal("no go.mod above the working directory")
 		}
 		dir = parent
+	}
+}
+
+// TestSkipDirMatchesTheGoToolchain pins the skip rule, because the two hand-
+// curated lists that preceded it were each defeated by a directory nobody
+// thought of. The rule is "what the Go toolchain itself never compiles", and
+// the cases that matter are the ones that look skippable and are not.
+func TestSkipDirMatchesTheGoToolchain(t *testing.T) {
+	for _, c := range []struct {
+		dir  string
+		skip bool
+		why  string
+	}{
+		{".git", true, "a dot directory; cmd/go ignores it"},
+		{".github", true, "a dot directory"},
+		{"_scratch", true, "an underscore directory; cmd/go ignores it"},
+		{"testdata", true, "cmd/go never compiles testdata"},
+
+		{"bin", false, "go build ./bin/x/ compiles a package there; skipping it hid one"},
+		{"dist", false, "same, and it was skipped for the same bad reason"},
+		{"node_modules", false, "nothing stops a Go file living there, and it is in the module"},
+		{"gen", false, "generated code is compiled code"},
+		{"internal", false, ""},
+		{"vendor", false, "vendored code is compiled, and its imports are still imports"},
+	} {
+		if got := skipDir(c.dir); got != c.skip {
+			t.Errorf("skipDir(%q) = %v, want %v — %s", c.dir, got, c.skip, c.why)
+		}
+	}
+}
+
+// TestViolationsReportsAForbiddenImport is the test that makes the rule
+// enforceable rather than merely present. On this repository no file violates
+// it, so the reporting loop never runs and deleting the failure entirely left
+// the suite green. A synthetic set is the only way to see the check fire.
+func TestViolationsReportsAForbiddenImport(t *testing.T) {
+	got := violations(map[string][]string{
+		// Forbidden: a Harbourmaster package that is not the store.
+		"internal/harbourmaster/api/x.go": {"github.com/jackc/pgx/v5/stdlib"},
+		// Forbidden: the store may hold a PostgreSQL driver, not any driver.
+		"internal/harbourmaster/store/y.go": {"github.com/go-sql-driver/mysql"},
+		// Permitted: each driver in its declared home.
+		"internal/harbourmaster/store/z.go": {"github.com/jackc/pgx/v5/stdlib"},
+		"internal/pilot/postgres/a.go":      {"github.com/jackc/pgx/v5/stdlib"},
+		// Not a driver at all.
+		"internal/harbourmaster/api/b.go": {"database/sql", "fmt"},
+	})
+	want := []string{
+		`internal/harbourmaster/api/x.go imports "github.com/jackc/pgx/v5/stdlib", which belongs in internal/harbourmaster/store and nowhere else`,
+		`internal/harbourmaster/store/y.go imports "github.com/go-sql-driver/mysql", which belongs in internal/pilot/mysql and nowhere else`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("violations() =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
+// TestPilotImportsReportsATransitiveDriver covers the other half, which is
+// vacuous for a different reason: internal/pilot does not exist yet, so on this
+// repository the check cannot fail and cannot be seen to work.
+func TestPilotImportsReportsATransitiveDriver(t *testing.T) {
+	got := pilotImports(map[string][]string{
+		"internal/harbourmaster/api/x.go":   {"github.com/sixfathoms/marque/internal/pilot/postgres"},
+		"internal/harbourmaster/store/y.go": {"github.com/sixfathoms/marque/internal/pilot"},
+		// A Pilot package importing a Pilot package is not the boundary.
+		"internal/pilot/postgres/a.go": {"github.com/sixfathoms/marque/internal/pilot"},
+		// A prefix that merely starts the same way is not a Pilot package.
+		"internal/harbourmaster/api/b.go": {"github.com/sixfathoms/marque/internal/pilotage"},
+	})
+	want := []string{
+		`internal/harbourmaster/api/x.go imports "github.com/sixfathoms/marque/internal/pilot/postgres"`,
+		`internal/harbourmaster/store/y.go imports "github.com/sixfathoms/marque/internal/pilot"`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("pilotImports() =\n  %q\nwant\n  %q", got, want)
 	}
 }

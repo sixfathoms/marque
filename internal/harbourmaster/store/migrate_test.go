@@ -87,10 +87,38 @@ func TestCompareRefusals(t *testing.T) {
 		}
 	})
 
-	t.Run("reordered history refuses", func(t *testing.T) {
-		err := compare(embedded, []applied{{2, "0002_x.sql", "bb"}})
+	// One field differs per case, and the message is asserted. An earlier
+	// version used a fixture differing in number, name AND digest at once, so
+	// deleting the number check and the name check together still passed — the
+	// digest comparison caught it and the test could not tell which check had
+	// done the work.
+	t.Run("a renumbered migration refuses, naming the position", func(t *testing.T) {
+		err := compare(embedded, []applied{{2, "0001_x.sql", "aa"}})
 		if !errors.Is(err, ErrSchemaMismatch) {
 			t.Fatalf("want ErrSchemaMismatch, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "is where 1 was expected") {
+			t.Errorf("the message should name the position; got %q", err)
+		}
+	})
+
+	t.Run("a renamed migration refuses, naming both names", func(t *testing.T) {
+		err := compare(embedded, []applied{{1, "0002_x.sql", "aa"}})
+		if !errors.Is(err, ErrSchemaMismatch) {
+			t.Fatalf("want ErrSchemaMismatch, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "was applied as") {
+			t.Errorf("the message should name what was applied; got %q", err)
+		}
+	})
+
+	t.Run("an edited migration refuses on its digest", func(t *testing.T) {
+		err := compare(embedded, []applied{{1, "0001_x.sql", "zz"}})
+		if !errors.Is(err, ErrSchemaMismatch) {
+			t.Fatalf("want ErrSchemaMismatch, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "has been edited since it was applied") {
+			t.Errorf("the message should name the cause; got %q", err)
 		}
 	})
 }
@@ -133,14 +161,39 @@ func TestGapInEmbeddedSetIsRefused(t *testing.T) {
 }
 
 func TestMalformedMigrationNamesAreRefused(t *testing.T) {
-	for name, files := range map[string]fstest.MapFS{
-		"not a .sql file":      {"migrations/README.md": &fstest.MapFile{Data: []byte("x")}},
-		"no number prefix":     {"migrations/initial.sql": &fstest.MapFile{Data: []byte("x")}},
-		"zero is not a number": {"migrations/0000_a.sql": &fstest.MapFile{Data: []byte("x")}},
+	// The filename is chosen so that ONLY the check under test can refuse it,
+	// and the message is asserted. An earlier version used README.md for the
+	// .sql case, which also fails the NNNN_slug branch — so deleting the
+	// suffix check left the suite green while 0001_x.md silently became a
+	// migration.
+	for name, c := range map[string]struct {
+		files fstest.MapFS
+		says  string
+	}{
+		"not a .sql file": {
+			fstest.MapFS{"migrations/0001_x.md": &fstest.MapFile{Data: []byte("x")}},
+			"is not a .sql file",
+		},
+		"no NNNN_slug shape": {
+			fstest.MapFS{"migrations/initial.sql": &fstest.MapFile{Data: []byte("x")}},
+			"is not named NNNN_slug.sql",
+		},
+		"a prefix that is not a number": {
+			fstest.MapFS{"migrations/initial_a.sql": &fstest.MapFile{Data: []byte("x")}},
+			"does not start with a positive number",
+		},
+		"zero is not a number": {
+			fstest.MapFS{"migrations/0000_a.sql": &fstest.MapFile{Data: []byte("x")}},
+			"does not start with a positive number",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := loadMigrationsFrom(files); err == nil {
+			_, err := loadMigrationsFrom(c.files)
+			if err == nil {
 				t.Fatalf("%s was accepted", name)
+			}
+			if !strings.Contains(err.Error(), c.says) {
+				t.Errorf("the message should name the cause %q; got %q", c.says, err)
 			}
 		})
 	}
@@ -163,5 +216,35 @@ func TestDigestIsTheSHA256OfTheFile(t *testing.T) {
 	}
 	if !bytes.Equal(raw, want[:]) {
 		t.Errorf("digest is not the SHA-256 of the file")
+	}
+}
+
+// EDR-0042 says a migration containing a statement PostgreSQL will not run
+// inside a transaction is refused by the migrator. It said so for a while with
+// nothing implementing it, which a reviewer found by grepping the package.
+func TestNonTransactionalStatementsAreRefused(t *testing.T) {
+	for name, body := range map[string]string{
+		"CREATE INDEX CONCURRENTLY": "CREATE INDEX CONCURRENTLY x ON t (c);",
+		"lowercase concurrently":    "create index concurrently x on t (c);",
+		"VACUUM":                    "VACUUM FULL t;",
+		"REINDEX":                   "REINDEX TABLE t;",
+		"ALTER SYSTEM":              "ALTER SYSTEM SET work_mem = '1GB';",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadMigrationsFrom(fstest.MapFS{
+				"migrations/0001_a.sql": &fstest.MapFile{Data: []byte(body)},
+			})
+			if err == nil {
+				t.Fatalf("%s was accepted", name)
+			}
+			if !strings.Contains(err.Error(), "25001") {
+				t.Errorf("the message should say what would happen; got %q", err)
+			}
+		})
+	}
+
+	// The real migration must still load, or this guard is a build break.
+	if _, err := loadMigrations(); err != nil {
+		t.Errorf("the shipped migrations no longer load: %v", err)
 	}
 }

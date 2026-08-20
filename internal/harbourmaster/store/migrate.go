@@ -83,6 +83,9 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading migrations/%s: %w", name, err)
 		}
+		if err := rejectNonTransactional(name, string(body)); err != nil {
+			return nil, err
+		}
 		sum := sha256.Sum256(body)
 		out = append(out, migration{
 			number: n,
@@ -111,6 +114,43 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 	return out, nil
 }
 
+// Statements PostgreSQL refuses to run inside a transaction block. applyOne
+// wraps every migration in one, so a migration containing any of these fails
+// with SQLSTATE 25001 — after the advisory lock is taken, part-way through a
+// production migration. Refusing at LOAD time instead means the refusal happens
+// in CI, on every build, before a database is involved.
+//
+// EDR-0042 promised this and nothing implemented it; a reviewer grepped the
+// package and found the mechanism did not exist.
+//
+// Deliberately coarse. A migration needing CREATE INDEX CONCURRENTLY is a real
+// need, and the answer is a decision about how this migrator runs statements
+// outside a transaction, not a quiet exception here.
+func rejectNonTransactional(name, body string) error {
+	// Comments and string literals are not stripped, so a mention in a comment
+	// refuses too. That is the safe direction: the fix is to reword the
+	// comment, and the alternative is parsing SQL to find out.
+	upper := strings.ToUpper(body)
+	for _, s := range []string{
+		"CONCURRENTLY",
+		"VACUUM",
+		"REINDEX",
+		"CREATE DATABASE",
+		"DROP DATABASE",
+		"CREATE TABLESPACE",
+		"ALTER SYSTEM",
+	} {
+		if strings.Contains(upper, s) {
+			return fmt.Errorf(
+				"migrations/%s contains %s, which PostgreSQL refuses to run inside a transaction block.\n"+
+					"  Every migration is applied inside one, so this would fail as SQLSTATE 25001 part-way\n"+
+					"  through a migration rather than here. Running statements outside a transaction is a\n"+
+					"  decision this migrator has not taken (EDR-0042)", name, s)
+		}
+	}
+	return nil
+}
+
 // Verify reports whether the database's applied history matches this binary's
 // embedded set. It never writes. Startup calls it and refuses to serve on any
 // mismatch, rather than migrating: migrating implicitly turns every deploy into
@@ -130,7 +170,8 @@ func Verify(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("beginning the verification read: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '30s'`); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`SELECT set_config('lock_timeout', $1, true)`, lockWait); err != nil {
 		return fmt.Errorf("bounding the verification read: %w", err)
 	}
 	applied, err := appliedOn(ctx, tx)
@@ -188,6 +229,17 @@ func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 	}
 	return out, rows.Err()
 }
+
+// lockWait bounds every lock wait the migrator and Verify make: the advisory
+// lock, the history read, and each migration's DDL. Set through set_config so
+// it is a parameter rather than string-built SQL — SET itself takes no
+// parameters.
+//
+// A var, not a const, because the test that watches it bite holds a conflicting
+// lock and waits for the refusal. At thirty seconds that test either takes
+// thirty seconds or asserts nothing; the earlier version chose a deadline
+// shorter than the timeout and failed itself.
+var lockWait = "30s"
 
 // ErrSchemaMismatch is returned when the database's history and the binary's
 // embedded set disagree in a way no migration can fix.
@@ -284,7 +336,8 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	// Without it pg_advisory_lock waits forever, and a CLI passing
 	// context.Background() waits with it rather than saying another migrator
 	// holds the lock.
-	if _, err := conn.ExecContext(ctx, `SET lock_timeout = '30s'`); err != nil {
+	if _, err := conn.ExecContext(ctx,
+		`SELECT set_config('lock_timeout', $1, false)`, lockWait); err != nil {
 		return fmt.Errorf("bounding the migration's lock waits: %w", err)
 	}
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
