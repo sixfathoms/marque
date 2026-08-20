@@ -149,10 +149,20 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 //
 // That last one was argued away once, on the grounds that no phrase separates
 // it from the transactional `ALTER DATABASE … SET` forms. A reviewer measured
-// otherwise: `SET TABLESPACE` refuses none of them. Its only cost is
-// over-refusing `ALTER TABLE … SET TABLESPACE`, which is the same trade this
-// list already makes for CONCURRENTLY — so the justification was wrong even
-// though the conclusion could have been defended.
+// otherwise: `SET TABLESPACE` refuses none of them. So the justification was
+// wrong even though the conclusion could have been defended.
+//
+// **Stop enumerating the costs.** Twice a sentence here has said "its only cost
+// is X" and a reviewer has found Y — `ALTER INDEX … SET TABLESPACE` and
+// an ALTER of a materialised view with the same clause, both transactional and
+// refused; and `CLUSTER t USING i`, transactional and refused by bare
+// `CLUSTER`. The general statement is the true one and it is shorter:
+//
+//	This matches a PHRASE, not a statement. It refuses every statement
+//	containing one, transactional or not.
+//
+// That is the trade the list makes everywhere, it is why CONCURRENTLY refuses a
+// concurrent REFRESH, and it needs no list of examples to stay true.
 //
 // What is left over fails as SQLSTATE 25001 at migration time, which is what
 // this reduces, not what it eliminates.

@@ -114,6 +114,14 @@ func TestDriverConfinement(t *testing.T) {
 }
 
 // TestHarbourmasterDoesNotImportAPilotAdapter enforces the transitive half.
+//
+// UNPINNED glue, the fifth such place and the only one that had not been
+// declared: turning this t.Errorf into a t.Logf leaves the suite green, because
+// no Harbourmaster package imports a Pilot one and a test cannot observe its
+// own reporting. What it reports — pilotImports — is pinned over a synthetic
+// set. It matters more here than at the other four, because EDR-0042 says this
+// walk is the ONLY mechanism that sees this boundary: the graph check treats a
+// permitted home as a sink and cannot.
 func TestHarbourmasterDoesNotImportAPilotAdapter(t *testing.T) {
 	for _, v := range pilotImports(firstPartyGoFiles(t)) {
 		t.Errorf(
