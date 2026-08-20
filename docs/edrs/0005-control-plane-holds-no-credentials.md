@@ -4,7 +4,7 @@ title: "The control plane never holds a target credential"
 summary: "Target credentials live only where connections are made. The Harbourmaster stores a reference; the Pilot dereferences it at connect time using its own workload identity and never returns it."
 status: accepted
 implementation: none
-implementation_note: "cmd/harbourmaster and proto/marque/v1/harbourmaster.proto cite this record, and nothing stores a reference, dereferences one, or connects to anything — true of a binary that prints its version and exits. The Harbourmaster will link a PostgreSQL driver for its OWN store from M1, which is why the mechanism below is re-expressed by EDR-0042 as containment rather than absence."
+implementation_note: "cmd/harbourmaster and proto/marque/v1/harbourmaster.proto cite this record; nothing stores a reference, dereferences one, or connects to anything, and no binary links a database driver — all true of three binaries that print a version and exit. From M1 the Harbourmaster links one for its OWN store, which is why the driver mechanism below is EDR-0042's import discipline rather than absence."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

@@ -70,8 +70,10 @@ sits on top.
 ### EDR-0005's driver rule becomes import discipline, not absence
 
 **The property EDR-0005 protects is unchanged**: an attacker owning the entire Harbourmaster obtains
-no target credential and cannot reach a target. What changes is the mechanism, because the old one is
-not available.
+no target credential and cannot mint authority to reach one. Not *"cannot reach a target"* — EDR-0005
+was amended on 2026-08-16 to say a compromised control plane retains a bounded, quota'd, target-visible
+read channel by relaying operator-signed reads, and overstating that is the error that amendment
+exists to correct. What changes is the mechanism, because the old one is not available.
 
 1. **Two packages, and only they import a driver.** `internal/harbourmaster/store` imports a
    PostgreSQL driver for the control plane's own database. `internal/pilot/postgres` imports one to
@@ -124,6 +126,11 @@ plane holds no target credential — is untouched.
   rather than run outside one.
 - **Serialised by a transaction-scoped advisory lock**, taken before verification. Two migrators
   starting together is an ordinary deployment event, not an exotic one.
+- **Migrations run as their own role**, distinct from the runtime role and holding the privileges
+  the runtime role must not have. [EDR-0012](./0012-the-logbook-is-append-only.md) already requires
+  the journal to be owned by a role used only by migrations, because Marque's runtime role must not
+  own the table it appends to — establishing that separation at migration one costs nothing and
+  M6 otherwise inherits an ownership problem.
 - **Applying is an explicit command.** Startup verifies and **refuses to serve** on any mismatch —
   ahead, behind, or divergent — naming both versions. Migrating implicitly at startup turns every
   deploy into a schema change nobody chose to run, and it is the same lazy-initialisation failure
@@ -141,9 +148,9 @@ protect and which M4 makes real.
 | Table | Holds |
 |---|---|
 | `schema_migrations` | number, SHA-256 digest, applied-at |
-| `requests` | `req_…` reference, tenant, statement, target, role, submitter as a bare string, the operator's **reason**, state |
+| `requests` | `req_…` reference, tenant, statement, target, role, submitter as a bare string, the operator's **reason**, state, `created_at` |
 | `approvals` | tenant, request, **stage**, approver, at |
-| `executions` | tenant, request, at, outcome, rows affected |
+| `executions` | tenant, request, at, outcome, rows affected — **rows affected is M1's "result"**, and the plan's *"the result and the statement land in a table"* means exactly that and nothing richer |
 
 **`requests.state` carries all seven of [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)'s
 values** — `pending`, `verifying`, `approved`, `refused`, `expired`, `executed`, `indeterminate` —
@@ -167,10 +174,13 @@ There is no `targets` or `roles` table: those are reviewed configuration
 
 Named individually, because a reader who sees only one will assume the rest is right.
 
-1. **Approval is a row, not a signature**, and the table is flat.
-   [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) exists because a flat
-   `required`/`eligible` model made a chain requiring Sam *then* data-oncall satisfiable by two of
-   data-oncall. M1 carries a `stage` column so the shape is not actively wrong. **M3 builds the
+1. **Approval is a row, not a signature.** A row asserts that somebody approved; a signature is
+   checkable by a Pilot that cannot call anyone back, which is the whole of
+   [EDR-0004](./0004-marques-are-signed-leases.md). The table is **not** flat — it carries `stage`,
+   because [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) exists on the strength
+   of a flat `required`/`eligible` model letting a chain requiring Sam *then* data-oncall be
+   satisfied by two of data-oncall, and that shape costs one column to avoid now and a rebuild to
+   avoid later. **M3 builds the
    signed marque that replaces the table**, and M7 wires it into this path and deletes the stub —
    the plan is explicit that M2–M6 build and M7 activates.
 2. **`requests.state` is authoritative**, where [EDR-0012](./0012-the-logbook-is-append-only.md)

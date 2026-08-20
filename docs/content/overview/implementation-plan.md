@@ -125,13 +125,15 @@ Three things arrive with the store
 ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)): the tenant-partitioned schema
 and its first migration; a migrator that is an explicit command, refuses a divergent history, and
 records each migration's content digest in the transaction that applies it; and the `depguard` rule
-confining the PostgreSQL driver to `internal/store`, which lands in the **same change** as the first
-package that opens a connection.
+confining a target engine's driver to the two packages that need one — the Harbourmaster's store and
+the Pilot's adapter, which must have it — landing in the **same change** as the first package that
+opens a connection.
 
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
-the row changed; and the driver-containment rule **seen to fail**, by adding the import to a package
-outside `internal/store` and watching the lint refuse it — the rule replaces a mechanism EDR-0005
-lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end signal, available in week one rather than month three.
+the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
+package that is not the store and watching the lint refuse it. The rule replaces a mechanism EDR-0005
+lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
+signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
 above.
 

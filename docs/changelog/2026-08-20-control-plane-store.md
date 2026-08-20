@@ -51,7 +51,8 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   `aborted_not_applied` exist from the first migration, and neither is `failed`.
 
 **Three things M1 gets wrong on purpose, named individually** so a reader who sees one does not assume
-the rest is right: approval is a flat row rather than a per-stage signature
+the rest is right: approval is a row rather than a signature — carrying `stage`, so it is not the
+flat shape
 ([EDR-0030](/edrs/0030-a-marque-states-its-own-approval-requirement/) exists because flat was a
 defect); `requests.state` is authoritative where [EDR-0012](/edrs/0012-the-logbook-is-append-only/)
 makes current state a disposable projection; and `executions` is a control-plane *report* which must
