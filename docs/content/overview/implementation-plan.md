@@ -134,10 +134,11 @@ cross-check and a `depguard` block as the edit-time report.
 **Exit:** an integration test against a real PostgreSQL running the six steps and asserting
 the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
 package that is not the store and watching the confinement test refuse it. It parses every file
-rather than asking a linter, and not because a linter is incapable — several claims of that shape
-were made here and every one was false (EDR-0042). A linter's reach is its flags and exclusions, a
-walk's is its own skip rule, and `go list`'s is the patterns and tags it is given, so none of them
-may be asserted and all of them are probed. The rule replaces a mechanism EDR-0005
+by asking `go list -deps` what each binary links, with the walk as a cross-check — and not because
+a linter is incapable, since several claims of that shape were made here and every one was false
+(EDR-0042). A linter's reach is its flags and exclusions, a walk's is its own skip rule, and
+`go list`'s is the patterns and tags it is given, so none of them may be asserted and all of them
+are probed. The rule replaces a mechanism EDR-0005
 lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
 signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers

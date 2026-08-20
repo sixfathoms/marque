@@ -63,21 +63,28 @@ func inHarbourmaster(dir string) bool {
 	return false
 }
 
-// TestDriverConfinement is EDR-0042's mechanism, in its third shape.
+// TestDriverConfinement is EDR-0042's CROSS-CHECK. The mechanism is
+// TestNoBinaryLinksADriverOutsideItsHome, which asks the toolchain what each
+// binary links; this asks what files exist, which is a different question and
+// catches a different thing — a package under testdata/ is invisible to
+// `go list` until something imports it, and visible here immediately.
 //
-// Three justifications have been given for doing this here rather than in
-// depguard, and all three were capability claims about tooling that turned out
+// Several justifications have been given for doing this at all rather than in
+// depguard, and every one was a capability claim about tooling that turned out
 // to be false — that depguard cannot report blank imports (it can; revive's
 // blank-imports rule reports at the same line and --uniq-by-line hid it), that
 // golangci-lint cannot read a file behind a build tag (it can, under
-// --build-tags), and that it cannot read gen/ (an anchored exclusion in
-// .golangci.yml, and gen/ is in no binary's dependency graph anyway). EDR-0042
-// records all three.
+// --build-tags, which `make lint` now passes), that it cannot read gen/ (two
+// deletable settings in .golangci.yml, and gen/ is in no SHIPPED binary's
+// dependency graph anyway, though the test binaries and schemacheck link it),
+// and that the Go toolchain never compiles from testdata/ (that rule is about
+// wildcard expansion, not import resolution). EDR-0042 records them all.
 //
-// So this claims nothing about capability. Both mechanisms' coverage is
-// configuration: this test's is its walk and skipDir, the linter's is its
-// invocation flags and exclusions. Neither is safe to assert, so both are
-// probed — see TestSkipDirMatchesTheGoToolchain and TestWalkReachesGeneratedCode
+// So this claims nothing about capability. Every mechanism's coverage is
+// configuration: this one's is its walk and skipDir, the linter's is its
+// invocation flags and exclusions, `go list`'s is the patterns and tags it is
+// given. None is safe to assert, so all are
+// probed — see TestTheWalkReachesEveryPlaceThatHasEscapedIt and TestWalkReachesGeneratedCode
 // below, and the symlink FOLLOWING in firstPartyGoFiles — refusing them was
 // the first fix and it was wrong.
 //
@@ -93,9 +100,10 @@ func TestDriverConfinement(t *testing.T) {
 	for _, v := range violations(files) {
 		t.Errorf(
 			"%s (EDR-0042).\n"+
-				"  The rule replaces EDR-0005's \"no database driver for target engines\n"+
-				"  linked in\", which stopped being available when EDR-0013 fixed Marque's\n"+
-				"  own state on PostgreSQL.",
+				"  A PostgreSQL driver may also live in internal/pilot/postgres, and\n"+
+				"  nowhere else either way. The rule replaces EDR-0005's \"no database\n"+
+				"  driver for target engines linked in\", which stopped being available\n"+
+				"  when EDR-0013 fixed Marque's own state on PostgreSQL.",
 			v)
 	}
 }

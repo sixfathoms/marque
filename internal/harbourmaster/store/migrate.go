@@ -6,12 +6,14 @@
 // survive EDR-0013 fixing Marque's own state on PostgreSQL: PostgreSQL is also
 // a target engine, and one driver serves both. The replacement is import
 // discipline, and it is weaker — a check reads imports, not capability. It is
-// enforced by TestDriverConfinement in this package, which parses every .go
-// file, with a depguard block beside it. Not because a linter is incapable:
-// three claims of that shape were made and all three were false, and EDR-0042
-// retracts them. Because a linter's reach is its flags and exclusions and a
-// test's is its own code, so both are probed rather than asserted. See EDR-0042
-// for the four ways import discipline is defeated.
+// enforced by TestNoBinaryLinksADriverOutsideItsHome in this package, which
+// asks `go list -deps` what each binary links, with a filesystem walk as a
+// cross-check and a depguard block as the edit-time report. Not because a
+// linter is incapable: several claims of that shape were made here and every
+// one was false, and EDR-0042 retracts them. Because each mechanism's reach is
+// configuration — flags and exclusions, a skip rule, the patterns given to
+// `go list` — so all of them are probed rather than asserted. See EDR-0042 for
+// the four ways import discipline is defeated.
 package store
 
 import (
@@ -596,7 +598,7 @@ func applyOne(ctx context.Context, conn *sql.Conn, m migration) error {
 // the whole of EDR-0042's mechanism. It is registered with database/sql as a
 // side effect, which is process-wide — so this package being the only importer
 // does not stop another package calling sql.Open by name. That is stated in
-// EDR-0042 as one of the three ways the rule is defeated, and it is why this is
+// EDR-0042 as one of the four ways the rule is defeated, and it is why this is
 // import discipline rather than containment.
 //
 // The caller owns the returned *sql.DB and must Close it.

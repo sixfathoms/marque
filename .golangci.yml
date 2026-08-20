@@ -34,18 +34,21 @@ linters:
     # available when EDR-0013 fixed Marque's own state on PostgreSQL, since
     # PostgreSQL is also a target engine and one driver serves both.
     #
-    # This block is NOT the replacement. TestDriverConfinement in
-    # internal/harbourmaster/store is. But NOT because this linter is incapable:
-    # three claims of that shape have been made on this repository and all three
-    # were false. It does see blank imports (revive's blank-imports rule reports
-    # at the same line and --uniq-by-line hid the second issue); it does read a
-    # file behind a build tag under --build-tags, which `make lint` now passes;
-    # and gen/ is skipped by the deletable exclusion below, not by inability.
-    # EDR-0042 retracts all three.
+    # This block is NOT the replacement. TestNoBinaryLinksADriverOutsideItsHome
+    # in internal/harbourmaster/store is, with a filesystem walk beside it. But
+    # NOT because this linter is incapable: several claims of that shape have
+    # been made on this repository and every one was false. It does see blank
+    # imports (revive's blank-imports rule reports at the same line and
+    # --uniq-by-line hid the second issue); it does read a file behind a build
+    # tag under --build-tags, which `make lint` now passes; and gen/ is skipped
+    # by the two deletable settings below, not by inability. EDR-0042 retracts
+    # them all.
     #
-    # The honest split is that both mechanisms' coverage is CONFIGURATION — this
-    # one's is flags and exclusions, the test's is its walk — so neither may
-    # claim capability, and both are probed. This one reports at edit time.
+    # The honest split is that every mechanism's coverage is CONFIGURATION —
+    # this one's is flags and exclusions, the walk's is its skip rule, go list's
+    # is the patterns it is given — so none may claim capability, and all are
+    # probed. This one reports at edit time, and is deliberately WIDER: its
+    # exemptions are directory globs rather than exact packages.
     #
     # What import discipline buys either way is that the capability arrives by a
     # reviewed edit rather than by accident. It is not capability containment:
@@ -71,8 +74,10 @@ linters:
               desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
             - pkg: github.com/jackc/pgproto3
               desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
-        # An engine Marque does not store its own state in has no exception at
-        # all: EDR-0013 forced the PostgreSQL one, and nothing forces this.
+        # An engine Marque does not store its own state in has no CONTROL-PLANE
+        # exception: its only home is the Pilot's adapter, which is why the
+        # Pilot tree is excluded below. EDR-0013 forced the PostgreSQL one, and
+        # nothing forces this.
         no-other-target-engine:
           files:
             - "**/internal/**"

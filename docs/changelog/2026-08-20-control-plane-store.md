@@ -44,8 +44,8 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   `lock_timeout` back to the pool; that a held `ACCESS EXCLUSIVE` lock produces a bounded refusal
   rather than an indefinite wait; that the grants land and the runtime role owns nothing and holds no
   `DELETE`; that a decoy `schema_migrations` in an earlier schema does not become the history; that
-  an edited applied migration is refused; and that each closed vocabulary, each length bound and each
-  composite foreign key refuses what it says it refuses. Every one was chosen by deleting the code it
+  an edited applied migration is refused; and that each closed vocabulary, the length bounds, the idempotency
+  constraints and both composite foreign keys refuse what they say they refuse. Every one was chosen by deleting the code it
   covers and watching the test go red — and two of the tests failed that check because **they** were
   wrong, one planting a decoy function where only a decoy table could have worked, and one setting a
   deadline shorter than the timeout it was testing.
@@ -55,9 +55,11 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   M1 has no identity to derive it from, and **never a request field**.
 - **A migrator that refuses more than it applies.** Embedded, numbered, forward-only, each migration
   recorded with a content digest in the transaction that applies it, and the applied set required to
-  be an exact prefix of the embedded set. It runs as an explicit command; startup **verifies and
-  refuses to serve** on any mismatch. Migrating implicitly at startup turns every deploy into a
-  schema change nobody chose to run.
+  be an exact prefix of the embedded set. It is designed to run as an explicit command, with startup
+  **verifying and refusing to serve** on any mismatch — migrating implicitly at startup turns every
+  deploy into a schema change nobody chose to run. Neither caller exists yet: `Migrate` and
+  `Verify` are functions the tests drive, and no binary links the store. The command and the startup
+  check arrive with the services at M1 step 3.
 - **One vocabulary borrowed, one decided**, because a forward-only schema makes widening a column an
   unnecessary migration. `requests.state` takes all seven of
   [EDR-0038](/edrs/0038-a-request-is-a-shareable-watchable-object/)'s values even though M1 can

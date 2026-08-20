@@ -95,7 +95,7 @@ sentence was never achievable after that record was accepted and went unchalleng
 Harbourmaster had no storage code and so linked no drivers at all.
 [EDR-0042](./0042-the-control-plane-keeps-its-own-store.md) replaces it with import discipline — a
 driver confined to the two packages that need one — the Harbourmaster's store and the Pilot's
-adapter, which must have it — by a check that asks the toolchain what each binary links, with no
+adapter, which must have it — by a check that asks `go list -deps` what each binary links, with no
 control-plane exception for an engine Marque does not store its own state in; a MySQL driver's only
 home would be the Pilot's adapter — and is explicit that this is weaker: it reads imports, not
 capability.
@@ -151,5 +151,6 @@ the session's actual database user on the target — not the configuration's opi
   ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)). This line was missing when the
   amendment was made, which is the corpus's own rule 1 broken in the one place it is most visible.
 - **2026-08-16**: Amended after the second panel's synthesis: extended the blast-radius bullet to name the read channel and the fast-path residual.
+- **2026-08-20**: Amended a third time, same day. The mechanism sentence said "a test that parses every first-party file"; EDR-0042's mechanism is now a `go list -deps` graph check over each binary, with that walk demoted to a cross-check. The line below describes the previous shape and is left standing for the sequence. The decision is untouched.
 - **2026-08-20**: Amended again. The mechanism named here was `lint`; EDR-0042's rule is a test that parses every first-party file, with a `depguard` block beside it as the edit-time report. The three claims that justified moving off the linter were each false and are retracted in EDR-0042; the reason the test is kept claims nothing about capability. The decision is untouched.
 - **2026-08-20**: Amended. The driver sentence — "no database driver for target engines linked in" — is replaced, because it had been unachievable since [EDR-0013](./0013-async-work-rides-the-wal.md) fixed Marque's own state on PostgreSQL: PostgreSQL is also a target engine and one driver serves both. It survived only while the Harbourmaster had no storage code. The decision is unchanged — the control plane holds no target credential and cannot mint authority to reach one, which is not the same as "cannot reach a target": the bounded operator-signed read channel this record already carves out survives — and the mechanism is now import discipline ([EDR-0042](./0042-the-control-plane-keeps-its-own-store.md)), which that record states plainly is weaker. `implementation_note` corrected for the same reason. Where a target's connection parameters live is [issue #36](https://github.com/sixfathoms/marque/issues/36).
