@@ -80,20 +80,25 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
    about it. No other package imports either, and **no Harbourmaster package imports the Pilot
    adapter**, which is the boundary that carries the weight.
-2. **Enforced by `depguard`.** It is **not** in `.golangci.yml` today, and this record does not add
-   it — the rule lands with M1's first storage package, which is the change that first makes it
-   possible to violate. A
-   driver for a target engine Marque does not yet store its own state in — MySQL, when
-   [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) arrives — stays wholly absent from
-   the control plane, with no exception at all. PostgreSQL is the single weakened case and it is
-   weakened only because EDR-0013 made it the control plane's own store.
+2. **Enforced by a dependency-graph test.** `depguard` was this record's first answer and it does
+   not work: it does not report **blank imports**, and a database driver is imported blank
+   essentially always, because the point of importing it is the registration side effect. Measured,
+   not reasoned — a blank import of a denied package produces no diagnostic and a named import of the
+   same package produces one, for a driver and for a standard-library package alike.
+
+   The test instead walks `go list -deps -json` over the module and asserts that no first-party
+   package outside the two permitted ones imports a driver. A dependency graph has no such blind
+   spot, which is what made EDR-0005's original sentence checkable in the first place: losing
+   *absence* did not have to mean losing the instrument. `depguard` stays enabled as a cheap
+   redundant check on named imports.
+
 3. **The Harbourmaster holds no target connection parameters and no target credential.** EDR-0005
    already decides the credential half; where a target's *connection parameters* live it does not
    say, and this record does not settle it either — a role names a target, and what resolves that
    name to a host is undecided. Flagged rather than assumed:
    [issue #36](https://github.com/sixfathoms/marque/issues/36).
 
-**Say plainly what this is not.** `depguard` reads **imports**, not capability. `database/sql`
+**Say plainly what this is not.** The test reads **imports**, not capability. `database/sql`
 registration is process-wide, so once `internal/harbourmaster/store` registers a driver, any package
 in the binary can call `sql.Open("pgx", …)` without importing anything the linter would see. This is
 **import discipline**, which makes the capability arrive by a reviewed edit rather than by accident —
@@ -200,7 +205,10 @@ Named individually, because a reader who sees only one will assume the rest is r
 3. **`executions` is a control-plane report, and is not
    [EDR-0011](./0011-execution-is-idempotent-and-fenced.md)'s ledger.** That ledger is Pilot-local,
    durable, claim-first, and carries an incarnation — it is the fence. Nothing here should grow a
-   nonce column; where the Pilot keeps its own state is undecided and is
+   nonce column *for EDR-0011's purpose*. M1's `executions` does carry one, with a unique
+   constraint, which is what makes a Pilot's retry of its report idempotent — a report key, not a
+   claim. The claim-before-run protocol, the incarnation and the budget are the ledger, and where the
+   Pilot keeps that is undecided and is
    [issue #34](https://github.com/sixfathoms/marque/issues/34), due before M5.
 
 ## Consequences
@@ -248,7 +256,7 @@ Named individually, because a reader who sees only one will assume the rest is r
 
 **New obligations.**
 
-- **M1** lands the `depguard` rule in the same change as the first package that opens a connection.
+- **M1** lands the confinement test in the same change as the first package that opens a connection.
   A mechanism replaced and then not implemented is worse than the sentence it replaced.
 - **M5** needs the Pilot's own durable store decided — [issue #34](https://github.com/sixfathoms/marque/issues/34).
 - **M6** builds the logbook in this database and appends from the Harbourmaster
@@ -272,3 +280,4 @@ Named individually, because a reader who sees only one will assume the rest is r
 ## Changelog
 
 - **2026-08-20**: Accepted.
+- **2026-08-20**: Amended when M1 built it. The driver rule was specified as a `depguard` block and does not work: `depguard` does not report blank imports, and a database driver is imported blank essentially always. The mechanism is now a dependency-graph test over `go list -deps`, which sees every import — the instrument EDR-0005's original sentence relied on, kept even though *absence* was lost. The defeats list drops from four to three accordingly: a lint rule could see neither a blank import nor a file behind a build tag, and a graph test sees both. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger. The decision is unchanged.

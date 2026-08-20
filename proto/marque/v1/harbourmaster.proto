@@ -33,9 +33,12 @@ service HarbourmasterService {
     // KEYED on the caller's own key rather than NATURAL. A resubmitted
     // statement is a *second request* by default — two people asking for the
     // same change is not one change — so sameness has to be asserted by the
-    // caller rather than inferred from the text. Declaring it KEYED now also
-    // leaves room to strengthen to UNSAFE later; NATURAL could not be
-    // strengthened to KEYED without a new method (EDR-0040).
+    // caller rather than inferred from the text.
+    //
+    // This is a promise that cannot be taken back: EDR-0040 makes KEYED to
+    // UNSAFE, and moving the key's field, both breaking changes needing a new
+    // method name. Declared KEYED because it is true, not because it leaves
+    // room.
     option (marque.v1.behaviour) = {
       idempotency: IDEMPOTENCY_KEYED
       idempotency_field: "idempotency_key"
@@ -63,9 +66,14 @@ service HarbourmasterService {
   // plain on purpose so nothing here reads as an early marque.
   rpc Approve(ApproveRequest) returns (ApproveResponse) {
     // NATURAL because the row is keyed by (request, stage, approver): the same
-    // person approving the same stage twice is one approval, and saying so
-    // costs nothing. It can strengthen to KEYED or UNSAFE when M3 makes an
-    // approval a signature, which is the direction EDR-0040 permits.
+    // person approving the same stage twice is one approval.
+    //
+    // M3 inherits that promise. EDR-0040 forbids NATURAL becoming KEYED or
+    // UNSAFE — both break a client that cached the old policy — so if a signed
+    // approval turns out not to be naturally idempotent, M3 needs a new method
+    // name rather than a new annotation. Declaring it NATURAL says the repeat
+    // is genuinely harmless, which for a row keyed on those three columns it
+    // is.
     option (marque.v1.behaviour) = {idempotency: IDEMPOTENCY_NATURAL};
   }
 
@@ -154,6 +162,19 @@ message RecordExecutionRequest {
 
 message RecordExecutionResponse {
   Request request = 1;
+
+  // execution is what was stored for this nonce. A repeat returns the recorded
+  // attempt rather than recording a second one, so the caller can tell an
+  // accepted report from an acknowledged repeat — which is what makes the
+  // Pilot's retry safe (EDR-0011).
+  Execution execution = 2;
+}
+
+// Execution is one recorded attempt.
+message Execution {
+  string nonce = 1;
+  ExecutionOutcome outcome = 2;
+  int64 rows_affected = 3;
 }
 
 // Request is a submitted statement and what has happened to it.

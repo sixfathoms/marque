@@ -50,8 +50,13 @@ type migration struct {
 // loadMigrations reads the embedded set and returns it in order, refusing a
 // gap. A gap means a migration was removed from the middle, which the digest
 // check would otherwise notice only once it had been applied somewhere.
-func loadMigrations() ([]migration, error) {
-	entries, err := fs.ReadDir(migrationFS, "migrations")
+func loadMigrations() ([]migration, error) { return loadMigrationsFrom(migrationFS) }
+
+// loadMigrationsFrom is loadMigrations over any filesystem, so the refusals
+// below can be tested against a synthetic set. A gap cannot be built out of
+// the real directory without deleting a migration from the repository.
+func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
+	entries, err := fs.ReadDir(fsys, "migrations")
 	if err != nil {
 		return nil, fmt.Errorf("reading embedded migrations: %w", err)
 	}
@@ -69,7 +74,7 @@ func loadMigrations() ([]migration, error) {
 		if err != nil || n < 1 {
 			return nil, fmt.Errorf("migrations/%s does not start with a positive number", name)
 		}
-		body, err := migrationFS.ReadFile("migrations/" + name)
+		body, err := fs.ReadFile(fsys, "migrations/"+name)
 		if err != nil {
 			return nil, fmt.Errorf("reading migrations/%s: %w", name, err)
 		}
@@ -103,7 +108,7 @@ func Verify(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	applied, err := appliedMigrations(ctx, db)
+	applied, err := appliedOn(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -115,9 +120,17 @@ type applied struct {
 	digest string
 }
 
-func appliedMigrations(ctx context.Context, db *sql.DB) ([]applied, error) {
+// querier is whatever the history is read through. Migrate reads it on the
+// connection holding the advisory lock; Verify reads it on the pool, which is
+// correct because Verify takes no lock and writes nothing.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 	var exists bool
-	err := db.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		`SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&exists)
 	if err != nil {
 		return nil, fmt.Errorf("looking for schema_migrations: %w", err)
@@ -125,7 +138,7 @@ func appliedMigrations(ctx context.Context, db *sql.DB) ([]applied, error) {
 	if !exists {
 		return nil, nil
 	}
-	rows, err := db.QueryContext(ctx,
+	rows, err := q.QueryContext(ctx,
 		`SELECT number, digest FROM schema_migrations ORDER BY number`)
 	if err != nil {
 		return nil, fmt.Errorf("reading schema_migrations: %w", err)
@@ -195,6 +208,14 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	defer func() { _ = conn.Close() }()
 
+	// Pinned before anything is read or written. The migrator and the runtime
+	// deliberately run as different roles, and a $user-dependent search_path
+	// resolves different tables for each — while a writable earlier schema can
+	// shadow schema_migrations and let a decoy history verify. EDR-0007 pins it
+	// on the fence for the same class of reason.
+	if _, err := conn.ExecContext(ctx, `SET search_path = public, pg_catalog`); err != nil {
+		return fmt.Errorf("pinning search_path: %w", err)
+	}
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
 		return fmt.Errorf("taking the migration lock: %w", err)
 	}
@@ -217,7 +238,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	appliedRows, err := appliedMigrations(ctx, db)
+	// Through the LOCKED connection, not the pool: reading the history on some
+	// other connection reads a session the advisory lock does not hold.
+	appliedRows, err := appliedOn(ctx, conn)
 	if err != nil {
 		return err
 	}

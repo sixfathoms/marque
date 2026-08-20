@@ -29,9 +29,17 @@ var permitted = []string{
 // test rather than a lint rule for a reason worth recording.
 //
 // EDR-0042 first specified this as a `depguard` rule. depguard does not report
-// BLANK imports — measured, not assumed — and a database driver is imported
-// blank essentially always, because the point is the driver's registration side
-// effect. The rule could not see the one import it existed to police.
+// BLANK imports — and a database driver is imported blank essentially always,
+// because the point is the driver's registration side effect. The rule could
+// not see the one import it existed to police.
+//
+// That is measured rather than reasoned, and it was worth measuring twice: a
+// reviewer read depguard's source and concluded it compares import paths
+// without examining the alias, so blank and named should be indistinguishable.
+// They are not, in the pinned version. Blank import of a denied package: no
+// diagnostic. Named import of the same package: a diagnostic. Reproduced for a
+// driver and for a standard-library package, so the axis is the blank alias and
+// not anything about drivers.
 //
 // A dependency graph does not have that blind spot: `go list` reports every
 // import, blank or not, which is what made EDR-0005's original sentence

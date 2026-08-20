@@ -133,7 +133,9 @@ opens a connection.
 
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
 the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
-package that is not the store and watching the lint refuse it. The rule replaces a mechanism EDR-0005
+package that is not the store and watching the confinement test refuse it — a *test* over the
+dependency graph rather than a lint rule, because a linter does not report the blank imports a driver
+arrives by. The rule replaces a mechanism EDR-0005
 lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
 signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
