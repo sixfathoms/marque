@@ -145,20 +145,23 @@ The foundation the rest of the authority model stands on
    happy paths tests nothing.
 5. A differential harness: throw statements at both the parser and a real PostgreSQL, and assert they
    agree on what parses.
+6. **A standing watch on `pg_query_go` releases, with a named owner.** `pg_query_go` uses semantic
+   import versioning, so `/v6` and `/v7` are different module paths and
+   [Dependabot will never propose that upgrade](https://github.com/sixfathoms/marque/blob/main/.github/dependabot.yml)
+   — the configuration isolates its minor and patch bumps and can do nothing about the major. So the
+   watch is a mechanism someone sets up here (a release subscription, a scheduled check — the plan
+   does not care which, only that it exists and someone owns it), not a habit. When a major does
+   arrive it is not a dependency bump: a newer grammar parses statements the previous one refused, so
+   the corpus is re-run and any changed verdict bumps the subset version
+   ([EDR-0039](../../edrs/0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)).
 
 **Exit:** the corpus passes **on all four supported platforms** — this is the milestone the test
 tier widens for, because from here the parser is C and a grammar that classifies a statement
 differently per architecture is a soundness bug the build-and-smoke tier cannot see; the subset
 version is recorded on extracted scopes; widening the allowlist by one node type shows up as a
-corpus diff.
-
-**And an obligation M2 acquires by adding the dependency.** `pg_query_go` uses semantic import
-versioning, so `/v6` and `/v7` are different module paths and **Dependabot will never propose that
-upgrade** — `.github/dependabot.yml` isolates its minor and patch bumps and can do nothing about the
-major. Watching for a new major is therefore a human job that starts the day this dependency lands,
-and it is not a dependency bump when it arrives: a newer grammar parses statements the previous one
-refused, so the conformance corpus is re-run and any changed verdict bumps the subset version
-([EDR-0039](../../edrs/0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)).
+corpus diff; and the release watch in step 6 exists, with its owner written down — the one item here
+that is a standing duty rather than a test, which is why what is checked is that the mechanism was
+set up.
 
 ### M3 — Marques
 
