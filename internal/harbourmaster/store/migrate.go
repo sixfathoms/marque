@@ -142,14 +142,20 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // **This is a denylist of spellings, not a decision procedure.** It catches the
 // statements a migration author here would plausibly reach for. It does not
 // enumerate everything PostgreSQL refuses inside a transaction block, and it
-// cannot: `ALTER DATABASE … SET TABLESPACE` is non-transactional while every
-// other `ALTER DATABASE … SET` is fine, and no phrase distinguishes them
-// without refusing the transactional ones. A reviewer found `CLUSTER`,
-// `DISCARD ALL`, `CREATE SUBSCRIPTION` and `REINDEX (VERBOSE) DATABASE` missing
-// — the first three are on the list now, the fourth needed a pattern, and
-// `ALTER DATABASE … SET TABLESPACE` is knowingly absent. What is left over
-// fails as SQLSTATE 25001 at migration time, which is what this reduces, not
-// what it eliminates.
+// does not try to. A reviewer found `CLUSTER`, `DISCARD ALL`,
+// `CREATE SUBSCRIPTION`, `REINDEX (VERBOSE) DATABASE` and
+// `ALTER DATABASE … SET TABLESPACE` missing; the first three are phrases, the
+// fourth needed a pattern, and the fifth is `SET TABLESPACE`.
+//
+// That last one was argued away once, on the grounds that no phrase separates
+// it from the transactional `ALTER DATABASE … SET` forms. A reviewer measured
+// otherwise: `SET TABLESPACE` refuses none of them. Its only cost is
+// over-refusing `ALTER TABLE … SET TABLESPACE`, which is the same trade this
+// list already makes for CONCURRENTLY — so the justification was wrong even
+// though the conclusion could have been defended.
+//
+// What is left over fails as SQLSTATE 25001 at migration time, which is what
+// this reduces, not what it eliminates.
 //
 // What it gets wrong, stated rather than discovered. A bare identifier equal to
 // one of these words — a column named `vacuum` — is refused, because the word
@@ -171,12 +177,24 @@ func rejectNonTransactional(name, body string) error {
 	// That second pass exists because the lexer kept under-refusing — an escape
 	// string, a $tag$ inside an unquoted identifier, a Unicode dollar tag, each
 	// found by a reviewer, each letting a statement PostgreSQL refuses reach a
-	// production migration. Matching the raw body too makes that impossible by
-	// construction rather than by getting a SQL lexer right, at the cost of
-	// refusing a migration that merely mentions one of these words in a string
-	// or a comment. For an accident-guard over files this repository writes,
-	// over-refusing with a clear message is the right trade, and the shipped
-	// migration contains none of these words.
+	// production migration.
+	//
+	// It REDUCES that; it does not eliminate it, and an earlier version of this
+	// comment said "impossible by construction", which was the ninth false
+	// claim on this branch. The two passes' blind spots overlap: the raw pass
+	// only sees a CONTIGUOUS phrase, and a comment between two keywords is
+	// removed only by the stripped pass — which is exactly what a lexer derail
+	// disables. So
+	//
+	//	SELECT E'x\''; CREATE/*c*/DATABASE d;
+	//
+	// gets past both, measured. Closing that needs a real SQL lexer, which is
+	// the treadmill three previous attempts were on.
+	//
+	// The cost of the second pass is refusing a migration that merely mentions
+	// one of these words in a string or a comment. For an accident-guard over
+	// files this repository writes, over-refusing with a clear message is the
+	// right trade, and the shipped migration contains none of these words.
 	stripped := collapseSpace(stripSQLComments(body))
 	raw := collapseSpace(body)
 	// REINDEX needs a pattern rather than a phrase: the non-transactional forms
@@ -209,6 +227,7 @@ func rejectNonTransactional(name, body string) error {
 		"DROP TABLESPACE",
 		"CREATE SUBSCRIPTION",
 		"DROP SUBSCRIPTION",
+		"SET TABLESPACE",
 		"ALTER SYSTEM",
 	} {
 		if !containsPhrase(stripped, s) && !containsPhrase(raw, s) {
@@ -466,7 +485,9 @@ func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 // parameters.
 //
 // A var, not a const, because the test that watches it bite holds a conflicting
-// lock and waits for the refusal. At thirty seconds that test either takes
+// lock and waits for the refusal — which means its DEFAULT is what no test
+// observes, and "0" here is the unbounded wait rounds 4 and 8 each fixed.
+// TestLockWaitIsBounded asserts the default. At thirty seconds that test either takes
 // thirty seconds or asserts nothing; the earlier version chose a deadline
 // shorter than the timeout and failed itself.
 // Bounds on how long a pooled connection lives. Zero means forever, which is

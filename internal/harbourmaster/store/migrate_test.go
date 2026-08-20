@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 // The embedded set is the one the binary ships. If this fails, the migration
@@ -273,12 +274,19 @@ func TestNonTransactionalDetectionReadsSQLNotSubstrings(t *testing.T) {
 		"REINDEX with an option list":      "REINDEX (VERBOSE) DATABASE x;",
 		"REINDEX with a tablespace option": "REINDEX (TABLESPACE pg_default) SCHEMA public;",
 		"CLUSTER":                          "CLUSTER;",
-		"DISCARD ALL":                      "DISCARD ALL;",
-		"CREATE SUBSCRIPTION":              "CREATE SUBSCRIPTION s CONNECTION 'x' PUBLICATION p;",
-		"DROP SUBSCRIPTION":                "DROP SUBSCRIPTION s;",
-		"CREATE TABLESPACE":                "CREATE TABLESPACE ts LOCATION '/x';",
-		"DROP TABLESPACE":                  "DROP TABLESPACE ts;",
-		"ALTER SYSTEM":                     "ALTER SYSTEM SET work_mem = '1GB';",
+		"ALTER DATABASE SET TABLESPACE":    "ALTER DATABASE m SET TABLESPACE pg_default;",
+		// One body per pass, so neither can be deleted: the first is invisible
+		// to the stripped pass because an escape string derails the lexer, the
+		// second is invisible to the raw pass because the phrase is not
+		// contiguous.
+		"a phrase only the raw pass sees":      `SELECT E'x\'/*'; REINDEX DATABASE d;`,
+		"a phrase only the stripped pass sees": "REINDEX/*c*/DATABASE d;",
+		"DISCARD ALL":                          "DISCARD ALL;",
+		"CREATE SUBSCRIPTION":                  "CREATE SUBSCRIPTION s CONNECTION 'x' PUBLICATION p;",
+		"DROP SUBSCRIPTION":                    "DROP SUBSCRIPTION s;",
+		"CREATE TABLESPACE":                    "CREATE TABLESPACE ts LOCATION '/x';",
+		"DROP TABLESPACE":                      "DROP TABLESPACE ts;",
+		"ALTER SYSTEM":                         "ALTER SYSTEM SET work_mem = '1GB';",
 		// The lexer under-refused on each of these — an escape string, a $tag$
 		// inside an unquoted identifier, a Unicode dollar tag. The raw-body
 		// pass refuses them whatever the lexer makes of them.
@@ -312,6 +320,8 @@ func TestNonTransactionalDetectionReadsSQLNotSubstrings(t *testing.T) {
 		"REINDEX INDEX, which is transactional": "REINDEX INDEX i;",
 		"ALTER TYPE ADD VALUE, likewise":        "ALTER TYPE mood ADD VALUE 'ecstatic';",
 		"an ordinary migration":                 "CREATE TABLE t (id integer);",
+		"ALTER DATABASE SET, which is fine":     "ALTER DATABASE m SET work_mem = '1GB';",
+		"ALTER DATABASE SET default_tablespace": "ALTER DATABASE m SET default_tablespace = 'pg_default';",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := load(body); err != nil {
@@ -477,5 +487,17 @@ func TestContainsPhraseIdentifierBoundaries(t *testing.T) {
 		if got := containsPhrase(strings.ToUpper(body), "VACUUM"); got != want {
 			t.Errorf("containsPhrase(%q, VACUUM) = %v, want %v", body, got, want)
 		}
+	}
+}
+
+// The default bound, which no other test observes: both timeout tests set
+// lockWait themselves, so "0" — the unbounded wait rounds 4 and 8 each fixed —
+// could be restored with the whole suite green.
+func TestLockWaitIsBounded(t *testing.T) {
+	if lockWait == "" || lockWait == "0" {
+		t.Errorf("lockWait defaults to %q, which is an unbounded lock wait", lockWait)
+	}
+	if _, err := time.ParseDuration(lockWait); err != nil {
+		t.Errorf("lockWait %q is not a duration PostgreSQL will accept: %v", lockWait, err)
 	}
 }

@@ -351,21 +351,32 @@ func graphOf(t *testing.T, c buildConfig) map[string][]string {
 // watched the suite stay green.
 func TestTheGraphContainsTheDriverEdge(t *testing.T) {
 	store := modulePath + "/internal/harbourmaster/store"
-	seenIt := false
-	// Over the REAL buildConfigs, not a config of its own: an earlier version
-	// built its own `./...` listing, so repointing all six of the configurations
-	// the mechanism actually uses left this satisfied and the suite green.
+
+	// PER CONFIGURATION, not an OR across them. An OR is satisfied by any one
+	// config still seeing the edge, so repointing five of six left it green.
+	//
+	// What each configuration must see differs, because nothing imports the
+	// store yet: a `./cmd/...` listing genuinely does not reach it, so it is
+	// asked for the commands instead. When a binary does link the store, this
+	// becomes the same assertion for every configuration.
 	for _, c := range buildConfigs {
-		imports := graphOf(t, c)
-		if slices.ContainsFunc(imports[store], func(imp string) bool {
-			_, isDriver := driverHome(imp)
-			return isDriver
-		}) {
-			seenIt = true
-		}
-	}
-	if !seenIt {
-		t.Errorf("no configuration in buildConfigs lists %s importing a driver, so the check above is not looking at this repository", store)
+		t.Run(c.name, func(t *testing.T) {
+			imports := graphOf(t, c)
+			if strings.HasPrefix(c.pattern, "./cmd") {
+				for _, cmd := range []string{"marque", "harbourmaster", "pilot"} {
+					if _, ok := imports[modulePath+"/cmd/"+cmd]; !ok {
+						t.Errorf("this listing does not name cmd/%s, so it is not looking at this repository's binaries", cmd)
+					}
+				}
+				return
+			}
+			if !slices.ContainsFunc(imports[store], func(imp string) bool {
+				_, isDriver := driverHome(imp)
+				return isDriver
+			}) {
+				t.Errorf("this listing does not show %s importing a driver, so the check above is not looking at this repository", store)
+			}
+		})
 	}
 
 	// And that the listing reaches THIRD-PARTY edges, which is what -deps buys.
