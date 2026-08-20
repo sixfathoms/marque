@@ -20,14 +20,18 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   code, so it linked no drivers of any kind and the rule was true by vacancy. M1 is the milestone
   that ends that, which is why M1 is where the rule had to be re-expressed.
 
-  EDR-0042 replaces **absence** with **containment** — the driver confined to `internal/store` by a
-  `depguard` rule, covering **any** target engine's driver rather than PostgreSQL's alone, since
-  EDR-0005's sentence is engine-agnostic and
-  [EDR-0026](/edrs/0026-a-second-engine-is-a-capability-matrix/) plans MySQL. It keeps the property
-  EDR-0005 protects, which is that the control plane holds no target credential and no target
-  connection parameters. The record says plainly what is lost:
-  absence needed no allowlist and could not be widened by editing one, and anyone reviewing a change
-  to that lint rule is reviewing a security control.
+  EDR-0042 replaces **absence** with **import discipline** — a driver confined by `depguard` to the
+  one package that needs it, with **no exception at all** for an engine Marque does not store its own
+  state in, so MySQL stays wholly absent when
+  [EDR-0026](/edrs/0026-a-second-engine-is-a-capability-matrix/) arrives. PostgreSQL is the single
+  weakened case, weakened only because EDR-0013 made it the control plane's own store.
+
+  The record is blunt about what that is not. A linter reads **imports, not capability**:
+  `database/sql` registration is process-wide, so once the store package registers a driver any
+  package can `sql.Open` it without importing anything the rule can see. It buys "the capability
+  arrives by a reviewed edit rather than by accident", and nothing stronger. EDR-0005's sentence is
+  amended in place rather than left standing, because two accepted records contradicting each other
+  is worse than either being wrong, and `CLAUDE.md`'s invariant list is corrected for the same reason.
 
 ### Added
 

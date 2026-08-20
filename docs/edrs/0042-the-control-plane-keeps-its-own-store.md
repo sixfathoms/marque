@@ -67,70 +67,97 @@ at all. M1 is where that ends, so M1 is where the rule has to be re-expressed or
 [EDR-0013](./0013-async-work-rides-the-wal.md) decided it. This record depends on it and settles what
 sits on top.
 
-### EDR-0005's driver rule becomes containment, not absence
+### EDR-0005's driver rule becomes import discipline, not absence
 
 **The property EDR-0005 protects is unchanged**: an attacker owning the entire Harbourmaster obtains
 no target credential and cannot reach a target. What changes is the mechanism, because the old one is
-not available:
+not available.
 
-1. **The driver is confined to one package.** `internal/store` may import a driver for a target
-   engine. Nothing else in the control plane may, enforced by a `depguard` rule in `.golangci.yml` —
-   a file this repository already maintains, with a linter already in the enabled set.
+1. **Two packages, and only they import a driver.** `internal/harbourmaster/store` imports a
+   PostgreSQL driver for the control plane's own database. `internal/pilot/postgres` imports one to
+   reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
+   about it. No other package imports either, and **no Harbourmaster package imports the Pilot
+   adapter**, which is the boundary that carries the weight.
+2. **Enforced by `depguard`.** It is **not** in `.golangci.yml` today and this change adds it. A
+   driver for a target engine Marque does not yet store its own state in — MySQL, when
+   [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) arrives — stays wholly absent from
+   the control plane, with no exception at all. PostgreSQL is the single weakened case and it is
+   weakened only because EDR-0013 made it the control plane's own store.
+3. **The Harbourmaster holds no target connection parameters and no target credential.** EDR-0005
+   already decides the credential half; where a target's *connection parameters* live it does not
+   say, and this record does not settle it either — a role names a target, and what resolves that
+   name to a host is undecided. Flagged rather than assumed:
+   [issue #36](https://github.com/sixfathoms/marque/issues/36).
 
-   **Target engines, plural, not PostgreSQL.** EDR-0005's sentence is engine-agnostic and
-   [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) plans MySQL, so a rule naming only
-   PostgreSQL would stop covering the sentence on the day a second engine arrives, and would do it
-   silently. The rule denies a list of driver paths and that list grows with the engine list — a
-   denylist, which is the weaker shape, and the one `depguard` offers.
-2. **The Harbourmaster holds no target connection parameters and no target credential**, which is
-   what EDR-0005's own Decision section already says at greater length. That half is untouched and
-   remains the load-bearing half.
+**Say plainly what this is not.** `depguard` reads **imports**, not capability. `database/sql`
+registration is process-wide, so once `internal/harbourmaster/store` registers a driver, any package
+in the binary can call `sql.Open("pgx", …)` without importing anything the linter would see. This is
+**import discipline**, which makes the capability arrive by a reviewed edit rather than by accident —
+it is not a sandbox, and calling it containment would claim more than it checks.
 
-**Say plainly what is lost.** Absence is a coarser and stronger property than containment: it needs
-no allowlist, and no package can quietly acquire the capability by being added to one. Containment is
-defeated by a one-line edit to a lint configuration, and that edit will look innocuous in a diff.
-Trading down was not a choice — EDR-0013 removed the stronger option before this record existed — but
-it is a trade and the successor of this rule should know it was made under duress rather than
-preference.
+Absence was strictly stronger: it needed no allowlist, no exceptions, and could not be widened by a
+diff that looks like configuration. Trading down was not a choice — EDR-0013 removed the stronger
+option before this record existed — but it is a trade, and the next person to touch that `depguard`
+block is editing a security control.
 
-EDR-0005 gains a pointer here and a dated changelog line; its `implementation_note`, which currently
-promises the binaries *"link no database driver"*, is corrected in this change.
+EDR-0005's driver sentence is **amended in place** in this change, because leaving two accepted
+records contradicting each other is worse than either of them being wrong. Its decision — the control
+plane holds no target credential — is untouched.
 
-### Migrations: embedded, forward-only, digest-checked, and never implicit
+### Migrations: forward-only, digest-checked, serialised, and never implicit
 
-- **Embedded** with `embed.FS`, so the binary is self-contained and a missing migration file is a
-  *build* failure rather than a deployment surprise.
+- **Embedded** with `embed.FS`, so the binary carries its migrations and a deployment cannot arrive
+  missing half of itself. This is **not** a guard against a deleted migration file: deleting the last
+  unapplied one produces a binary whose embedded and applied sets still agree. What catches that is
+  contiguous numbering.
+- **Numbered contiguously from 1**, with a gap refused. Combined with the digest below, an edited,
+  reordered or removed migration is a refusal rather than a silent difference between two
+  deployments.
+- **Each migration records the SHA-256 of its raw bytes**, and the applied set must be an exact
+  prefix of the embedded set with matching digests.
 - **Forward only.** No down migrations: a rollback plan nobody has run, against the only copy of the
   state, is not a plan.
-- **Each migration is recorded with its content digest**, and the applied set must be an exact
-  prefix of the embedded set — no gaps, no divergence. An edited migration that has already been
-  applied is therefore a refusal rather than a silent difference between two deployments.
-- **The record of a migration commits in the same transaction as its DDL**, which PostgreSQL supports
-  and which is the reason a half-applied migration is not a state this design has.
-- **Applying is an explicit command.** Startup verifies the schema and **refuses to serve** on any
-  mismatch — ahead, behind, or divergent — naming both versions. Migrating implicitly at startup
-  turns every deploy into a schema change nobody chose to run, and it is the same lazy-initialisation
-  failure EDR-0005 warns about pointed at the schema instead of the connection.
+- **The record of a migration commits in the same transaction as its DDL.** PostgreSQL supports
+  transactional DDL, which is why a half-applied migration is not a state this design has — and a
+  migration containing an operation PostgreSQL forbids inside a transaction (`CREATE INDEX
+  CONCURRENTLY`, `VACUUM`, `ALTER TYPE … ADD VALUE` on older servers) is **rejected by the migrator**
+  rather than run outside one.
+- **Serialised by a transaction-scoped advisory lock**, taken before verification. Two migrators
+  starting together is an ordinary deployment event, not an exotic one.
+- **Applying is an explicit command.** Startup verifies and **refuses to serve** on any mismatch —
+  ahead, behind, or divergent — naming both versions. Migrating implicitly at startup turns every
+  deploy into a schema change nobody chose to run, and it is the same lazy-initialisation failure
+  EDR-0005 warns about, pointed at the schema instead of the connection.
 
 ### The M1 schema
 
 Tenant-partitioned from the first migration, per EDR-0025: `tenant_id NOT NULL` on every domain
-table, leading every index that matters and present in every unique constraint. M1 has no identity,
-so it uses one configured development tenant — **never a request field**, which is the rule EDR-0025
-exists to protect and which M4 makes real.
+table, leading every index that matters and present in every unique constraint. **A tenant column is
+not partitioning on its own** — every foreign key is composite and carries `tenant_id`, so a row
+cannot reference a parent belonging to another tenant. M1 has no identity, so `tenant_id` comes from
+one configured development tenant, **never a request field**, which is the rule EDR-0025 exists to
+protect and which M4 makes real.
 
 | Table | Holds |
 |---|---|
-| `schema_migrations` | number, content digest, applied-at |
-| `requests` | `req_…` reference ([EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)), tenant, statement, target, role, submitter as a bare string, state |
+| `schema_migrations` | number, SHA-256 digest, applied-at |
+| `requests` | `req_…` reference, tenant, statement, target, role, submitter as a bare string, the operator's **reason**, state |
 | `approvals` | tenant, request, **stage**, approver, at |
 | `executions` | tenant, request, at, outcome, rows affected |
 
-Two vocabularies are taken from records rather than invented, because a forward-only schema makes
-widening one an unnecessary migration: `requests.state` is EDR-0038's `pending` / `approved` /
-`executed`, and `executions.outcome` is EDR-0011's, which includes **`indeterminate`** and
-**`aborted_not_applied`** — neither is `failed`, and a two-valued column would have to be widened
-later for nothing saved now.
+**`requests.state` carries all seven of [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)'s
+values** — `pending`, `verifying`, `approved`, `refused`, `expired`, `executed`, `indeterminate` —
+even though M1 can only produce three of them. A forward-only schema makes widening a constrained
+column an unnecessary migration, and a vocabulary that already exists in an accepted record is not
+this record's to shorten.
+
+**`executions.outcome` is decided here, not borrowed.**
+[EDR-0011](./0011-execution-is-idempotent-and-fenced.md) names `in_progress`,
+`aborted_not_applied` and `indeterminate` and never closes the set or settles the successful token,
+so a first migration cannot be written from it. This record fixes the column as `committed`,
+`rolled_back`, `aborted_not_applied` and `indeterminate`, matching the logbook kinds EDR-0012 already
+lists; `in_progress` is deliberately absent, because a control-plane *report* is written when an
+attempt ends and in-flight state belongs to the Pilot's own ledger.
 
 There is no `targets` or `roles` table: those are reviewed configuration
 ([EDR-0015](./0015-policy-is-reviewed-configuration.md)), not rows. There is no `delegations`, no
@@ -143,8 +170,9 @@ Named individually, because a reader who sees only one will assume the rest is r
 1. **Approval is a row, not a signature**, and the table is flat.
    [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) exists because a flat
    `required`/`eligible` model made a chain requiring Sam *then* data-oncall satisfiable by two of
-   data-oncall. M1 carries a `stage` column so the shape is not actively wrong, and M3 replaces the
-   **table**, not merely the signature.
+   data-oncall. M1 carries a `stage` column so the shape is not actively wrong. **M3 builds the
+   signed marque that replaces the table**, and M7 wires it into this path and deletes the stub —
+   the plan is explicit that M2–M6 build and M7 activates.
 2. **`requests.state` is authoritative**, where [EDR-0012](./0012-the-logbook-is-append-only.md)
    makes current state a disposable projection of the journal. M1 has no journal, so it has no
    projection; M6 inverts this.
@@ -172,20 +200,27 @@ Named individually, because a reader who sees only one will assume the rest is r
   laptop. `make test` stays offline because unit tests do not touch the store, but the walking
   skeleton is no longer a single binary and a file.
 - **EDR-0005's guarantee is weaker than it was on paper**, and the paper version was never
-  achievable. Containment is defeated by an allowlist edit; absence could not be. Anyone reviewing a
-  change to that `depguard` rule is reviewing a security control.
-- **A forward-only schema with no backup story is an irreversible deploy.** The migrator is explicit
-  rather than automatic, which is most of the answer, and the rest belongs with the deployment story
-  Phase 1 does not have.
+  achievable. Import discipline is defeated three ways where absence was defeated by none: an
+  allowlist edit, a `sql.Open` by driver name in a package that imports nothing the linter sees, and
+  a transitive dependency linking a driver the first-party rule never looks at. It buys "the
+  capability arrives by a reviewed edit rather than by accident", and no more. Anyone touching that
+  `depguard` block is touching a security control.
+- **A forward-only schema with no backup story is an irreversible deploy.** An explicit migrator
+  means nobody applies one by accident, which is a smaller part of the answer than it sounds: once
+  applied, a bad migration is repaired only by writing another, and a destructive one is not
+  repairable at all. Backup, restore and roll-forward are genuinely missing, and they belong with the
+  deployment story Phase 1 does not have — named here so the gap is chosen rather than discovered.
 
 **New obligations.**
 
 - **M1** lands the `depguard` rule in the same change as the first package that opens a connection.
   A mechanism replaced and then not implemented is worse than the sentence it replaced.
 - **M5** needs the Pilot's own durable store decided — [issue #34](https://github.com/sixfathoms/marque/issues/34).
-- **M6** builds the logbook in this database, appends from the Harbourmaster
-  ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md) has the Pilot report and the
-  Harbourmaster append), and inverts obligation 2 above.
+- **M6** builds the logbook in this database and appends from the Harbourmaster
+  ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md) has the Pilot report and the Harbourmaster
+  append), after which the journal is authoritative and `requests.state` is a projection.
+- **M4** takes `tenant_id` from the authenticated principal instead of the configured development
+  tenant. The column exists from migration one so that is a change of source, not of schema.
 
 ## References
 
