@@ -33,8 +33,15 @@ it is not a rule, and there were three instances of the same hope.
 - **The EDR status vocabulary was the third instance**, which the original report did not count. It
   is the same shape and is covered by the same mechanism.
 
-Every failure mode was **seen to fail** before being relied on: a value removed from a README, a
-value added to one, the same values in a different order, and a marker deleted. Each produced the
-intended message, and the build went green again when each was restored — because a guard nobody has
-watched fail is a guard nobody knows works, and this one exists precisely because the previous
-arrangement had never been tested either.
+Every failure mode was **seen to fail** before being relied on — a value removed from a README, a
+value added to one, the same values reordered, a marker deleted — each producing the intended message
+and each restoring cleanly to green.
+
+That was not sufficient. Review found three ways the first version passed *while the vocabularies
+disagreed*: an annotated row like `` | `hotfix` (planned) | `` did not match the value pattern and
+was silently dropped; a second `<!-- @vocabulary:… -->` marker shadowed the real table, so every
+later edit to it would have gone unchecked; and a value listed twice was invisible to a
+membership test. Each is now a loud failure of its own, and each was seen to fail before being
+believed. The first version had been watched to fail in the four directions its author thought of,
+which is exactly how a guard ends up trusted for more than it does — and is the same defect, one
+level up, as the arrangement it replaces.

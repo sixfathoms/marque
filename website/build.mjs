@@ -53,14 +53,15 @@ const RETIRED_STATUSES = new Set(['deprecated', 'superseded']);
 // decision back to `proposed`, which in this repository arms the
 // `proposed_until` build-failure timer.
 //
-// The vocabulary is CLOSED, and this is the only place it is written down: the
-// build validates against it and the roadmap page derives its groups, their
-// order and their blurbs from it. Each entry is [state, blurb, note-required],
-// where note-required is the phrasing of what the note must say, or null when
-// no note is compelled. Ordered most-built to least; the roadmap reverses it so
-// a reader meets the outstanding work first. Adding a state means editing this
-// array and docs/edrs/README.md together — and assertVocabularies() below fails
-// the build if you edit only one.
+// The vocabulary is CLOSED. This array is what the build enforces: it validates
+// frontmatter against it and derives the roadmap from it. It is written down
+// twice — here and in docs/edrs/README.md, which people read — and
+// assertVocabularies() below is what stops the two drifting apart.
+//
+// `implementation_note` is required for the states whose third element names
+// what the note must say, and optional for the rest, so a state that needs no
+// note compels none. Ordered most-built to least; the roadmap reverses it so a
+// reader meets the outstanding work first.
 const IMPLEMENTATION_STATES = [
   ['shipped', 'Built and running — the whole decision, not the easy half.', null],
   ['partial', 'Some of it runs, some does not.', 'saying which half is missing'],
@@ -827,30 +828,59 @@ const VOCABULARIES = [
 // Values are the backticked cell contents, so a row whose first cell is not
 // `like this` is not a vocabulary row and is skipped — which is what lets the
 // table carry a header and a separator without special-casing them.
-function readVocabularyTable(text, marker, file) {
-  const at = text.indexOf(`<!-- @vocabulary:${marker} -->`);
-  if (at === -1) {
-    throw new Error(
-      `${file}: no <!-- @vocabulary:${marker} --> marker.\n` +
+function readVocabularyTable(text, marker, file, problems) {
+  const tag = `<!-- @vocabulary:${marker} -->`;
+  const first = text.indexOf(tag);
+  if (first === -1) {
+    problems.push(
+      `${file}: no ${tag} marker.\n` +
         `  The build compares that table against a constant, and it locates the\n` +
         `  table by this marker. Put it on the line before the table.`,
     );
+    return null;
   }
-  const rest = text.slice(at).split('\n').slice(1);
+  // A second marker would mean the first table shadows the real one, and every
+  // later edit to the real one would go unchecked while the build stayed green.
+  if (text.indexOf(tag, first + tag.length) !== -1) {
+    problems.push(`${file}: ${tag} appears more than once, so only the first table would ever be compared`);
+    return null;
+  }
+
+  const lines = text.slice(first).split('\n').slice(1);
   const values = [];
-  let started = false;
-  for (const line of rest) {
+  let row = 0;
+  for (const line of lines) {
     if (!line.startsWith('|')) {
-      if (started) break;
+      if (row) break;
+      // The table must START here. Anything but blank lines between the marker
+      // and the table means the marker is not on the table it looks attached to.
+      if (line.trim()) {
+        problems.push(`${file}: ${tag} is not immediately followed by a table (found: ${JSON.stringify(line.trim().slice(0, 40))})`);
+        return null;
+      }
       continue;
     }
-    started = true;
-    const first = line.split('|')[1]?.trim() ?? '';
-    const m = /^`([^`]+)`$/.exec(first);
-    if (m) values.push(m[1]);
+    row += 1;
+    // Row 1 is the header, row 2 the separator. Neither carries a value.
+    if (row <= 2) continue;
+    const cell = line.split('|')[1]?.trim() ?? '';
+    const m = /^`([^`]+)`$/.exec(cell);
+    if (!m) {
+      // Silence here is the whole danger: an annotated row like
+      // `| `hotfix` (planned) |` would otherwise vanish and the build would
+      // pass while the table documented a value the constant rejects.
+      problems.push(
+        `${file}: row ${row - 2} under ${tag} does not start with a single \`backticked\` value\n` +
+          `  got: ${JSON.stringify(cell)}\n` +
+          `  Every row of a vocabulary table is a value. Annotations belong in the second column.`,
+      );
+      return null;
+    }
+    values.push(m[1]);
   }
   if (!values.length) {
-    throw new Error(`${file}: the table after <!-- @vocabulary:${marker} --> has no \`backticked\` values in its first column`);
+    problems.push(`${file}: the table under ${tag} has no value rows`);
+    return null;
   }
   return values;
 }
@@ -860,13 +890,19 @@ async function assertVocabularies() {
   const problems = [];
   for (const v of VOCABULARIES) {
     if (!cache.has(v.file)) cache.set(v.file, await readFile(join(DOCS_DIR, v.file), 'utf8'));
-    const documented = readVocabularyTable(cache.get(v.file), v.marker, `docs/${v.file}`);
+    const documented = readVocabularyTable(cache.get(v.file), v.marker, `docs/${v.file}`, problems);
+    if (documented === null) continue;
     const enforced = v.values();
     const inTable = v.sorted ? [...documented].sort() : documented;
 
     const missing = enforced.filter((x) => !inTable.includes(x));
     const extra = inTable.filter((x) => !enforced.includes(x));
-    if (missing.length || extra.length) {
+    // Length is compared separately because membership cannot see a repeat: a
+    // table listing `accepted` twice has the same members and is still wrong.
+    const dupes = inTable.filter((x, i) => inTable.indexOf(x) !== i);
+    if (dupes.length) {
+      problems.push(`docs/${v.file}: ${[...new Set(dupes)].map((d) => `'${d}'`).join(', ')} listed more than once under the marker`);
+    } else if (missing.length || extra.length) {
       const lines = [`${v.constant} and docs/${v.file} disagree:`];
       for (const x of missing) lines.push(`  '${x}' is enforced but undocumented — add it to docs/${v.file}`);
       for (const x of extra) lines.push(`  '${x}' is documented but not enforced — add it to ${v.constant}, or remove the row`);

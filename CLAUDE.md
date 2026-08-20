@@ -46,7 +46,8 @@ The build **is** the test suite. It fails on: a record with a missing or over-24
 with no `implementation_note`; a duplicate id or an id/filename mismatch; a `proposed` record past
 its `proposed_until`; a changelog entry with an unknown tag, a malformed filename, or a `## `
 heading; a doc page in a directory that is not a sidebar category; a changelog page missing its
-`<!-- @entries -->` marker.
+`<!-- @entries -->` marker; and a vocabulary table that disagrees with its constant, is out of order,
+lists a value twice, or has lost its `<!-- @vocabulary:… -->` marker.
 
 ## Rules
 
@@ -58,12 +59,14 @@ heading; a doc page in a directory that is not a sidebar category; a changelog p
    `docs/content/changelog.md` to add one; that single-file pattern is what conflicted on every
    same-day change. Do not add an index or manifest of entries — the build globs them, and a registry
    would just move the conflicting line.
-3. **Three vocabularies are closed and written down twice** — the changelog tags, the EDR
-   implementation states and the EDR statuses, each as a constant in `website/build.mjs` and as a
-   table in a README. Adding a value means editing both, and **the build fails if you edit only
-   one**: it parses the tables back out and compares, naming the value and the file to fix. It finds
-   each table by an explicit `<!-- @vocabulary:… -->` marker, so a table that loses its marker fails
-   too rather than passing while comparing nothing.
+3. **Three vocabularies are closed and written down twice**, each as a constant in
+   `website/build.mjs` and as a table in a README: `CHANGELOG_TAGS` with `docs/changelog/README.md`,
+   and `IMPLEMENTATION_STATES` and `VALID_STATUSES` with `docs/edrs/README.md`. Adding a value means
+   editing both, and **the build fails if you edit only one** — it parses the tables back out and
+   compares, naming the value and the file to fix. It finds each table by an explicit
+   `<!-- @vocabulary:… -->` marker, and refuses a marker that appears twice, a marker with prose
+   before its table, and a row that is not a single backticked value, because each of those would
+   otherwise let the build pass while comparing the wrong thing or nothing at all.
 4. **The site is deliberately not indexable or archivable.** Marque is at design stage, so
    `website/templates/layout.html` carries `noindex, nofollow, noarchive, nosnippet, noimageindex`
    plus per-crawler and archiver variants, and the build **fails** if any emitted page lacks them. A
