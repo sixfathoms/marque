@@ -193,6 +193,34 @@ func reachesDriverFrom(imports map[string][]string, origin, path string, seen ma
 // TestReachesDriverOverASyntheticGraph is what makes the rule enforceable
 // rather than merely present. Every case is a shape that has occurred in
 // review.
+// EDR-0042 counts six combinations as its answer to "coverage is
+// configuration", and deleting entries from the matrix was invisible: the
+// remaining ones still found nothing, because there is nothing to find.
+func TestEveryBuildConfigurationIsPresent(t *testing.T) {
+	want := map[string]bool{}
+	for _, pattern := range []string{"./cmd/...", "./..."} {
+		for _, tags := range []string{"", "integration"} {
+			want[pattern+"|"+tags+"|false"] = false
+			if pattern == "./..." {
+				want[pattern+"|"+tags+"|true"] = false
+			}
+		}
+	}
+	for _, c := range buildConfigs {
+		key := fmt.Sprintf("%s|%s|%v", c.pattern, c.tags, c.test)
+		if _, ok := want[key]; !ok {
+			t.Errorf("unexpected configuration %s; if it is deliberate, add it here", key)
+			continue
+		}
+		want[key] = true
+	}
+	for key, seen := range want {
+		if !seen {
+			t.Errorf("configuration %s is missing: each pattern must be listed with and without the tag, and the tree with and without -test", key)
+		}
+	}
+}
+
 func TestReachesDriverOverASyntheticGraph(t *testing.T) {
 	const (
 		pgx   = "github.com/jackc/pgx/v5/stdlib"
@@ -280,6 +308,23 @@ func TestReachesDriverOverASyntheticGraph(t *testing.T) {
 				"github.com/jackc/pglogrepl": {"github.com/jackc/pgx/v5/pgconn"},
 			},
 			me + "internal/pilot/mysql", true,
+		},
+		// isPermittedHome decides the sink, and it must be EXACT too: treating
+		// a subdirectory of a home as a home cuts it out of the graph, so a
+		// driver behind it becomes invisible.
+		"a subpackage of a home is NOT a home": {
+			map[string][]string{
+				me + "cmd/harbourmaster":                {me + "internal/harbourmaster/store/sub"},
+				me + "internal/harbourmaster/store/sub": {pgx},
+			},
+			me + "cmd/harbourmaster", true,
+		},
+		"nor is a same-prefix sibling": {
+			map[string][]string{
+				me + "cmd/harbourmaster":                 {me + "internal/harbourmaster/storefront"},
+				me + "internal/harbourmaster/storefront": {pgx},
+			},
+			me + "cmd/harbourmaster", true,
 		},
 		"a cycle terminates": {
 			map[string][]string{

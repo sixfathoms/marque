@@ -97,6 +97,8 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 		if err := rejectNonTransactional(name, string(body)); err != nil {
 			return nil, err
 		}
+		// Raw bytes. Trimming would let a whitespace-only edit to applied
+		// history verify clean, which is the forward-only guarantee itself.
 		sum := sha256.Sum256(body)
 		out = append(out, migration{
 			number: n,
@@ -158,8 +160,12 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // refused; and `CLUSTER t USING i`, transactional and refused by bare
 // `CLUSTER`. The general statement is the true one and it is shorter:
 //
-//	This matches a PHRASE, not a statement. It refuses every statement
-//	containing one, transactional or not.
+//	This matches a PHRASE, not a statement. It refuses every statement in
+//	which either pass sees one, transactional or not.
+//
+// "either pass sees" is load-bearing and was missing from the first version of
+// this sentence — the two passes' blind spots overlap, which is the ninth
+// retracted claim, twenty lines below.
 //
 // That is the trade the list makes everywhere, it is why CONCURRENTLY refuses a
 // concurrent REFRESH, and it needs no list of examples to stay true.
@@ -450,7 +456,7 @@ type applied struct {
 // The `pg_catalog.` on to_regclass is a different thing and buys almost
 // nothing: pg_catalog is searched implicitly FIRST unless it is named, so a
 // decoy public.to_regclass loses on the default search_path and on the
-// migrator”'s pin. It would win only where pg_catalog is named explicitly and
+// migrator's pin. It would win only where pg_catalog is named explicitly and
 // late — which is the bug EDR-0042 retracts, and which this file no longer
 // does. So the qualification covers a configuration nothing here produces. It
 // is written for symmetry, no test covers it, and saying so is better than

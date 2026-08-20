@@ -156,6 +156,12 @@ func TestDriverHomesAreExactPackages(t *testing.T) {
 		// driverHomes is visible. Three of the six had no row at all and
 		// deleted green.
 		{"github.com/lib/pq", "internal/harbourmaster/api", false},
+		// EXACT package, not directory tree. An earlier allowlist exempted
+		// whole trees, which let the store's subpackages hold anything, and
+		// nothing covered a subdirectory or a same-prefix sibling.
+		{"github.com/jackc/pgx/v5/stdlib", "internal/harbourmaster/store/sub", false},
+		{"github.com/jackc/pgx/v5/stdlib", "internal/harbourmaster/storefront", false},
+		{"github.com/jackc/pgx/v5/stdlib", "internal/pilot/postgresql", false},
 		{"github.com/jackc/pgconn", "internal/harbourmaster/api", false},
 		{"github.com/jackc/pgproto3", "internal/harbourmaster/api", false},
 		{"github.com/ziutek/mymysql", "internal/harbourmaster/store", false},

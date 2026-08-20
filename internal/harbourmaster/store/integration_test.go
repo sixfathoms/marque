@@ -480,13 +480,17 @@ func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 		// EDR-0012's shape: nothing the runtime role holds lets it erase.
 		add(table, "DELETE", false)
 		add(table, "TRUNCATE", false)
-		// REFERENCES lets a role point a foreign key at the table, and TRIGGER
-		// lets it attach code that runs on every write. "Every privilege" named
-		// five of seven until a reviewer counted.
+		// REFERENCES lets a role point a foreign key at the table, TRIGGER lets
+		// it attach code that runs on every write, and MAINTAIN — added in
+		// PostgreSQL 17, which is the version this pins — lets it VACUUM,
+		// ANALYSE, REINDEX and CLUSTER. "Every privilege" named five of eight,
+		// then seven of eight, each time because someone counted from memory
+		// instead of asking the server.
 		add(table, "REFERENCES", false)
 		add(table, "TRIGGER", false)
+		add(table, "MAINTAIN", false)
 	}
-	for _, priv := range []string{"INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"} {
+	for _, priv := range []string{"INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"} {
 		add("public.schema_migrations", priv, false)
 	}
 	add("public.schema_migrations", "SELECT", true)
@@ -836,6 +840,24 @@ func TestTheQueueIndexIsUsed(t *testing.T) {
 	}
 }
 
+// Verify opens a read transaction, and without its rollback the connection is
+// never returned — sixteen calls exhaust the pool and the seventeenth blocks.
+func TestVerifyDoesNotLeakItsConnection(t *testing.T) {
+	db, _ := freshDB(t)
+	ctx := t.Context()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+	for i := range 40 {
+		if err := Verify(ctx, db); err != nil {
+			t.Fatalf("Verify %d: %v", i, err)
+		}
+	}
+	if inUse := db.Stats().InUse; inUse != 0 {
+		t.Errorf("%d connections are still checked out after 40 Verify calls", inUse)
+	}
+}
+
 // EDR-0005's reason for pinging on Open: "a pool that connects on first use
 // hides broken authentication until an incident". Deleting the ping left the
 // suite green, because every other test connects successfully.
@@ -890,6 +912,14 @@ func TestAFailingMigrationIsReported(t *testing.T) {
 // Zero means forever, and a pool that never retires a connection ages badly
 // across a failover, a DNS change or a pooler in front.
 func TestThePoolRetiresConnections(t *testing.T) {
+	db, _ := freshDB(t)
+	// Observed on the pool, not asserted about the constants: deleting the
+	// SetMaxOpenConns / SetConnMaxLifetime calls in Open left a constants-only
+	// test green.
+	if got := db.Stats().MaxOpenConnections; got != 16 {
+		t.Errorf("the pool allows %d open connections, want 16; unbounded is a control plane turning into the target's max_connections", got)
+	}
+
 	if poolMaxLifetime <= 0 || poolMaxIdleTime <= 0 {
 		t.Errorf("poolMaxLifetime=%v poolMaxIdleTime=%v; zero disables retirement entirely",
 			poolMaxLifetime, poolMaxIdleTime)

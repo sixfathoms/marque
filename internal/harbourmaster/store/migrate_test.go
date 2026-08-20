@@ -204,7 +204,11 @@ func TestMalformedMigrationNamesAreRefused(t *testing.T) {
 // The digest is compared as a value, so it has to be a real one — the earlier
 // version of this test checked only that the string was 64 characters long.
 func TestDigestIsTheSHA256OfTheFile(t *testing.T) {
-	body := []byte("SELECT 1;")
+	// Deliberately surrounded by whitespace: with a bare "SELECT 1;" the digest
+	// could be taken over the TRIMMED bytes and this would still pass, so a
+	// whitespace-only edit to applied history would verify clean — which is the
+	// forward-only guarantee itself.
+	body := []byte("\n  SELECT 1;  \n")
 	want := sha256.Sum256(body)
 	got, err := loadMigrationsFrom(fstest.MapFS{
 		"migrations/0001_a.sql": &fstest.MapFile{Data: body},
@@ -447,15 +451,22 @@ func TestMigrationsAreSortedNumerically(t *testing.T) {
 		}
 	}
 
-	// And unpadded names, where lexical order puts 10 before 2.
-	got, err = loadMigrationsFrom(fstest.MapFS{
-		"migrations/1_a.sql":  &fstest.MapFile{Data: []byte("SELECT 1;")},
-		"migrations/2_b.sql":  &fstest.MapFile{Data: []byte("SELECT 2;")},
-		"migrations/10_c.sql": &fstest.MapFile{Data: []byte("SELECT 10;")},
-	})
-	if err == nil {
-		if got[1].number != 2 {
-			t.Errorf("unpadded names sorted lexically: got %d second, want 2", got[1].number)
+	// And unpadded names, where lexical order puts 10 before 2. Contiguous, so
+	// the set loads — an earlier version used 1, 2, 10, which always fails
+	// contiguity, so the assertion below never ran.
+	files = fstest.MapFS{}
+	for i := 1; i <= 10; i++ {
+		files[fmt.Sprintf("migrations/%d_m.sql", i)] = &fstest.MapFile{
+			Data: []byte(fmt.Sprintf("SELECT %d;", i)),
+		}
+	}
+	got, err = loadMigrationsFrom(files)
+	if err != nil {
+		t.Fatalf("loading ten unpadded migrations: %v", err)
+	}
+	for i, m := range got {
+		if m.number != i+1 {
+			t.Fatalf("unpadded names sorted lexically: position %d is number %d (%s)", i, m.number, m.name)
 		}
 	}
 }
