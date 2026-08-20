@@ -47,9 +47,13 @@ for `Added` / `Changed` / `Fixed` sections.
 
 ## Tags
 
-The vocabulary is **closed**, and `CHANGELOG_TAGS` in [`website/build.mjs`](../../website/build.mjs)
-is the only place it is written down — the build validates against it and renders the filter bar
-from it. Adding a tag means editing that array and this table together.
+The vocabulary is **closed**. `CHANGELOG_TAGS` in [`website/build.mjs`](../../website/build.mjs) is
+what the build enforces — it validates entries against that array and renders the filter bar from it
+— and this table is the copy people read. Adding a tag means editing both, and **the build fails if
+you edit only one**: it parses this table back out and compares, naming the value and the file to
+fix. The marker below is how it finds the table.
+
+<!-- @vocabulary:changelog-tags -->
 
 | Tag | For |
 |---|---|

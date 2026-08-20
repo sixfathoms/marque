@@ -58,8 +58,12 @@ heading; a doc page in a directory that is not a sidebar category; a changelog p
    `docs/content/changelog.md` to add one; that single-file pattern is what conflicted on every
    same-day change. Do not add an index or manifest of entries — the build globs them, and a registry
    would just move the conflicting line.
-3. **The changelog tag vocabulary is closed**, defined once in `CHANGELOG_TAGS` in
-   `website/build.mjs` and documented in `docs/changelog/README.md`. Adding a tag means editing both.
+3. **Three vocabularies are closed and written down twice** — the changelog tags, the EDR
+   implementation states and the EDR statuses, each as a constant in `website/build.mjs` and as a
+   table in a README. Adding a value means editing both, and **the build fails if you edit only
+   one**: it parses the tables back out and compares, naming the value and the file to fix. It finds
+   each table by an explicit `<!-- @vocabulary:… -->` marker, so a table that loses its marker fails
+   too rather than passing while comparing nothing.
 4. **The site is deliberately not indexable or archivable.** Marque is at design stage, so
    `website/templates/layout.html` carries `noindex, nofollow, noarchive, nosnippet, noimageindex`
    plus per-crawler and archiver variants, and the build **fails** if any emitted page lacks them. A

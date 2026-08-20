@@ -59,7 +59,8 @@ const RETIRED_STATUSES = new Set(['deprecated', 'superseded']);
 // where note-required is the phrasing of what the note must say, or null when
 // no note is compelled. Ordered most-built to least; the roadmap reverses it so
 // a reader meets the outstanding work first. Adding a state means editing this
-// array and docs/edrs/README.md together.
+// array and docs/edrs/README.md together — and assertVocabularies() below fails
+// the build if you edit only one.
 const IMPLEMENTATION_STATES = [
   ['shipped', 'Built and running — the whole decision, not the easy half.', null],
   ['partial', 'Some of it runs, some does not.', 'saying which half is missing'],
@@ -76,9 +77,11 @@ const ALIAS_RE = /^[a-z0-9][a-z0-9-]*$/;
 const EDR_SLUG_RE = /^\d{4}-[a-z0-9-]+$/;
 const SUMMARY_MAX = 240;
 
-// The changelog tag vocabulary is CLOSED, and this is the only place it is
-// written down: the build validates entries against it and renders the filter
-// bar from it. An open set degrades into a synonym pile nobody can filter on.
+// The changelog tag vocabulary is CLOSED: the build validates entries against
+// it and renders the filter bar from it. An open set degrades into a synonym
+// pile nobody can filter on. It is written down twice — here and in
+// docs/changelog/README.md, which people read — and assertVocabularies() below
+// is what stops the two drifting apart.
 const CHANGELOG_TAGS = [
   ['product', 'A user-visible capability'],
   ['policy', 'Approval policy, delegation and scope'],
@@ -752,6 +755,8 @@ async function main() {
   await mkdir(DIST_DIR, { recursive: true });
   const layout = await readFile(join(TEMPLATES_DIR, 'layout.html'), 'utf8');
 
+  await assertVocabularies();
+
   const docs = await loadDocs();
   const edrs = await loadEdrs();
   const entries = await loadChangelogEntries();
@@ -776,6 +781,106 @@ async function main() {
   console.log(
     `Built landing + ${docs.length} doc page(s) + ${edrs.length} EDR(s) + ${entries.length} changelog entr${entries.length === 1 ? 'y' : 'ies'} → ${DIST_DIR}`,
   );
+}
+
+// Three closed vocabularies are written down twice: once as a constant here,
+// which the build enforces, and once as a table in a README, which people
+// actually read. CLAUDE.md states the coupling as a rule — "adding a tag means
+// editing both" — which is the honest admission that nothing enforced it, and
+// this repository's own position is that a rule depending on someone
+// remembering it is not a rule.
+//
+// So the build parses the tables back out and compares. The README is located
+// by an explicit marker rather than by guessing which table is the vocabulary,
+// because a heuristic that silently matches the wrong table is worse than no
+// check: it would pass while comparing nothing.
+//
+// Only the VALUES are compared, in ORDER. Descriptions are prose and are
+// allowed to differ in wording — asserting those would make the check a
+// nuisance that gets deleted. Order is compared because both orders are
+// load-bearing: implementation states run most-built to least and the roadmap
+// reverses them, and the changelog filter bar renders tags in array order.
+const VOCABULARIES = [
+  {
+    marker: 'implementation',
+    file: 'edrs/README.md',
+    constant: 'IMPLEMENTATION_STATES in website/build.mjs',
+    values: () => IMPLEMENTATION_STATE_NAMES,
+  },
+  {
+    marker: 'status',
+    file: 'edrs/README.md',
+    constant: 'VALID_STATUSES in website/build.mjs',
+    // A Set has no meaningful order, so this one is compared as a sorted set.
+    values: () => [...VALID_STATUSES].sort(),
+    sorted: true,
+  },
+  {
+    marker: 'changelog-tags',
+    file: 'changelog/README.md',
+    constant: 'CHANGELOG_TAGS in website/build.mjs',
+    values: () => CHANGELOG_TAG_NAMES,
+  },
+];
+
+// Pull the first column out of the markdown table following a marker comment.
+// Values are the backticked cell contents, so a row whose first cell is not
+// `like this` is not a vocabulary row and is skipped — which is what lets the
+// table carry a header and a separator without special-casing them.
+function readVocabularyTable(text, marker, file) {
+  const at = text.indexOf(`<!-- @vocabulary:${marker} -->`);
+  if (at === -1) {
+    throw new Error(
+      `${file}: no <!-- @vocabulary:${marker} --> marker.\n` +
+        `  The build compares that table against a constant, and it locates the\n` +
+        `  table by this marker. Put it on the line before the table.`,
+    );
+  }
+  const rest = text.slice(at).split('\n').slice(1);
+  const values = [];
+  let started = false;
+  for (const line of rest) {
+    if (!line.startsWith('|')) {
+      if (started) break;
+      continue;
+    }
+    started = true;
+    const first = line.split('|')[1]?.trim() ?? '';
+    const m = /^`([^`]+)`$/.exec(first);
+    if (m) values.push(m[1]);
+  }
+  if (!values.length) {
+    throw new Error(`${file}: the table after <!-- @vocabulary:${marker} --> has no \`backticked\` values in its first column`);
+  }
+  return values;
+}
+
+async function assertVocabularies() {
+  const cache = new Map();
+  const problems = [];
+  for (const v of VOCABULARIES) {
+    if (!cache.has(v.file)) cache.set(v.file, await readFile(join(DOCS_DIR, v.file), 'utf8'));
+    const documented = readVocabularyTable(cache.get(v.file), v.marker, `docs/${v.file}`);
+    const enforced = v.values();
+    const inTable = v.sorted ? [...documented].sort() : documented;
+
+    const missing = enforced.filter((x) => !inTable.includes(x));
+    const extra = inTable.filter((x) => !enforced.includes(x));
+    if (missing.length || extra.length) {
+      const lines = [`${v.constant} and docs/${v.file} disagree:`];
+      for (const x of missing) lines.push(`  '${x}' is enforced but undocumented — add it to docs/${v.file}`);
+      for (const x of extra) lines.push(`  '${x}' is documented but not enforced — add it to ${v.constant}, or remove the row`);
+      problems.push(lines.join('\n'));
+    } else if (!v.sorted && inTable.join('\u0000') !== enforced.join('\u0000')) {
+      problems.push(
+        `${v.constant} and docs/${v.file} list the same values in a different order:\n` +
+          `  enforced:   ${enforced.join(', ')}\n` +
+          `  documented: ${inTable.join(', ')}\n` +
+          `  The order is load-bearing — it is the order the site renders — so make the table match.`,
+      );
+    }
+  }
+  if (problems.length) throw new Error(problems.join('\n\n'));
 }
 
 // Marque is at design stage and this site is deliberately kept out of search
