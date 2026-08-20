@@ -4,7 +4,7 @@ title: "One schema generates every client, and annotates what may be retried"
 summary: "A single protobuf definition is the source of truth for the API. Server stubs, CLI and console clients are generated from it, every method declares whether it is read-only or idempotent, and CI fails on a breaking change."
 status: accepted
 implementation: partial
-implementation_note: "Built: the schema, the annotation extension, the build failure for an unannotated method (internal/schema/annotations.go), committed Go and Connect stubs, and the `buf breaking` check on every pull request. Not built: clients/ts/, the Pilot, Surveyor and relay schemas, typed errors, streams, and a client interceptor that honours keyed and unsafe. Five methods exist — GetVersion, Submit, GetRequest, Approve and RecordExecution — each carrying its MethodBehaviour."
+implementation_note: "Built: the schema, the annotation extension, the build failure for an unannotated method (internal/schema/annotations.go), committed Go and Connect stubs, and the `buf breaking` check on every pull request. Not built: clients/ts/, the Pilot, Surveyor and relay schemas, typed errors, streams, and a client interceptor that honours keyed and unsafe. Five methods exist — GetVersion, Submit, GetRequest, Approve and RecordExecution."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

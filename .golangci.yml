@@ -35,15 +35,17 @@ linters:
     # PostgreSQL is also a target engine and one driver serves both.
     #
     # This block is NOT the replacement. TestDriverConfinement in
-    # internal/harbourmaster/store is, because it parses every .go file and this
-    # linter cannot reach two places that are compiled into the binaries: a file
-    # behind a build tag, and gen/, which the exclusions below skip. This is a
-    # redundant check that reports at edit time.
+    # internal/harbourmaster/store is. But NOT because this linter is incapable:
+    # three claims of that shape have been made on this repository and all three
+    # were false. It does see blank imports (revive's blank-imports rule reports
+    # at the same line and --uniq-by-line hid the second issue); it does read a
+    # file behind a build tag under --build-tags, which `make lint` now passes;
+    # and gen/ is skipped by the deletable exclusion below, not by inability.
+    # EDR-0042 retracts all three.
     #
-    # It does see blank imports. An earlier comment here said otherwise, from a
-    # confounded measurement — revive's blank-imports rule reports at the same
-    # line and --uniq-by-line then shows only one issue — and EDR-0042 retracts
-    # it.
+    # The honest split is that both mechanisms' coverage is CONFIGURATION — this
+    # one's is flags and exclusions, the test's is its walk — so neither may
+    # claim capability, and both are probed. This one reports at edit time.
     #
     # What import discipline buys either way is that the capability arrives by a
     # reviewed edit rather than by accident. It is not capability containment:

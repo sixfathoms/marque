@@ -7,9 +7,11 @@
 // a target engine, and one driver serves both. The replacement is import
 // discipline, and it is weaker — a check reads imports, not capability. It is
 // enforced by TestDriverConfinement in this package, which parses every .go
-// file: a linter cannot read a file behind a build tag or anything in gen/, and
-// both are compiled into the binaries. See EDR-0042 for the three ways import
-// discipline is defeated.
+// file, with a depguard block beside it. Not because a linter is incapable:
+// three claims of that shape were made and all three were false, and EDR-0042
+// retracts them. Because a linter's reach is its flags and exclusions and a
+// test's is its own code, so both are probed rather than asserted. See EDR-0042
+// for the four ways import discipline is defeated.
 package store
 
 import (

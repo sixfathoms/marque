@@ -20,7 +20,7 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   code, so it linked no drivers of any kind and the rule was true by vacancy. M1 is the milestone
   that ends that, which is why M1 is where the rule had to be re-expressed.
 
-  EDR-0042 replaces **absence** with **import discipline** — a driver confined by a test that parses every file to
+  EDR-0042 replaces **absence** with **import discipline** — a driver confined by a test that parses every first-party file to
   the two packages that need one — the Harbourmaster's store and the Pilot's adapter, which must have
   it — with **no exception at all** for an engine Marque does not store its own
   state in, so MySQL stays wholly absent when
@@ -57,9 +57,10 @@ the rest is right: approval is a row rather than a signature — carrying `stage
 flat shape
 ([EDR-0030](/edrs/0030-a-marque-states-its-own-approval-requirement/) exists because flat was a
 defect); `requests.state` is authoritative where [EDR-0012](/edrs/0012-the-logbook-is-append-only/)
-makes current state a disposable projection; and `executions` is a control-plane *report* which must
-never grow a nonce column, because [EDR-0011](/edrs/0011-execution-is-idempotent-and-fenced/)'s
-ledger is Pilot-local and is the fence itself.
+makes current state a disposable projection; and `executions` is a control-plane *report* whose nonce is a
+report key and not a claim — [EDR-0011](/edrs/0011-execution-is-idempotent-and-fenced/)'s ledger is
+Pilot-local, claimed before the statement runs, carries an incarnation, and is the fence itself.
+None of that is in this table.
 
 Where the Pilot keeps that ledger is undecided, and no record says —
 [issue #34](https://github.com/sixfathoms/marque/issues/34), due before M5. The target database is

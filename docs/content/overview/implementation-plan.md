@@ -134,8 +134,9 @@ as a cheaper edit-time report.
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
 the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
 package that is not the store and watching the confinement test refuse it. It parses every file
-rather than asking a linter or `go list`, because neither reads a file behind a build tag and neither
-reads `gen/` — both of which are compiled into the binaries. The rule replaces a mechanism EDR-0005
+rather than asking a linter, and not because a linter is incapable — three claims of that shape were
+made here and all three were false (EDR-0042). Because a linter's reach is its flags and exclusions
+and a test's is its own code, so neither may be asserted and both are probed. The rule replaces a mechanism EDR-0005
 lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
 signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers

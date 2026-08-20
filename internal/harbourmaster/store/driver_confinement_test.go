@@ -324,7 +324,7 @@ func TestWalkReachesGeneratedCode(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("the walk skipped gen/, which is compiled into every binary")
+	t.Fatal("the walk skipped gen/, which the test binaries and schemacheck link")
 }
 
 func repoRoot(t *testing.T) string {

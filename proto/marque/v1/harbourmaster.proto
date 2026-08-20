@@ -8,8 +8,9 @@ option go_package = "github.com/sixfathoms/marque/gen/marque/v1;marquev1";
 
 // HarbourmasterService is the control plane: requests, policy, delegations and
 // the logbook. It never touches a target database and never holds a target
-// credential (EDR-0001, EDR-0005). From M1 it connects to one database, its
-// own, through the single package EDR-0042 confines the driver to.
+// credential (EDR-0001, EDR-0005). From M1 the Harbourmaster's store package
+// connects to one database, its own, through the single package EDR-0042
+// confines the driver to. No binary links it yet.
 service HarbourmasterService {
   // GetVersion reports the software the control plane is running, so a client
   // can say what it was talking to.
