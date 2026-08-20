@@ -516,6 +516,23 @@ const (
 	poolMaxIdleTime = 5 * time.Minute
 )
 
+// configurePool applies the pool's whole policy, taking the durations as
+// parameters so a test can shorten them and watch a connection actually retire.
+// Asserting the constants proved nothing: deleting the SetConnMaxLifetime call
+// left them true and the pool unbounded.
+//
+// Bounded open connections because database/sql defaults to unlimited, which a
+// control plane under load turns into the target's max_connections; bounded
+// lifetimes because an unbounded one ages badly across a failover, a DNS change
+// or a pooler in front, where the pool keeps handing out connections to
+// somewhere that has moved.
+func configurePool(db *sql.DB, lifetime, idleTime time.Duration) {
+	db.SetMaxOpenConns(16)
+	db.SetMaxIdleConns(4)
+	db.SetConnMaxLifetime(lifetime)
+	db.SetConnMaxIdleTime(idleTime)
+}
+
 var lockWait = "30s"
 
 // runtimeRole is the role the Harbourmaster serves as, and the one the migrator
@@ -732,13 +749,7 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	}
 	// Bounded. database/sql defaults to unlimited open connections, which a
 	// control plane under load turns into the target's max_connections.
-	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(4)
-	// Connections do not live forever. An unbounded lifetime ages badly across
-	// a failover, a DNS change or a pooler in front, where the pool keeps
-	// handing out connections to somewhere that has moved.
-	db.SetConnMaxLifetime(poolMaxLifetime)
-	db.SetConnMaxIdleTime(poolMaxIdleTime)
+	configurePool(db, poolMaxLifetime, poolMaxIdleTime)
 
 	// Verify positively rather than lazily. A pool that connects on first use
 	// hides broken authentication until an incident (EDR-0005).

@@ -319,6 +319,21 @@ func TestReachesDriverOverASyntheticGraph(t *testing.T) {
 			},
 			me + "cmd/harbourmaster", true,
 		},
+		// The Pilot's adapter is a second sink, and it must be exact too.
+		"a subpackage of the Pilot adapter is NOT a home": {
+			map[string][]string{
+				me + "cmd/harbourmaster":           {me + "internal/pilot/postgres/sub"},
+				me + "internal/pilot/postgres/sub": {pgx},
+			},
+			me + "cmd/harbourmaster", true,
+		},
+		"nor is internal/pilot/postgresql": {
+			map[string][]string{
+				me + "cmd/harbourmaster":         {me + "internal/pilot/postgresql"},
+				me + "internal/pilot/postgresql": {pgx},
+			},
+			me + "cmd/harbourmaster", true,
+		},
 		"nor is a same-prefix sibling": {
 			map[string][]string{
 				me + "cmd/harbourmaster":                 {me + "internal/harbourmaster/storefront"},

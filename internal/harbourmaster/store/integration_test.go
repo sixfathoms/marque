@@ -934,3 +934,62 @@ func TestThePoolRetiresConnections(t *testing.T) {
 		t.Errorf("an idle bound longer than the lifetime bound never applies")
 	}
 }
+
+// The retirement bounds, watched retiring — one at a time, because a test that
+// accepts either counter is satisfied by whichever bound is still set, and
+// deleting the other one survived exactly that way.
+func TestConfigurePoolRetiresConnections(t *testing.T) {
+	ctx := t.Context()
+
+	fresh := func(t *testing.T, lifetime, idleTime time.Duration) *sql.DB {
+		t.Helper()
+		db, err := Open(ctx, dsn(t))
+		if err != nil {
+			t.Fatalf("connecting: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		configurePool(db, lifetime, idleTime)
+		return db
+	}
+
+	t.Run("by lifetime", func(t *testing.T) {
+		// Idle bound long, so only the lifetime bound can close anything.
+		db := fresh(t, 50*time.Millisecond, time.Hour)
+		for range 30 {
+			if err := db.PingContext(ctx); err != nil {
+				t.Fatalf("pinging: %v", err)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := db.Stats().MaxLifetimeClosed; got == 0 {
+			t.Error("no connection was retired by its lifetime in 300ms with a 50ms bound")
+		}
+	})
+
+	t.Run("by idle time", func(t *testing.T) {
+		// Lifetime long, so only the idle bound can close anything.
+		db := fresh(t, time.Hour, 50*time.Millisecond)
+		// Open a few, then leave them alone past the idle bound.
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				var n int
+				_ = db.QueryRowContext(ctx, `SELECT pg_sleep(0.05), 1`).Scan(&n, &n)
+			}()
+		}
+		wg.Wait()
+		// database/sql's connection cleaner runs on a timer that it clamps to a
+		// MINIMUM of one second, whatever the bound is — so 400ms proved
+		// nothing and the first version of this test failed on correct code.
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if db.Stats().MaxIdleTimeClosed > 0 {
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		t.Errorf("no connection was retired for idleness in 10s with a 50ms bound: %+v", db.Stats())
+	})
+}
