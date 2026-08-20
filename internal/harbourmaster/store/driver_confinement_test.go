@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -135,6 +136,28 @@ func TestDriverHomesAreExactPackages(t *testing.T) {
 	}
 }
 
+// isFirstParty reports whether a package path belongs to this repository.
+func isFirstParty(path string) bool {
+	return path == modulePath || strings.HasPrefix(path, modulePath+"/")
+}
+
+const modulePath = "github.com/sixfathoms/marque"
+
+// isPermittedHome reports whether a first-party PACKAGE PATH is one of the
+// packages EDR-0042 allows to hold a driver.
+func isPermittedHome(path string) bool {
+	dir, ok := strings.CutPrefix(path, modulePath+"/")
+	if !ok {
+		return false
+	}
+	for _, home := range driverHomes {
+		if dir == home {
+			return true
+		}
+	}
+	return dir == pilotPostgres
+}
+
 func permittedHere(imp, dir string) bool {
 	home, isDriver := driverHome(imp)
 	if !isDriver {
@@ -156,19 +179,27 @@ func driverHome(imp string) (string, bool) {
 }
 
 // firstPartyGoFiles maps every repository-relative .go path to its imports.
-// `gen/` is NOT skipped: generated code is compiled into the binaries — the
-// schema package imports it — so a generated file importing a driver links one.
-// skipDir reports whether the Go toolchain itself never compiles from a
-// directory of this name, which is the only defensible basis for skipping one.
-// Two hand-curated lists have failed here already: the first skipped by
-// basename anywhere in the tree, so internal/anything/bin/ escaped; the second
-// skipped root-level bin/ and dist/, and `go build ./bin/probe/` compiles a
-// package there like any other. A rule tied to what the toolchain ignores has
-// no entries to get wrong.
+// `gen/` is NOT skipped: the test binaries and schemacheck compile it — no
+// shipped binary does (EDR-0042) — so a generated file importing a driver
+// would link one into a binary this repository builds.
+// skipDir skips ONLY .git, and only because walking a large object store is
+// slow. It is a performance trade with a stated residue, not a claim about what
+// compiles.
+//
+// The three lists that preceded it were each a claim about what compiles, and
+// each was wrong. The last is the instructive one: it skipped directories
+// beginning with "." or "_", and "testdata", citing cmd/go — and that rule
+// governs WILDCARD EXPANSION, not import resolution. `go build ./x/testdata/pg`
+// compiles a package there perfectly well, and an explicit import of it links
+// whatever it imports. Two reviewers and codex found that independently, one
+// round after this rule was rewritten to be "principled". It was the fourth
+// false capability claim on this branch.
+//
+// So: no capability claim. Walking .git could surface a .go file inside a
+// packfile path, and nothing imports one, and if that ever matters the fix is
+// to walk it.
 func skipDir(name string) bool {
-	// cmd/go: directories beginning with "." or "_" are ignored, as is
-	// "testdata", whose contents are never part of any build.
-	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata"
+	return name == ".git"
 }
 
 // violations reports every file in the set importing a driver it may not.
@@ -217,7 +248,34 @@ func pilotImports(files map[string][]string) []string {
 
 func firstPartyGoFiles(t *testing.T) map[string][]string {
 	t.Helper()
-	root := repoRoot(t)
+	files, problems := goFilesUnder(t, repoRoot(t))
+	for _, p := range problems {
+		// Not a skip. A file whose imports could not be read is a file whose
+		// imports are unchecked, which is the silent pass this exists to avoid.
+		//
+		// UNPINNED, stated rather than implied: deleting these four lines
+		// leaves the suite green, and so does turning TestDriverConfinement's
+		// t.Errorf into a t.Logf. A test cannot observe its own reporting from
+		// inside the same binary. Everything either side is pinned —
+		// goFilesUnder returns its problems so they can be asserted, and
+		// violations() is exercised over a synthetic set — so what is left is
+		// the glue, and the honest thing is to name it rather than let the
+		// coverage claim cover it.
+		t.Error(p)
+	}
+	return files
+}
+
+// goFilesUnder RETURNS its problems rather than reporting them, so a test can
+// plant an unreadable file and assert the refusal. Reporting them inline meant
+// turning the refusal into a silent skip left the suite green — the mutation
+// this signature exists to kill.
+func goFilesUnder(t *testing.T, root string) (map[string][]string, []string) {
+	t.Helper()
+	var problems []string
+	problem := func(format string, args ...any) {
+		problems = append(problems, fmt.Sprintf(format, args...))
+	}
 	out := map[string][]string{}
 
 	// Symlinks are FOLLOWED, not skipped and not refused. filepath.WalkDir
@@ -227,24 +285,31 @@ func firstPartyGoFiles(t *testing.T) map[string][]string {
 	// through it, and watched this test stay green. Refusing outright was the
 	// first fix and it was wrong: pnpm builds node_modules out of symlinks, so
 	// refusing meant carving node_modules out, and a carve-out is what failed
-	// twice already. Following costs a visited set and nothing else.
-	visited := map[string]bool{}
-
-	var walk func(dir, rel string)
-	walk = func(dir, rel string) {
+	// twice already.
+	//
+	// Cycle detection is per-ANCESTRY, not global. A global visited set was the
+	// second fix and it was also wrong: a directory reachable by two names was
+	// recorded only under whichever os.ReadDir reached first, so ALPHABETICAL
+	// ORDER decided whether a forbidden alias was examined. A reviewer aliased a
+	// permitted package to a forbidden path, watched the permitted name win the
+	// sort, and watched twelve driver packages reach the binary silently.
+	var walk func(dir, rel string, ancestry map[string]bool)
+	walk = func(dir, rel string, ancestry map[string]bool) {
 		resolved, err := filepath.EvalSymlinks(dir)
 		if err != nil {
-			t.Errorf("%s could not be resolved, so its contents are unchecked: %v", rel, err)
+			problem("%s could not be resolved, so its contents are unchecked: %v", rel, err)
 			return
 		}
-		if visited[resolved] {
+		if ancestry[resolved] {
+			// A loop, not an alias. Descending would not terminate.
 			return
 		}
-		visited[resolved] = true
+		ancestry = maps.Clone(ancestry)
+		ancestry[resolved] = true
 
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			t.Errorf("%s could not be read, so its contents are unchecked: %v", rel, err)
+			problem("%s could not be read, so its contents are unchecked: %v", rel, err)
 			return
 		}
 		for _, e := range entries {
@@ -259,48 +324,48 @@ func firstPartyGoFiles(t *testing.T) map[string][]string {
 				if errors.Is(err, fs.ErrNotExist) {
 					continue
 				}
-				t.Errorf("%s could not be inspected, so it is unchecked: %v", childRel, err)
+				problem("%s could not be inspected, so it is unchecked: %v", childRel, err)
 				continue
 			}
 			if info.IsDir() {
 				if !skipDir(e.Name()) {
-					walk(path, childRel)
+					walk(path, childRel, ancestry)
 				}
 				continue
 			}
 			if !strings.HasSuffix(e.Name(), ".go") {
 				continue
 			}
-			out[childRel] = fileImports(t, path, childRel)
+			imports, err := fileImports(path)
+			if err != nil {
+				problem("%s could not be parsed, so its imports are unchecked: %v", childRel, err)
+				continue
+			}
+			out[childRel] = imports
 		}
 	}
-	walk(root, "")
+	walk(root, "", map[string]bool{})
 
-	return out
+	return out, problems
 }
 
-// fileImports reads one file's import paths. A file that cannot be parsed is a
-// failure, not a skip: unknown imports treated as permitted is the silent pass
-// this whole test exists to avoid. ImportsOnly stops after the import block, so
-// a file broken below it still reads correctly; what fails here is a broken
-// header, which would not compile either.
-func fileImports(t *testing.T, path, rel string) []string {
-	t.Helper()
+// fileImports reads one file's import paths. ImportsOnly stops after the
+// import block, so a file broken below it still reads correctly; what fails
+// here is a broken header, which would not compile either.
+func fileImports(path string) ([]string, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 	if err != nil {
-		t.Errorf("%s could not be parsed, so its imports are unchecked: %v", rel, err)
-		return nil
+		return nil, err
 	}
 	imports := make([]string, 0, len(f.Imports))
 	for _, spec := range f.Imports {
 		p, err := strconv.Unquote(spec.Path.Value)
 		if err != nil {
-			t.Errorf("%s has an import path that is not a quoted string: %s", rel, spec.Path.Value)
-			continue
+			return nil, fmt.Errorf("import path %s is not a quoted string", spec.Path.Value)
 		}
 		imports = append(imports, p)
 	}
-	return imports
+	return imports, nil
 }
 
 // The guard is only as good as its reach.
@@ -345,34 +410,6 @@ func repoRoot(t *testing.T) string {
 	}
 }
 
-// TestSkipDirMatchesTheGoToolchain pins the skip rule, because the two hand-
-// curated lists that preceded it were each defeated by a directory nobody
-// thought of. The rule is "what the Go toolchain itself never compiles", and
-// the cases that matter are the ones that look skippable and are not.
-func TestSkipDirMatchesTheGoToolchain(t *testing.T) {
-	for _, c := range []struct {
-		dir  string
-		skip bool
-		why  string
-	}{
-		{".git", true, "a dot directory; cmd/go ignores it"},
-		{".github", true, "a dot directory"},
-		{"_scratch", true, "an underscore directory; cmd/go ignores it"},
-		{"testdata", true, "cmd/go never compiles testdata"},
-
-		{"bin", false, "go build ./bin/x/ compiles a package there; skipping it hid one"},
-		{"dist", false, "same, and it was skipped for the same bad reason"},
-		{"node_modules", false, "nothing stops a Go file living there, and it is in the module"},
-		{"gen", false, "generated code is compiled code"},
-		{"internal", false, ""},
-		{"vendor", false, "vendored code is compiled, and its imports are still imports"},
-	} {
-		if got := skipDir(c.dir); got != c.skip {
-			t.Errorf("skipDir(%q) = %v, want %v — %s", c.dir, got, c.skip, c.why)
-		}
-	}
-}
-
 // TestViolationsReportsAForbiddenImport is the test that makes the rule
 // enforceable rather than merely present. On this repository no file violates
 // it, so the reporting loop never runs and deleting the failure entirely left
@@ -405,16 +442,150 @@ func TestPilotImportsReportsATransitiveDriver(t *testing.T) {
 	got := pilotImports(map[string][]string{
 		"internal/harbourmaster/api/x.go":   {"github.com/sixfathoms/marque/internal/pilot/postgres"},
 		"internal/harbourmaster/store/y.go": {"github.com/sixfathoms/marque/internal/pilot"},
+		// cmd/harbourmaster is the binary that ships, and the prefix list
+		// omitted it once while every internal package was covered.
+		"cmd/harbourmaster/main.go": {"github.com/sixfathoms/marque/internal/pilot/postgres"},
 		// A Pilot package importing a Pilot package is not the boundary.
 		"internal/pilot/postgres/a.go": {"github.com/sixfathoms/marque/internal/pilot"},
 		// A prefix that merely starts the same way is not a Pilot package.
 		"internal/harbourmaster/api/b.go": {"github.com/sixfathoms/marque/internal/pilotage"},
 	})
 	want := []string{
+		`cmd/harbourmaster/main.go imports "github.com/sixfathoms/marque/internal/pilot/postgres"`,
 		`internal/harbourmaster/api/x.go imports "github.com/sixfathoms/marque/internal/pilot/postgres"`,
 		`internal/harbourmaster/store/y.go imports "github.com/sixfathoms/marque/internal/pilot"`,
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("pilotImports() =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
+// TestTheWalkReachesEveryPlaceThatHasEscapedIt builds a synthetic tree holding
+// one file in each location that defeated this check in review, and asserts the
+// walk reports all of them.
+//
+// It exists because EDR-0042 claimed "standing tests plant a driver import in
+// each place that has escaped a check so far" while no test planted anything —
+// a claim about coverage asserted from reasoning, inside the paragraph
+// retracting three claims about coverage asserted from reasoning. A reviewer
+// grepped for it. This is the sentence made true.
+//
+// Every case here shipped green at least once:
+//
+//   - bin/ and dist/ were skipped by name, and `go build ./bin/pkg/` compiles.
+//   - testdata/, _x/ and .x/ were skipped citing cmd/go, whose rule about them
+//     governs wildcard expansion rather than import resolution.
+//   - a symlinked directory was not descended at all; then, once it was, a
+//     global visited set meant the alias was examined only if it sorted before
+//     the real directory.
+func TestTheWalkReachesEveryPlaceThatHasEscapedIt(t *testing.T) {
+	root := t.TempDir()
+	const driver = "github.com/jackc/pgx/v5/stdlib"
+
+	plant := func(dir string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, dir), 0o755); err != nil {
+			t.Fatalf("building the tree: %v", err)
+		}
+		rel := filepath.Join(dir, "p.go")
+		body := "package p\n\nimport _ \"" + driver + "\"\n"
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+			t.Fatalf("building the tree: %v", err)
+		}
+		return filepath.ToSlash(rel)
+	}
+
+	want := []string{
+		plant("bin/probe"),
+		plant("dist/probe"),
+		plant("internal/nested/bin/probe"),
+		plant("internal/harbourmaster/testdata/pg"),
+		plant("_underscore/probe"),
+		plant(".dotted/probe"),
+		plant("vendorish/probe"),
+	}
+
+	// The real directory sorts AFTER both aliases, so a global visited set
+	// keyed on the resolved path would examine only the first alias to be read
+	// and silently drop the other — which is the bug this reproduces. Both
+	// names must be reported.
+	real := "zz_real"
+	plant(real)
+	for _, alias := range []string{"aa_alias", "mm_alias"} {
+		if err := os.Symlink(filepath.Join(root, real), filepath.Join(root, alias)); err != nil {
+			t.Fatalf("linking %s: %v", alias, err)
+		}
+		want = append(want, alias+"/p.go")
+	}
+	want = append(want, real+"/p.go")
+
+	got, problems := goFilesUnder(t, root)
+	if len(problems) != 0 {
+		t.Errorf("the synthetic tree produced problems: %s", strings.Join(problems, "; "))
+	}
+	for _, rel := range want {
+		if _, ok := got[rel]; !ok {
+			t.Errorf("the walk did not reach %s, which `go build` compiles", rel)
+			continue
+		}
+		if !slices.Contains(got[rel], driver) {
+			t.Errorf("the walk reached %s but did not read its imports", rel)
+		}
+	}
+
+	// And the reporting half: every planted file is at a forbidden path, so
+	// every one must be reported. This is what makes deleting the failure
+	// visible — on the real repository the loop body never executes.
+	if len(violations(got)) != len(want) {
+		t.Errorf("violations() reported %d of %d planted imports:\n%s",
+			len(violations(got)), len(want), strings.Join(violations(got), "\n"))
+	}
+}
+
+// TestTheWalkTerminatesOnASymlinkLoop pins the other half of the cycle-detection
+// change: per-ancestry rather than global. A loop must not hang the test, and a
+// non-looping alias must not be discarded as though it were one.
+func TestTheWalkTerminatesOnASymlinkLoop(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a"), 0o755); err != nil {
+		t.Fatalf("building the tree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a", "p.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatalf("building the tree: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(root, "a"), filepath.Join(root, "a", "loop")); err != nil {
+		t.Fatalf("linking: %v", err)
+	}
+	got, _ := goFilesUnder(t, root)
+	if _, ok := got["a/p.go"]; !ok {
+		t.Error("the walk did not reach a/p.go")
+	}
+}
+
+// TestAnUnreadableFileIsAProblemNotASkip pins the refusal that matters most,
+// because its failure mode is silence: a file whose imports cannot be read is a
+// file whose imports are unchecked, and treating that as a skip is exactly the
+// silent pass this package exists to prevent. Turning the refusal into a no-op
+// left the whole suite green until this test existed.
+func TestAnUnreadableFileIsAProblemNotASkip(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"truncated.go": "package p\n\nimport (\n\t_ \"github.com/jackc/pgx/v5/stdlib\"\n",
+		"nopackage.go": "import _ \"github.com/jackc/pgx/v5/stdlib\"\n",
+		"notevengo.go": "\x00\x01 this is not Go at all\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("building the tree: %v", err)
+		}
+	}
+
+	_, problems := goFilesUnder(t, root)
+	if len(problems) != 3 {
+		t.Errorf("want 3 unreadable files reported, got %d:\n%s", len(problems), strings.Join(problems, "\n"))
+	}
+	for _, p := range problems {
+		if !strings.Contains(p, "unchecked") {
+			t.Errorf("the problem should say the file is unchecked; got %q", p)
+		}
 	}
 }
