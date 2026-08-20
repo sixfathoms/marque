@@ -38,19 +38,19 @@ func TestEmbeddedMigrationsLoad(t *testing.T) {
 // watched failing rather than assumed.
 func TestCompareRefusals(t *testing.T) {
 	embedded := []migration{
-		{number: 1, name: "0001_a.sql", digest: "aa"},
-		{number: 2, name: "0002_b.sql", digest: "bb"},
+		{number: 1, name: "0001_x.sql", digest: "aa"},
+		{number: 2, name: "0002_x.sql", digest: "bb"},
 	}
 
 	t.Run("in step is no error", func(t *testing.T) {
-		err := compare(embedded, []applied{{1, "aa"}, {2, "bb"}})
+		err := compare(embedded, []applied{{1, "0001_x.sql", "aa"}, {2, "0002_x.sql", "bb"}})
 		if err != nil {
 			t.Fatalf("want nil, got %v", err)
 		}
 	})
 
 	t.Run("behind is pending, which a migrator run repairs", func(t *testing.T) {
-		err := compare(embedded, []applied{{1, "aa"}})
+		err := compare(embedded, []applied{{1, "0001_x.sql", "aa"}})
 		if !errors.Is(err, ErrPending) {
 			t.Fatalf("want ErrPending, got %v", err)
 		}
@@ -66,7 +66,7 @@ func TestCompareRefusals(t *testing.T) {
 	// The case that matters most: an old binary against a database a newer one
 	// has migrated. Starting would let it write to a schema it does not know.
 	t.Run("ahead refuses", func(t *testing.T) {
-		err := compare(embedded[:1], []applied{{1, "aa"}, {2, "bb"}})
+		err := compare(embedded[:1], []applied{{1, "0001_x.sql", "aa"}, {2, "0002_x.sql", "bb"}})
 		if !errors.Is(err, ErrSchemaMismatch) {
 			t.Fatalf("want ErrSchemaMismatch, got %v", err)
 		}
@@ -78,7 +78,7 @@ func TestCompareRefusals(t *testing.T) {
 	// Forward-only means an applied migration is history. Editing one makes two
 	// deployments silently different.
 	t.Run("edited applied migration refuses", func(t *testing.T) {
-		err := compare(embedded, []applied{{1, "aa"}, {2, "DIFFERENT"}})
+		err := compare(embedded, []applied{{1, "0001_x.sql", "aa"}, {2, "0002_x.sql", "DIFFERENT"}})
 		if !errors.Is(err, ErrSchemaMismatch) {
 			t.Fatalf("want ErrSchemaMismatch, got %v", err)
 		}
@@ -88,7 +88,7 @@ func TestCompareRefusals(t *testing.T) {
 	})
 
 	t.Run("reordered history refuses", func(t *testing.T) {
-		err := compare(embedded, []applied{{2, "bb"}})
+		err := compare(embedded, []applied{{2, "0002_x.sql", "bb"}})
 		if !errors.Is(err, ErrSchemaMismatch) {
 			t.Fatalf("want ErrSchemaMismatch, got %v", err)
 		}
@@ -101,12 +101,12 @@ func TestCompareRefusals(t *testing.T) {
 // makes it detectable, this fails and the record needs updating.
 func TestDeletedTrailingUnappliedMigrationIsUndetectable(t *testing.T) {
 	full := []migration{
-		{number: 1, name: "0001_a.sql", digest: "aa"},
-		{number: 2, name: "0002_b.sql", digest: "bb"},
+		{number: 1, name: "0001_x.sql", digest: "aa"},
+		{number: 2, name: "0002_x.sql", digest: "bb"},
 	}
 	// Migration 2 was never applied anywhere, then deleted from the source.
 	truncated := full[:1]
-	if err := compare(truncated, []applied{{1, "aa"}}); err != nil {
+	if err := compare(truncated, []applied{{1, "0001_x.sql", "aa"}}); err != nil {
 		t.Fatalf("expected the truncation to pass unnoticed, which is the stated limit; got %v", err)
 	}
 }

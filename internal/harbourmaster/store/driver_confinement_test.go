@@ -1,122 +1,155 @@
 package store_test
 
 import (
-	"encoding/json"
-	"os/exec"
-	"slices"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // Drivers for target engines. EDR-0005's sentence is engine-agnostic and
 // EDR-0026 plans MySQL, so this list grows with the engine list rather than
-// naming PostgreSQL alone.
+// naming PostgreSQL alone. The pgx v4-era standalone modules are listed
+// separately: they reach a target with no database/sql involved at all.
 var targetEngineDrivers = []string{
 	"github.com/jackc/pgx",
+	"github.com/jackc/pgconn",
+	"github.com/jackc/pgproto3",
 	"github.com/lib/pq",
 	"github.com/go-sql-driver/mysql",
 }
 
-// Packages permitted to import one. The Harbourmaster's own store must, since
-// EDR-0013 fixed Marque's own state on PostgreSQL; the Pilot's adapter must,
-// since reaching a target is its entire job.
-var permitted = []string{
-	"github.com/sixfathoms/marque/internal/harbourmaster/store",
-	"github.com/sixfathoms/marque/internal/pilot",
+// Directories permitted to hold one, matched as prefixes so a subpackage is
+// covered — the Pilot's adapter will be internal/pilot/postgres, not
+// internal/pilot. The Harbourmaster's own store must have a driver because
+// EDR-0013 fixed Marque's own state on PostgreSQL; the Pilot's must because
+// reaching a target is its entire job.
+var permittedDirs = []string{
+	"internal/harbourmaster/store",
+	"internal/pilot",
 }
 
-// TestDriverConfinement is EDR-0042's mechanism, and it is a dependency-graph
-// test rather than a lint rule for a reason worth recording.
+// TestDriverConfinement is EDR-0042's mechanism.
 //
-// EDR-0042 first specified this as a `depguard` rule. depguard does not report
-// BLANK imports — and a database driver is imported blank essentially always,
-// because the point is the driver's registration side effect. The rule could
-// not see the one import it existed to police.
+// It parses every .go file in the repository directly rather than asking
+// `go list`, and that is the whole design. Two blind spots rule out the
+// alternatives:
 //
-// That is measured rather than reasoned, and it was worth measuring twice: a
-// reviewer read depguard's source and concluded it compares import paths
-// without examining the alias, so blank and named should be indistinguishable.
-// They are not, in the pinned version. Blank import of a denied package: no
-// diagnostic. Named import of the same package: a diagnostic. Reproduced for a
-// driver and for a standard-library package, so the axis is the blank alias and
-// not anything about drivers.
+//   - `depguard` does not report BLANK imports, and a driver is imported blank
+//     essentially always, because the point is the registration side effect.
+//     Measured against the pinned linter, with a control on a standard-library
+//     package, so the axis is the blank alias and nothing about drivers. A
+//     reviewer reading depguard's source concluded otherwise; the measurement
+//     is what settled it.
+//   - `go list` evaluates build constraints. It uses the host GOOS and passes
+//     no tags, so a file behind `//go:build integration` — which is where M1's
+//     own integration test lives, the file most certain to import a driver —
+//     is invisible to it. Also measured.
 //
-// A dependency graph does not have that blind spot: `go list` reports every
-// import, blank or not, which is what made EDR-0005's original sentence
-// checkable in the first place. depguard stays enabled as a cheap redundant
-// check on named imports; this test is the mechanism.
+// go/parser reads the file whatever its build tags say, on any host, including
+// _test.go files. There is no configuration under which a first-party file
+// escapes it.
 func TestDriverConfinement(t *testing.T) {
-	out, err := exec.CommandContext(t.Context(), "go", "list", "-deps", "-json",
-		// A module-rooted pattern, NOT "./...": under `go test` the working
-		// directory is the package under test, so "./..." would list only this
-		// package and the check would pass vacuously — which it did, until a
-		// probe that should have failed did not.
-		"github.com/sixfathoms/marque/...").Output()
-	if err != nil {
-		t.Fatalf("go list: %v", err)
-	}
+	root := repoRoot(t)
 
-	type pkg struct {
-		ImportPath string
-		Imports    []string
-	}
-	dec := json.NewDecoder(strings.NewReader(string(out)))
-	offenders := map[string][]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "dist", "bin", "gen":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		for _, p := range permittedDirs {
+			if rel == p || strings.HasPrefix(rel, p+"/") {
+				return nil
+			}
+		}
 
-	for dec.More() {
-		var p pkg
-		if err := dec.Decode(&p); err != nil {
-			t.Fatalf("decoding go list output: %v", err)
+		// ImportsOnly, so a file that does not compile is still checked.
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			// Not a skip. A file this cannot read is a file whose imports are
+			// unknown, and treating unknown as permitted is the silent pass
+			// this guard exists to avoid. ImportsOnly stops after the import
+			// block, so a file broken *below* it still reads correctly — what
+			// fails here is a broken header, which would not compile either.
+			t.Errorf("%s could not be parsed, so its imports are unchecked: %v", rel, err)
+			return nil
 		}
-		// Only first-party packages are ours to constrain; a dependency
-		// importing a driver is a transitive link this cannot police, which
-		// EDR-0042 names as one of the ways the rule is defeated.
-		if !strings.HasPrefix(p.ImportPath, "github.com/sixfathoms/marque/") {
-			continue
-		}
-		if slices.Contains(permitted, p.ImportPath) {
-			continue
-		}
-		for _, imp := range p.Imports {
+		for _, spec := range f.Imports {
+			p, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				continue
+			}
 			for _, d := range targetEngineDrivers {
-				if imp == d || strings.HasPrefix(imp, d+"/") {
-					offenders[p.ImportPath] = append(offenders[p.ImportPath], imp)
+				if p == d || strings.HasPrefix(p, d+"/") {
+					t.Errorf(
+						"%s imports %q.\n"+
+							"  A driver for a target engine belongs in %v and nowhere else (EDR-0042).\n"+
+							"  This replaces EDR-0005's \"no database driver for target engines linked\n"+
+							"  in\", which stopped being available when EDR-0013 fixed Marque's own\n"+
+							"  state on PostgreSQL.",
+						rel, p, permittedDirs)
 				}
 			}
 		}
-	}
-
-	for path, imports := range offenders {
-		t.Errorf(
-			"%s imports %v.\n"+
-				"  A driver for a target engine belongs in %v and nowhere else (EDR-0042).\n"+
-				"  This is the mechanism replacing EDR-0005's \"no database driver for target\n"+
-				"  engines linked in\", which stopped being available when EDR-0013 fixed\n"+
-				"  Marque's own state on PostgreSQL.",
-			path, imports, permitted)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the repository: %v", err)
 	}
 }
 
-// TestDriverConfinementSeesBlankImports asserts the property that made the
-// depguard version useless. If a future change moves this check to something
-// that reads named imports only, this fails and says why.
-func TestDriverConfinementSeesBlankImports(t *testing.T) {
-	out, err := exec.CommandContext(t.Context(), "go", "list", "-json",
-		"github.com/sixfathoms/marque/internal/harbourmaster/store").Output()
+// The guard is only as good as its reach, so assert it reaches the file it most
+// needs to: the store's own blank driver import. If this stops finding it, the
+// test above passes whether or not a driver is linked anywhere.
+func TestDriverConfinementReachesBlankImports(t *testing.T) {
+	path := filepath.Join(repoRoot(t), "internal/harbourmaster/store/migrate.go")
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 	if err != nil {
-		t.Fatalf("go list: %v", err)
+		t.Fatalf("parsing the store: %v", err)
 	}
-	var p struct{ Imports []string }
-	if err := json.Unmarshal(out, &p); err != nil {
-		t.Fatalf("decoding: %v", err)
+	for _, spec := range f.Imports {
+		if strings.Contains(spec.Path.Value, "jackc/pgx") {
+			if spec.Name == nil || spec.Name.Name != "_" {
+				t.Fatal("the store's driver import is no longer blank; this test asserts the wrong thing now")
+			}
+			return
+		}
 	}
-	// The store imports the driver blank. If `go list` did not report it, the
-	// confinement test above would pass vacuously on every package.
-	found := slices.ContainsFunc(p.Imports, func(s string) bool {
-		return strings.HasPrefix(s, "github.com/jackc/pgx")
-	})
-	if !found {
-		t.Fatal("go list did not report the store's blank driver import, so the confinement " +
-			"test above cannot be trusted — it would pass whether or not a driver were linked")
+	t.Fatal("the store no longer imports a driver, so the confinement test above proves nothing")
+}
+
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod above the working directory")
+		}
+		dir = parent
 	}
 }

@@ -86,10 +86,16 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    not reasoned — a blank import of a denied package produces no diagnostic and a named import of the
    same package produces one, for a driver and for a standard-library package alike.
 
-   The test instead walks `go list -deps -json` over the module and asserts that no first-party
-   package outside the two permitted ones imports a driver. A dependency graph has no such blind
-   spot, which is what made EDR-0005's original sentence checkable in the first place: losing
-   *absence* did not have to mean losing the instrument. `depguard` stays enabled as a cheap
+   `go list` was the second answer and has its own blind spot: it evaluates build constraints, using
+   the host `GOOS` and no tags, so a file behind `//go:build integration` is invisible to it — and
+   M1's integration test, the file most certain to import a driver, is behind exactly that. Also
+   measured.
+
+   The test therefore **parses every `.go` file in the repository directly**, with `go/parser` in
+   `ImportsOnly` mode. That reads a file whatever its build tags say, on any host, including
+   `_test.go` files, and there is no configuration under which a first-party file escapes it. A file
+   it cannot parse is a *failure* rather than a skip, because treating unknown imports as permitted
+   is the silent pass this whole mechanism exists to avoid. `depguard` stays enabled as a cheap
    redundant check on named imports.
 
 3. **The Harbourmaster holds no target connection parameters and no target credential.** EDR-0005
@@ -244,10 +250,15 @@ Named individually, because a reader who sees only one will assume the rest is r
   does not look at. It buys "the capability arrives by a reviewed edit rather than by accident", and
   no more. Anyone touching the permitted list is touching a security control.
 
-  Two defeats an earlier draft listed are **gone**, because the mechanism changed under review: a
-  lint rule could see neither a blank import nor a file behind a build tag, and a dependency-graph
-  test sees both. That the first mechanism failed on exactly the import shape it existed to police —
-  after being specified, reviewed and accepted — is the part worth remembering.
+  One defeat an earlier draft listed is **gone**: a lint rule could not see a blank import, and this
+  mechanism can. A second — a file behind a build tag — survived the first replacement and was
+  removed only by the third: `go list` evaluates build constraints, so the graph test that replaced
+  `depguard` was blind to exactly the file M1 puts its integration test in. Parsing the files
+  directly is what closed it.
+
+  Two mechanisms failed on the import shape they existed to police, both after being specified and
+  reviewed. That is the part worth remembering: neither failure was visible in review, and both were
+  visible on the first attempt to run them.
 - **A forward-only schema with no backup story is an irreversible deploy.** An explicit migrator
   means nobody applies one by accident, which is a smaller part of the answer than it sounds: once
   applied, a bad migration is repaired only by writing another, and a destructive one is not

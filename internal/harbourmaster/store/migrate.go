@@ -87,6 +87,13 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].number < out[j].number })
+	for i := 1; i < len(out); i++ {
+		if out[i].number == out[i-1].number {
+			return nil, fmt.Errorf(
+				"migrations %s and %s both claim number %04d; a number is an identity, not a label",
+				out[i-1].name, out[i].name, out[i].number)
+		}
+	}
 	for i, m := range out {
 		if m.number != i+1 {
 			return nil, fmt.Errorf(
@@ -117,9 +124,17 @@ func Verify(ctx context.Context, db *sql.DB) error {
 
 type applied struct {
 	number int
+	name   string
 	digest string
 }
 
+// Every reference to schema_migrations is schema-qualified. Verify runs on the
+// pool, where the migrator's one-off SET search_path cannot reach, and an
+// unqualified name there lets a role whose search_path names an earlier
+// writable schema satisfy the check against a decoy history — measured, not
+// theorised. Qualifying works on any connection with no DSN dependence; the
+// session pin in Migrate stays as defence in depth.
+//
 // querier is whatever the history is read through. Migrate reads it on the
 // connection holding the advisory lock; Verify reads it on the pool, which is
 // correct because Verify takes no lock and writes nothing.
@@ -131,7 +146,7 @@ type querier interface {
 func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 	var exists bool
 	err := q.QueryRowContext(ctx,
-		`SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&exists)
+		`SELECT to_regclass('public.schema_migrations') IS NOT NULL`).Scan(&exists)
 	if err != nil {
 		return nil, fmt.Errorf("looking for schema_migrations: %w", err)
 	}
@@ -139,7 +154,7 @@ func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 		return nil, nil
 	}
 	rows, err := q.QueryContext(ctx,
-		`SELECT number, digest FROM schema_migrations ORDER BY number`)
+		`SELECT number, name, digest FROM public.schema_migrations ORDER BY number`)
 	if err != nil {
 		return nil, fmt.Errorf("reading schema_migrations: %w", err)
 	}
@@ -148,7 +163,7 @@ func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 	var out []applied
 	for rows.Next() {
 		var a applied
-		if err := rows.Scan(&a.number, &a.digest); err != nil {
+		if err := rows.Scan(&a.number, &a.name, &a.digest); err != nil {
 			return nil, fmt.Errorf("reading schema_migrations: %w", err)
 		}
 		out = append(out, a)
@@ -177,6 +192,13 @@ func compare(embedded []migration, applied []applied) error {
 		e := embedded[i]
 		if a.number != e.number {
 			return fmt.Errorf("%w: applied migration %d is where %d was expected", ErrSchemaMismatch, a.number, e.number)
+		}
+		if a.name != e.name {
+			return fmt.Errorf(
+				"%w: migration %d was applied as %s and is now called %s.\n"+
+					"  Renaming an applied migration makes two deployments disagree about their\n"+
+					"  own history while every digest still matches",
+				ErrSchemaMismatch, a.number, a.name, e.name)
 		}
 		if a.digest != e.digest {
 			return fmt.Errorf(
@@ -216,8 +238,14 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, err := conn.ExecContext(ctx, `SET search_path = public, pg_catalog`); err != nil {
 		return fmt.Errorf("pinning search_path: %w", err)
 	}
+	// Bounded. pg_advisory_lock waits forever, and a CLI passing
+	// context.Background() would wait with it rather than saying another
+	// migrator holds the lock.
+	if _, err := conn.ExecContext(ctx, `SET lock_timeout = '30s'`); err != nil {
+		return fmt.Errorf("setting lock_timeout: %w", err)
+	}
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
-		return fmt.Errorf("taking the migration lock: %w", err)
+		return fmt.Errorf("taking the migration lock (another migrator may hold it): %w", err)
 	}
 	defer func() {
 		// Best effort: the lock also dies with the session.
@@ -225,7 +253,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}()
 
 	if _, err := conn.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
+		CREATE TABLE IF NOT EXISTS public.schema_migrations (
 			number     integer     PRIMARY KEY,
 			name       text        NOT NULL,
 			digest     text        NOT NULL,
@@ -269,7 +297,7 @@ func applyOne(ctx context.Context, conn *sql.Conn, m migration) error {
 	// The record commits with the DDL. PostgreSQL has transactional DDL, which
 	// is why a half-applied migration is not a state this design has.
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO schema_migrations (number, name, digest) VALUES ($1, $2, $3)`,
+		`INSERT INTO public.schema_migrations (number, name, digest) VALUES ($1, $2, $3)`,
 		m.number, m.name, m.digest); err != nil {
 		return fmt.Errorf("recording %s: %w", m.name, err)
 	}
@@ -292,6 +320,11 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening the control plane's database: %w", err)
 	}
+	// Bounded. database/sql defaults to unlimited open connections, which a
+	// control plane under load turns into the target's max_connections.
+	db.SetMaxOpenConns(16)
+	db.SetMaxIdleConns(4)
+
 	// Verify positively rather than lazily. A pool that connects on first use
 	// hides broken authentication until an incident (EDR-0005).
 	if err := db.PingContext(ctx); err != nil {
