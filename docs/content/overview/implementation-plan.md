@@ -145,12 +145,23 @@ The foundation the rest of the authority model stands on
    happy paths tests nothing.
 5. A differential harness: throw statements at both the parser and a real PostgreSQL, and assert they
    agree on what parses.
+6. **A scheduled check that fails when `pg_query_go` publishes a new major.** `pg_query_go` uses
+   semantic import versioning, so `/v6` and `/v7` are different module paths and
+   [Dependabot will never propose that upgrade](https://github.com/sixfathoms/marque/blob/main/.github/dependabot.yml)
+   — the configuration isolates its minor and patch bumps and can do nothing about the major. A
+   subscription in somebody's inbox is not a mechanism this repository can check, so the watch is a
+   job that compares the module path pinned in `go.mod` against the latest released major and fails
+   when they diverge. It goes in `CODEOWNERS` like anything else with an owner. When a major does
+   arrive it is not a dependency bump: a newer grammar parses statements the previous one refused, so
+   the corpus is re-run and any changed verdict bumps the subset version
+   ([EDR-0039](../../edrs/0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)).
 
 **Exit:** the corpus passes **on all four supported platforms** — this is the milestone the test
 tier widens for, because from here the parser is C and a grammar that classifies a statement
 differently per architecture is a soundness bug the build-and-smoke tier cannot see; the subset
 version is recorded on extracted scopes; widening the allowlist by one node type shows up as a
-corpus diff.
+corpus diff; and step 6's release watch **has been seen to fail**, by pointing it at a major newer
+than the one pinned.
 
 ### M3 — Marques
 

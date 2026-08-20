@@ -15,6 +15,13 @@
 # is the default. A group with no `applies-to` covers version updates only —
 # so a file that groups without saying so silently leaves security updates
 # ungrouped while reading as though it had covered them.
+#
+# The `security-updates` groups need the repository's "Dependabot security
+# updates" setting ON to do anything: they SHAPE the pull requests that feature
+# raises, and raise none themselves. It was off when this file was first
+# written, which made those groups inert exactly as the missing Actions one
+# would have been. It is on now. If it is ever turned off, three of the groups
+# below go quiet without failing anything.
 version: 2
 
 updates:
