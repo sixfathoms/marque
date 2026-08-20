@@ -94,10 +94,11 @@ Marque's own state on PostgreSQL, PostgreSQL is also a target engine, and one dr
 sentence was never achievable after that record was accepted and went unchallenged only while the
 Harbourmaster had no storage code and so linked no drivers at all.
 [EDR-0042](./0042-the-control-plane-keeps-its-own-store.md) replaces it with import discipline — a
-driver confined by a test that parses every first-party file to the two packages that need one — the
-Harbourmaster's store and the Pilot's adapter, which must have it — with no exception at all for an
-engine Marque does not store its own state in — and is explicit that this is weaker: it reads
-imports, not capability.
+driver confined to the two packages that need one — the Harbourmaster's store and the Pilot's
+adapter, which must have it — by a check that asks the toolchain what each binary links, with no
+control-plane exception for an engine Marque does not store its own state in; a MySQL driver's only
+home would be the Pilot's adapter — and is explicit that this is weaker: it reads imports, not
+capability.
 
 **Verify positively after any change.** A lazily-initialised connection pool hides broken database
 authentication indefinitely: no connection attempt, no error, quiet logs, and the first symptom

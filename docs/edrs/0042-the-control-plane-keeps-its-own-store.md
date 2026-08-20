@@ -75,14 +75,24 @@ was amended on 2026-08-16 to say a compromised control plane retains a bounded, 
 read channel by relaying operator-signed reads, and overstating that is the error that amendment
 exists to correct. What changes is the mechanism, because the old one is not available.
 
-1. **Two packages, and only they import a driver.** `internal/harbourmaster/store` imports a
+1. **Two packages, and only they hold a PostgreSQL driver.** `internal/harbourmaster/store` imports a
    PostgreSQL driver for the control plane's own database. `internal/pilot/postgres` imports one to
    reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
    about it. No other package imports either, and **no Harbourmaster package imports the Pilot
    adapter**, which is the boundary that carries the weight.
-2. **Enforced by a test that parses every file, with a `depguard` block beside it.** The test walks
-   the repository and reads each `.go` file's imports with `go/parser`. `depguard` reports the same
-   rule to whoever is editing, sooner and with a better message.
+2. **Enforced by asking the toolchain what each binary links**, with a filesystem walk as a
+   cross-check and a `depguard` block as the edit-time report.
+
+   The primary check runs `go list -deps` over `./cmd/...` and `-test ./...`, with and without the
+   integration tag, and states the rule as a graph property: **cut the permitted homes out of the
+   dependency graph, and no first-party package may still reach a driver.** That phrasing is what
+   makes a wrapper visible — a reviewer imported `github.com/jackc/pglogrepl`, by the same author as
+   pgx, which pulls in `pgx/v5/pgconn` without the first-party import naming a driver at all, and
+   direct-import matching reported nothing.
+
+   `depguard` reports a **wider** version of the same rule, and wider is worth naming: its exemptions
+   are directory globs rather than exact packages, so it permits a PostgreSQL driver anywhere under
+   `internal/pilot`, and it has no analogue of the Harbourmaster-to-Pilot check below.
 
    **Three justifications have been given for that split. All three were capability claims about
    tooling, and all three were false.** The sequence is kept rather than tidied away, because this
@@ -115,7 +125,8 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    So the honest reason, which claims nothing about capability: **both mechanisms' coverage is
    configuration, and neither's is a property of the tool.** The test's coverage is its walk and its
    skip rule; the linter's is its invocation flags, its path exclusions, its generated-file heuristic
-   and `--uniq-by-line`. Either can be narrowed by a commit that does not look like it touches a
+   and `--uniq-by-line`; and `go list`'s is the patterns and tags it is given, which is why it is
+   given six combinations rather than one. Either can be narrowed by a commit that does not look like it touches a
    security control — and the test's was, twice, in review: once by skipping directories by basename
    anywhere in the tree, and once by skipping `bin/` and `dist/`, which `go build` compiles from
    perfectly happily. A third time it did not descend a symlinked directory, and a Harbourmaster
@@ -124,7 +135,19 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    That is not a reason to prefer one mechanism. It is a reason to **probe both rather than assert
    either**. The walk now skips only what the Go toolchain itself never compiles — a directory whose
    name begins with `.` or `_`, and `testdata` — follows symlinks rather than skipping them, and
-   standing tests plant a driver import in each place that has escaped a check so far.
+   standing tests plant a driver import in each place that has escaped a check so far — `bin/`,
+   `dist/`, a nested `bin/`, `testdata/`, an underscore directory, a dotted directory, and behind two
+   symlink aliases named to sort either side of the real directory. That sentence was itself false
+   when first written, and a reviewer grepped for the tests and found none; the tests exist now.
+
+   **A fifth false claim belongs in this list, because it was made one round after the retraction
+   above.** The walk's skip rule was rewritten to skip only what "the Go toolchain itself never
+   compiles" — a directory beginning `.` or `_`, and `testdata` — and cited `cmd/go` for it. That
+   rule governs **wildcard expansion**, not import resolution. `go build ./internal/x/testdata/pg`
+   compiles a package there, and an explicit import of it links whatever it imports; two reviewers
+   and codex demonstrated it independently. The walk now skips `.git` alone, on stated performance
+   grounds rather than capability, and the primary check reads the dependency graph, where the
+   question does not arise.
 
 3. **The Harbourmaster holds no target connection parameters and no target credential.** EDR-0005
    already decides the credential half; where a target's *connection parameters* live it does not
@@ -353,4 +376,5 @@ Named individually, because a reader who sees only one will assume the rest is r
 
 - **2026-08-20**: Accepted.
 - **2026-08-20**: Amended when M1 built it. The rule was specified as a `depguard` block, replaced with a `go list -deps` graph test, and replaced again with a test that parses every `.go` file. **Each replacement was justified by a claim about what a tool cannot do, and all three claims were false** — `depguard` does report blank imports (`revive` reports at the same line and `--uniq-by-line` hid the second issue; a reviewer said so from the source and was overruled), `golangci-lint` does read a file behind a build tag under `--build-tags`, and `gen/` is skipped by a deletable exclusion and is in no shipped binary anyway. The parser is kept for a reason that claims nothing: both mechanisms' coverage is configuration rather than capability, so both are probed instead of asserted. The allowlist is now per driver and per package rather than per directory tree; a second check refuses a Harbourmaster package — `cmd/harbourmaster` included, which it had omitted — importing a Pilot adapter; the walk skips only what the Go toolchain never compiles and follows symlinks, both after a reviewer defeated an earlier skip list. Defeats are four: an edit to the permitted list, a `sql.Open` by driver name, a transitive dependency, and a driver on neither list. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger, and that `rows_affected` is absent exactly when the outcome is `indeterminate`. The decision is unchanged.
+- **2026-08-20**: The mechanism becomes `go list -deps` over each binary, with the filesystem walk demoted to a cross-check, after a fifth false capability claim and three more defeats. The claim: the walk skipped `.`, `_` and `testdata` citing `cmd/go`, whose rule about those names governs wildcard expansion rather than import resolution, so an explicitly imported package under `testdata/` compiled and linked with every check green. The defeats: that; a symlink alias, where a global visited set keyed on the resolved path made alphabetical order the only thing deciding whether the forbidden name was examined; and `#cgo LDFLAGS: -lpq`, which links the reference driver with no Go import for any import-based check to see. Cgo is now gated separately with an empty allowlist, which EDR-0039's `libpg_query` joins by a reviewed edit at M2. The rule is stated as a graph property — cut the permitted homes out and no first-party package may still reach a driver — which also catches a wrapper module that imports a driver so the first-party import names something else. The threat model this rule serves is now stated in the Decision: it catches accidents, and a committer who is trying defeats any check living in the same repository. The defeat count stays four; the constructions are instances of the third and fourth.
 - **2026-08-20**: The migrator's refusal of statements PostgreSQL will not run inside a transaction, promised here and implemented nowhere, is implemented — at load time, so CI catches it rather than SQLSTATE 25001 part-way through a production migration. `Verify`'s scope is stated: it checks applied history, not schema shape.

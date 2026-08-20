@@ -78,7 +78,13 @@ func inHarbourmaster(dir string) bool {
 // configuration: this test's is its walk and skipDir, the linter's is its
 // invocation flags and exclusions. Neither is safe to assert, so both are
 // probed — see TestSkipDirMatchesTheGoToolchain and TestWalkReachesGeneratedCode
-// below, and the symlink refusal in firstPartyGoFiles.
+// below, and the symlink FOLLOWING in firstPartyGoFiles — refusing them was
+// the first fix and it was wrong.
+//
+// This walk is no longer the primary check. TestNoBinaryLinksADriverOutsideItsHome
+// asks the toolchain what each binary links, which is the question the rule is
+// about; this asks what files exist, which is a different one, and it is kept
+// as the cross-check.
 func TestDriverConfinement(t *testing.T) {
 	files := firstPartyGoFiles(t)
 	if len(files) < 5 {
