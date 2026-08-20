@@ -458,7 +458,8 @@ func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 		t.Fatalf("migrating: %v", err)
 	}
 
-	// Every table, every privilege. Sampling SELECT/INSERT/UPDATE on `requests`
+	// Every table, and all eight privileges aclexplode reports on one. Sampling
+	// SELECT/INSERT/UPDATE on `requests`
 	// alone meant removing the grants on tenants, approvals and executions left
 	// the suite green.
 	var cases []struct {
