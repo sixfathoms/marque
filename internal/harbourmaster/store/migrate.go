@@ -437,11 +437,14 @@ type applied struct {
 // theorised. Qualifying works on any connection with no DSN dependence; the
 // session pin in Migrate stays as defence in depth.
 //
-// The `pg_catalog.` on to_regclass is a different thing and buys nothing
-// checkable: pg_catalog is searched implicitly FIRST unless it is named, so a
-// decoy public.to_regclass never wins on any sane search_path. It is written
-// for symmetry, it is untestable, and saying so is better than leaving a
-// reader to assume a test covers it.
+// The `pg_catalog.` on to_regclass is a different thing and buys almost
+// nothing: pg_catalog is searched implicitly FIRST unless it is named, so a
+// decoy public.to_regclass loses on the default search_path and on the
+// migrator”'s pin. It would win only where pg_catalog is named explicitly and
+// late — which is the bug EDR-0042 retracts, and which this file no longer
+// does. So the qualification covers a configuration nothing here produces. It
+// is written for symmetry, no test covers it, and saying so is better than
+// leaving a reader to assume one does.
 //
 // querier is whatever the history is read through. Migrate reads it on the
 // connection holding the advisory lock; Verify reads it on the pool, which is
