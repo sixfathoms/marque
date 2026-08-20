@@ -75,7 +75,9 @@ func TestLdflagsReachTheBinary(t *testing.T) {
 		t.Fatalf("go build error = %v\n%s", err, out)
 	}
 
-	out, err := exec.CommandContext(t.Context(), binary).CombinedOutput()
+	// `version`, not a bare invocation: M1 gave marque subcommands, and a bare
+	// one is now a usage error. The subcommand is what a release stamps for.
+	out, err := exec.CommandContext(t.Context(), binary, "version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("running the built binary: %v\n%s", err, out)
 	}

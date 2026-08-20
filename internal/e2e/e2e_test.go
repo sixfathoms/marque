@@ -1,0 +1,281 @@
+//go:build integration
+
+// Package e2e runs M1's six steps against a real PostgreSQL.
+//
+// Submit a statement → it is stored → approve it → run it against a target →
+// the result and the statement land in a table. That sentence is the milestone,
+// and this is the test that says it happened rather than that each piece works
+// alone.
+//
+// It uses the real service, the real store and the real Pilot over a real HTTP
+// connection. The one thing it does not use is the binaries' own flag parsing,
+// which is cmd/'s.
+package e2e
+
+import (
+	"context"
+	"database/sql"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+
+	"connectrpc.com/connect"
+
+	v1 "github.com/sixfathoms/marque/gen/marque/v1"
+	"github.com/sixfathoms/marque/gen/marque/v1/marquev1connect"
+	"github.com/sixfathoms/marque/internal/harbourmaster/api"
+	"github.com/sixfathoms/marque/internal/harbourmaster/store"
+	"github.com/sixfathoms/marque/internal/pilot"
+	"github.com/sixfathoms/marque/internal/pilot/postgres"
+)
+
+const tenant = "development"
+
+func dsn(t *testing.T) string {
+	t.Helper()
+	d := os.Getenv("MARQUE_TEST_DSN")
+	if d == "" {
+		t.Fatal("MARQUE_TEST_DSN is unset; run `make test-integration`")
+	}
+	return d
+}
+
+// world is a migrated control plane, a served API, and a target table.
+type world struct {
+	client marquev1connect.HarbourmasterServiceClient
+	target *sql.DB
+	table  string
+}
+
+func setUp(t *testing.T) world {
+	t.Helper()
+	ctx := t.Context()
+
+	control, err := store.Open(ctx, dsn(t))
+	if err != nil {
+		t.Fatalf("connecting to the control plane's database: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+	if err := store.Migrate(ctx, control); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle(marquev1connect.NewHarbourmasterServiceHandler(
+		api.New(store.New(control), tenant)))
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	// The target is a separate connection with its own credential, which is
+	// the point of EDR-0005: the control plane above never sees this.
+	target, err := postgres.Open(ctx, dsn(t))
+	if err != nil {
+		t.Fatalf("connecting to the target: %v", err)
+	}
+	t.Cleanup(func() { _ = target.Close() })
+
+	// The neutral fictional schema the repository uses in examples.
+	table := "accounts_" + strings.ToLower(strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	if _, err := target.ExecContext(ctx,
+		`DROP TABLE IF EXISTS `+table+`; CREATE TABLE `+table+` (id integer PRIMARY KEY, tier integer NOT NULL)`); err != nil {
+		t.Fatalf("creating the target table: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = target.ExecContext(context.WithoutCancel(ctx), `DROP TABLE IF EXISTS `+table)
+	})
+	if _, err := target.ExecContext(ctx,
+		`INSERT INTO `+table+` (id, tier) SELECT i, 1 FROM generate_series(1, 5) AS i`); err != nil {
+		t.Fatalf("seeding the target table: %v", err)
+	}
+
+	return world{
+		client: marquev1connect.NewHarbourmasterServiceClient(srv.Client(), srv.URL),
+		target: target,
+		table:  table,
+	}
+}
+
+// The milestone, in one test.
+func TestTheSixSteps(t *testing.T) {
+	w := setUp(t)
+	ctx := t.Context()
+	statement := `UPDATE ` + w.table + ` SET tier = 2 WHERE id <= 3`
+
+	// 1. An operator submits a statement.
+	submitted, err := w.client.Submit(ctx, connect.NewRequest(&v1.SubmitRequest{
+		Statement:      statement,
+		Target:         "prod-primary",
+		Role:           "marque_writer",
+		Reason:         "raising three accounts after a billing correction",
+		IdempotencyKey: "e2e-1",
+	}))
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	reference := submitted.Msg.GetReference()
+
+	// 2. It is stored, and readable by the reference an operator would paste.
+	got, err := w.client.GetRequest(ctx, connect.NewRequest(&v1.GetRequestRequest{Reference: reference}))
+	if err != nil {
+		t.Fatalf("reading it back: %v", err)
+	}
+	if got.Msg.GetRequest().GetState() != v1.RequestState_REQUEST_STATE_PENDING {
+		t.Fatalf("a fresh request is %s, want PENDING", got.Msg.GetRequest().GetState())
+	}
+	if got.Msg.GetRequest().GetStatement() != statement {
+		t.Errorf("the stored statement is not the one submitted")
+	}
+
+	// 3. Nothing may run before it is approved. The Pilot asks the control
+	//    plane, and the control plane is what decides.
+	if got.Msg.GetRequest().GetState() == v1.RequestState_REQUEST_STATE_APPROVED {
+		t.Fatal("a request was approved by being submitted")
+	}
+	rows := int64(3)
+	if _, err := w.client.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
+		Reference: reference, Nonce: "early", RowsAffected: &rows,
+		Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED,
+	})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("reporting an execution of an unapproved request: code is %v, want FailedPrecondition",
+			connect.CodeOf(err))
+	}
+
+	// 4. A human approves it.
+	if _, err := w.client.Approve(ctx, connect.NewRequest(&v1.ApproveRequest{
+		Reference: reference, Approver: "sam", Stage: 1,
+	})); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+
+	// 5. The Pilot runs it against the target.
+	after, err := w.client.GetRequest(ctx, connect.NewRequest(&v1.GetRequestRequest{Reference: reference}))
+	if err != nil {
+		t.Fatalf("re-reading: %v", err)
+	}
+	if after.Msg.GetRequest().GetState() != v1.RequestState_REQUEST_STATE_APPROVED {
+		t.Fatalf("state is %s after approval", after.Msg.GetRequest().GetState())
+	}
+	result, err := pilot.Execute(ctx, w.target, after.Msg.GetRequest().GetStatement(), postgres.CommitWasRefused)
+	if err != nil {
+		t.Fatalf("executing: %v", err)
+	}
+	if result.Outcome != pilot.OutcomeCommitted {
+		t.Fatalf("outcome is %s, want committed", result.Outcome)
+	}
+
+	// 6. The result and the statement land in a table.
+	reported, err := w.client.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
+		Reference:    reference,
+		Nonce:        "attempt-1",
+		Outcome:      v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED,
+		RowsAffected: result.RowsAffected,
+	}))
+	if err != nil {
+		t.Fatalf("reporting: %v", err)
+	}
+	if reported.Msg.GetExecution().GetRowsAffected() != 3 {
+		t.Errorf("recorded %d rows, want 3", reported.Msg.GetExecution().GetRowsAffected())
+	}
+
+	final, err := w.client.GetRequest(ctx, connect.NewRequest(&v1.GetRequestRequest{Reference: reference}))
+	if err != nil {
+		t.Fatalf("final read: %v", err)
+	}
+	if final.Msg.GetRequest().GetState() != v1.RequestState_REQUEST_STATE_EXECUTED {
+		t.Errorf("final state is %s, want EXECUTED", final.Msg.GetRequest().GetState())
+	}
+
+	// And the thing the operator actually wanted: the row changed.
+	var changed int
+	if err := w.target.QueryRowContext(ctx,
+		`SELECT count(*) FROM `+w.table+` WHERE tier = 2`).Scan(&changed); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if changed != 3 {
+		t.Errorf("%d rows have tier 2, want 3 — every step reported success and the database did not change", changed)
+	}
+}
+
+// A retried Pilot must not run the statement twice, and must learn what was
+// recorded the first time.
+func TestARetriedReportDoesNotRunAnythingTwice(t *testing.T) {
+	w := setUp(t)
+	ctx := t.Context()
+
+	submitted, err := w.client.Submit(ctx, connect.NewRequest(&v1.SubmitRequest{
+		Statement:      `UPDATE ` + w.table + ` SET tier = tier + 1`,
+		Target:         "prod-primary",
+		Role:           "marque_writer",
+		Reason:         "a retry",
+		IdempotencyKey: "e2e-retry",
+	}))
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	reference := submitted.Msg.GetReference()
+	if _, err := w.client.Approve(ctx, connect.NewRequest(&v1.ApproveRequest{
+		Reference: reference, Approver: "sam", Stage: 1,
+	})); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+
+	result, err := pilot.Execute(ctx, w.target, `UPDATE `+w.table+` SET tier = tier + 1`, postgres.CommitWasRefused)
+	if err != nil {
+		t.Fatalf("executing: %v", err)
+	}
+
+	// The first report, then a retry under the same nonce claiming something
+	// else. The second must be told what is stored.
+	if _, err := w.client.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
+		Reference: reference, Nonce: "one", RowsAffected: result.RowsAffected,
+		Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED,
+	})); err != nil {
+		t.Fatalf("reporting: %v", err)
+	}
+	retried, err := w.client.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
+		Reference: reference, Nonce: "one",
+		Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_INDETERMINATE,
+	}))
+	if err != nil {
+		t.Fatalf("retrying the report: %v", err)
+	}
+	if retried.Msg.GetExecution().GetOutcome() != v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED {
+		t.Errorf("the retry was told %s; committed is what was stored",
+			retried.Msg.GetExecution().GetOutcome())
+	}
+
+	// The statement ran once, so every tier went up by exactly one.
+	var maxTier int
+	if err := w.target.QueryRowContext(ctx, `SELECT max(tier) FROM `+w.table).Scan(&maxTier); err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	if maxTier != 2 {
+		t.Errorf("the highest tier is %d, want 2 — the statement ran more than once", maxTier)
+	}
+}
+
+// A resubmission with the same key is one request, over the wire and not just
+// in the store.
+func TestResubmittingIsOneRequest(t *testing.T) {
+	w := setUp(t)
+	ctx := t.Context()
+	send := func() string {
+		t.Helper()
+		res, err := w.client.Submit(ctx, connect.NewRequest(&v1.SubmitRequest{
+			Statement:      `UPDATE ` + w.table + ` SET tier = 9`,
+			Target:         "prod-primary",
+			Role:           "marque_writer",
+			Reason:         "the same request twice",
+			IdempotencyKey: "e2e-same",
+		}))
+		if err != nil {
+			t.Fatalf("submitting: %v", err)
+		}
+		return res.Msg.GetReference()
+	}
+	if first, second := send(), send(); first != second {
+		t.Errorf("one key produced %s and %s", first, second)
+	}
+}

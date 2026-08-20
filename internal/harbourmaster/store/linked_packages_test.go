@@ -447,21 +447,12 @@ func TestTheGraphContainsTheDriverEdge(t *testing.T) {
 	// PER CONFIGURATION, not an OR across them. An OR is satisfied by any one
 	// config still seeing the edge, so repointing five of six left it green.
 	//
-	// What each configuration must see differs, because nothing imports the
-	// store yet: a `./cmd/...` listing genuinely does not reach it, so it is
-	// asked for the commands instead. When a binary does link the store, this
-	// becomes the same assertion for every configuration.
+	// The same assertion for every configuration, now that cmd/harbourmaster
+	// links the store — while nothing imported it, a `./cmd/...` listing did
+	// not reach it and this had to ask those two for something else.
 	for _, c := range buildConfigs {
 		t.Run(c.name, func(t *testing.T) {
 			imports := graphOf(t, c)
-			if strings.HasPrefix(c.pattern, "./cmd") {
-				for _, cmd := range []string{"marque", "harbourmaster", "pilot"} {
-					if _, ok := imports[modulePath+"/cmd/"+cmd]; !ok {
-						t.Errorf("this listing does not name cmd/%s, so it is not looking at this repository's binaries", cmd)
-					}
-				}
-				return
-			}
 			if !slices.ContainsFunc(imports[store], func(imp string) bool {
 				_, isDriver := driverHome(imp)
 				return isDriver
