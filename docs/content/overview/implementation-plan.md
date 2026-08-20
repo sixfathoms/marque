@@ -190,9 +190,9 @@ The heart of the security argument
 4. The principal roster, anchored outside the control plane
    ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)).
 5. The signed marque replaces M1's `approvals` table
-   ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)), which is a flat row per
-   approver and carries a `stage` column only so its shape is not actively wrong. M7 wires it into
-   the M1 path and deletes the stub; M3 builds it.
+   ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)), which is a row per
+   approver rather than a signature — carrying `stage`, so it is not the flat shape EDR-0030 exists
+   to refuse. M3 builds the marque; M7 wires it into the M1 path and deletes the stub.
 
 **Exit:** the negative tests, each seen to fail first — a marque with only the control plane's limb
 is rejected; stripping one of two signature entries is rejected; **a two-stage marque is not
@@ -211,12 +211,12 @@ satisfied by two signatures from the same stage**, which is the exact defect
    ([EDR-0023](../../edrs/0023-approver-keys-enrolment-and-recovery.md)). The `webauthn` envelope
    waits for the console in Phase 2 — the envelope split exists precisely so it can.
 4. Freshness on **producing an approver signature**, not on execution
+   ([EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)).
 5. `tenant_id` comes from the authenticated principal, replacing M1's single configured development
    tenant ([EDR-0025](../../edrs/0025-tenants-are-partitioned-from-day-one.md),
    [EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)). It is **never** a request
    field, and the column has been there since the first migration precisely so this is a change of
    source rather than a change of schema.
-   ([EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)).
 
 **Exit:** a replayed token fails; a token presented without its proof fails; a token bound to a
 different key fails.
@@ -301,7 +301,7 @@ drifts toward.
 | The Leadsman | Phase 2. An analyser with nothing to analyse is a demo |
 | Delegation and compiled sentences | Phase 3. M5 builds the fence; *granting* through it is a separate problem |
 | Agents | Phase 3b, in that order, for the same reason |
-| Relays, cross-cloud, deployment | Phase 3 and beyond. Phase 1 deploys nowhere on purpose |
+| Relays, cross-cloud, deployment | Phase 3 and beyond. Phase 1 deploys nowhere on purpose — which is also why backup, restore and roll-forward for the control plane's store are absent, and why a forward-only schema is acceptable until they exist ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)) |
 | Slack | Phase 2. It rides the WAL stream, so it is cheap whenever it lands |
 
 ## Decision debt

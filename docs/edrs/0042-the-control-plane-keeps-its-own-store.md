@@ -80,7 +80,9 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
    about it. No other package imports either, and **no Harbourmaster package imports the Pilot
    adapter**, which is the boundary that carries the weight.
-2. **Enforced by `depguard`.** It is **not** in `.golangci.yml` today and this change adds it. A
+2. **Enforced by `depguard`.** It is **not** in `.golangci.yml` today, and this record does not add
+   it — the rule lands with M1's first storage package, which is the change that first makes it
+   possible to violate. A
    driver for a target engine Marque does not yet store its own state in — MySQL, when
    [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) arrives — stays wholly absent from
    the control plane, with no exception at all. PostgreSQL is the single weakened case and it is
@@ -124,7 +126,9 @@ plane holds no target credential — is untouched.
   migration containing an operation PostgreSQL forbids inside a transaction (`CREATE INDEX
   CONCURRENTLY`, `VACUUM`, `ALTER TYPE … ADD VALUE` on older servers) is **rejected by the migrator**
   rather than run outside one.
-- **Serialised by a transaction-scoped advisory lock**, taken before verification. Two migrators
+- **Serialised by a session-scoped advisory lock** — `pg_advisory_lock`, taken before verification
+  and released explicitly when the run ends. Not a transaction-scoped one: that releases at commit,
+  so with each migration in its own transaction the second and later ones would race. Two migrators
   starting together is an ordinary deployment event, not an exotic one.
 - **Migrations run as their own role**, distinct from the runtime role and holding the privileges
   the runtime role must not have. [EDR-0012](./0012-the-logbook-is-append-only.md) already requires
@@ -159,12 +163,14 @@ column an unnecessary migration, and a vocabulary that already exists in an acce
 this record's to shorten.
 
 **`executions.outcome` is decided here, not borrowed.**
-[EDR-0011](./0011-execution-is-idempotent-and-fenced.md) names `in_progress`,
-`aborted_not_applied` and `indeterminate` and never closes the set or settles the successful token,
-so a first migration cannot be written from it. This record fixes the column as `committed`,
-`rolled_back`, `aborted_not_applied` and `indeterminate`, matching the logbook kinds EDR-0012 already
-lists; `in_progress` is deliberately absent, because a control-plane *report* is written when an
-attempt ends and in-flight state belongs to the Pilot's own ledger.
+[EDR-0011](./0011-execution-is-idempotent-and-fenced.md) names `in_progress`, `aborted_not_applied`
+and `indeterminate`, closes no set and settles no successful token, so a first migration cannot be
+written from it. This record fixes the column as `committed`, `rolled_back`, `aborted_not_applied`
+and `indeterminate`. Three of those match `execution.*` kinds
+[EDR-0012](./0012-the-logbook-is-append-only.md) illustrates — and *illustrates* is that record's own
+word, since its list is explicitly not closed — while `aborted_not_applied` comes from EDR-0011.
+`in_progress` is deliberately absent: a control-plane report is written when an attempt ends, and
+in-flight state belongs to the Pilot's own ledger.
 
 There is no `targets` or `roles` table: those are reviewed configuration
 ([EDR-0015](./0015-policy-is-reviewed-configuration.md)), not rows. There is no `delegations`, no
@@ -175,8 +181,9 @@ There is no `targets` or `roles` table: those are reviewed configuration
 Named individually, because a reader who sees only one will assume the rest is right.
 
 1. **Approval is a row, not a signature.** A row asserts that somebody approved; a signature is
-   checkable by a Pilot that cannot call anyone back, which is the whole of
-   [EDR-0004](./0004-marques-are-signed-leases.md). The table is **not** flat — it carries `stage`,
+   checkable by a Pilot that need call nobody back except for revocation — the asterisk
+   [EDR-0004](./0004-marques-are-signed-leases.md) says must be stated wherever its offline property
+   is claimed. The table is **not** flat — it carries `stage`,
    because [EDR-0030](./0030-a-marque-states-its-own-approval-requirement.md) exists on the strength
    of a flat `required`/`eligible` model letting a chain requiring Sam *then* data-oncall be
    satisfied by two of data-oncall, and that shape costs one column to avoid now and a rebuild to
@@ -202,17 +209,23 @@ Named individually, because a reader who sees only one will assume the rest is r
   withheld `UPDATE` grant and non-ownership — so M6 has no second transactional store and no dual
   write, which is the thing [ZFN-24](https://zrz.io/zfn/24-one-transactional-store-per-write/)
   forbids and EDR-0013 was designed around.
-- Two vocabularies and a tenant column arrive at migration one, where they cost a column each.
+- The request-state vocabulary and the tenant column arrive at migration one, where the column
+  costs a column.
 
 **Harder.**
 
+- **Tenancy is not one column.** Every foreign key is composite and carries `tenant_id` — a
+  constraint on every relationship in the schema from here on, not a one-off cost. EDR-0025's "one
+  column and one discipline" is honest about the column and quiet about the discipline.
 - **Running the control plane now requires a PostgreSQL**, including for a developer trying M1 on a
   laptop. `make test` stays offline because unit tests do not touch the store, but the walking
   skeleton is no longer a single binary and a file.
 - **EDR-0005's guarantee is weaker than it was on paper**, and the paper version was never
-  achievable. Import discipline is defeated three ways where absence was defeated by none: an
-  allowlist edit, a `sql.Open` by driver name in a package that imports nothing the linter sees, and
-  a transitive dependency linking a driver the first-party rule never looks at. It buys "the
+  achievable. Import discipline is defeated four ways where absence was defeated by none: an
+  allowlist edit; a `sql.Open` by driver name in a package that imports nothing the linter sees; a
+  transitive dependency linking a driver the first-party rule never looks at; and **a file the
+  linter never parses** — `make lint` passes no build tags, so anything behind one is invisible,
+  which includes M1's own integration test, the file most certain to import a driver. It buys "the
   capability arrives by a reviewed edit rather than by accident", and no more. Anyone touching that
   `depguard` block is touching a security control.
 - **A forward-only schema with no backup story is an irreversible deploy.** An explicit migrator
@@ -238,9 +251,9 @@ Named individually, because a reader who sees only one will assume the rest is r
   on it and does not revisit it.
 - [EDR-0005](./0005-control-plane-holds-no-credentials.md) — the driver rule this re-expresses.
 - [EDR-0025](./0025-tenants-are-partitioned-from-day-one.md) — tenancy from the first migration.
-- [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md) and
-  [EDR-0011](./0011-execution-is-idempotent-and-fenced.md) — the two vocabularies borrowed rather
-  than invented.
+- [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md) — the request states, borrowed in
+  full. [EDR-0011](./0011-execution-is-idempotent-and-fenced.md) — which names three execution
+  outcomes and closes no set, so this record decides that column rather than borrowing it.
 - [The implementation plan](../content/overview/implementation-plan.md) — M1, and the decision debt
   this discharges.
 

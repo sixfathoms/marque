@@ -117,7 +117,8 @@ a commit message.
   that needs a connection is a Pilot API, not a Harbourmaster one (EDR-0005). The old form of this —
   "no target database driver linked in" — was stronger and is not available: Marque's own state is
   PostgreSQL (EDR-0013), which is also a target engine, so one driver serves both. It is now import
-  discipline confining the driver to one package (EDR-0042), which is weaker, and a change to that
+  discipline confining the driver to the store package and the Pilot's adapter (EDR-0042), which is
+  weaker, and a change to that
   lint rule is a change to a security control.
 - **A delegated row scope is a fence that aborts, never a rewrite.** Conjoining the predicate into the
   operator's `WHERE` is sound and silently narrows the statement, which produces a partially-applied

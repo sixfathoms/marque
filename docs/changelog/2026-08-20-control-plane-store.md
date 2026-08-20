@@ -21,7 +21,8 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   that ends that, which is why M1 is where the rule had to be re-expressed.
 
   EDR-0042 replaces **absence** with **import discipline** — a driver confined by `depguard` to the
-  one package that needs it, with **no exception at all** for an engine Marque does not store its own
+  the two packages that need one — the Harbourmaster's store and the Pilot's adapter, which must have
+  it — with **no exception at all** for an engine Marque does not store its own
   state in, so MySQL stays wholly absent when
   [EDR-0026](/edrs/0026-a-second-engine-is-a-capability-matrix/) arrives. PostgreSQL is the single
   weakened case, weakened only because EDR-0013 made it the control plane's own store.
@@ -44,11 +45,12 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   be an exact prefix of the embedded set. It runs as an explicit command; startup **verifies and
   refuses to serve** on any mismatch. Migrating implicitly at startup turns every deploy into a
   schema change nobody chose to run.
-- **Two vocabularies borrowed rather than invented**, because a forward-only schema makes widening a
-  column an unnecessary migration: request states from
-  [EDR-0038](/edrs/0038-a-request-is-a-shareable-watchable-object/), and execution outcomes from
-  [EDR-0011](/edrs/0011-execution-is-idempotent-and-fenced/) — which means `indeterminate` and
-  `aborted_not_applied` exist from the first migration, and neither is `failed`.
+- **One vocabulary borrowed, one decided**, because a forward-only schema makes widening a column an
+  unnecessary migration. `requests.state` takes all seven of
+  [EDR-0038](/edrs/0038-a-request-is-a-shareable-watchable-object/)'s values even though M1 can
+  produce three. `executions.outcome` could not be borrowed:
+  [EDR-0011](/edrs/0011-execution-is-idempotent-and-fenced/) names three outcomes, closes no set and
+  settles no success token, so the record decides that column and says so.
 
 **Three things M1 gets wrong on purpose, named individually** so a reader who sees one does not assume
 the rest is right: approval is a row rather than a signature — carrying `stage`, so it is not the
