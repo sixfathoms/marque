@@ -145,6 +145,7 @@ func rejectNonTransactional(name, body string) error {
 		"CREATE DATABASE",
 		"DROP DATABASE",
 		"CREATE TABLESPACE",
+		"DROP TABLESPACE",
 		"ALTER SYSTEM",
 	} {
 		if !containsPhrase(stripped, s) {
@@ -159,14 +160,23 @@ func rejectNonTransactional(name, body string) error {
 	return nil
 }
 
-// stripSQLComments removes -- and /* */ comments. Without it, `CREATE/* x
-// */DATABASE` slipped past a raw substring match while PostgreSQL still refused
-// it — measured by a reviewer, who also found `CREATE TABLE vacuum_log` wrongly
-// refused because VACUUM appeared inside an identifier.
+// stripSQLComments removes -- and /* */ comments, skipping over string
+// literals, quoted identifiers and dollar-quoted bodies so a marker inside one
+// is not mistaken for a comment, and nesting block comments because PostgreSQL
+// nests them.
 //
-// Not a SQL parser, and does not try to be: a dollar-quoted body containing the
-// literal text of one of these statements is refused, which is the safe
-// direction and is a comment away from being fixed.
+// Every one of those was a real miss, and the string case was wrong in the
+// UNSAFE direction — it refused less, not more. Without it,
+//
+//	INSERT INTO settings (key, value) VALUES ('glob', '/*');
+//	CREATE INDEX CONCURRENTLY idx ON t (c);
+//
+// loaded cleanly: the `/*` inside the literal opened a comment that never
+// closed, so the rest of the file was discarded and the statement PostgreSQL
+// will refuse was never seen. It would then fail as SQLSTATE 25001 part-way
+// through a production migration, which is the exact outcome this function
+// exists to prevent. A reviewer found it; an earlier comment here claimed the
+// only wrongness was in the safe direction, and that was not true.
 func stripSQLComments(body string) string {
 	var out strings.Builder
 	for i := 0; i < len(body); {
@@ -178,21 +188,88 @@ func stripSQLComments(body string) string {
 			}
 			out.WriteByte('\n')
 			i += j + 1
+
 		case strings.HasPrefix(body[i:], "/*"):
-			j := strings.Index(body[i+2:], "*/")
-			if j < 0 {
-				return out.String()
+			// Nested, as PostgreSQL nests them. A space, so
+			// `CREATE/* x */DATABASE` becomes two words and the phrase match
+			// sees it.
+			depth, j := 1, i+2
+			for j < len(body) && depth > 0 {
+				switch {
+				case strings.HasPrefix(body[j:], "/*"):
+					depth++
+					j += 2
+				case strings.HasPrefix(body[j:], "*/"):
+					depth--
+					j += 2
+				default:
+					j++
+				}
 			}
-			// A space, so `CREATE/* x */DATABASE` becomes two words rather
-			// than one and the phrase match below sees it.
 			out.WriteByte(' ')
-			i += j + 4
+			i = j
+
+		case body[i] == '\'' || body[i] == '"':
+			// Copied verbatim, including a doubled quote, so the statement
+			// separators either side of it survive.
+			q := body[i]
+			out.WriteByte(q)
+			i++
+			for i < len(body) {
+				if body[i] == q {
+					if i+1 < len(body) && body[i+1] == q {
+						out.WriteString(string([]byte{q, q}))
+						i += 2
+						continue
+					}
+					out.WriteByte(q)
+					i++
+					break
+				}
+				out.WriteByte(body[i])
+				i++
+			}
+
 		default:
+			if tag, ok := dollarTag(body[i:]); ok {
+				end := strings.Index(body[i+len(tag):], tag)
+				if end < 0 {
+					// Unterminated. Everything after it is inside the body,
+					// and a space keeps the words either side apart.
+					out.WriteByte(' ')
+					return out.String()
+				}
+				// The body is dropped, and a space stands in for it: a
+				// dollar-quoted function body is not statements this
+				// migrator runs, it is a value.
+				out.WriteByte(' ')
+				i += len(tag) + end + len(tag)
+				continue
+			}
 			out.WriteByte(body[i])
 			i++
 		}
 	}
 	return out.String()
+}
+
+// dollarTag returns the $tag$ opening s, if s starts with one. A tag is $ then
+// zero or more identifier characters then $, which makes both $$ and $body$
+// tags and neither of them arithmetic.
+func dollarTag(s string) (string, bool) {
+	if len(s) == 0 || s[0] != '$' {
+		return "", false
+	}
+	for j := 1; j < len(s); j++ {
+		if s[j] == '$' {
+			return s[:j+1], true
+		}
+		if !(s[j] == '_' || (s[j] >= '0' && s[j] <= '9') ||
+			(s[j] >= 'a' && s[j] <= 'z') || (s[j] >= 'A' && s[j] <= 'Z')) {
+			return "", false
+		}
+	}
+	return "", false
 }
 
 // collapseSpace turns every run of whitespace into one space, so `CREATE

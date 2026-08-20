@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -81,6 +82,11 @@ func goList(t *testing.T, c buildConfig) []listedPackage {
 
 	cmd := exec.CommandContext(t.Context(), "go", args...)
 	cmd.Dir = repoRoot(t)
+	// Explicit, because Go defaults CGO_ENABLED to 0 when no C compiler is on
+	// PATH, and with it off `go list` reports a cgo file under IgnoredGoFiles
+	// with CgoFiles and CgoLDFLAGS empty — so TestCgoIsConfined below would
+	// pass having examined nothing.
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	out, err := cmd.Output()
 	if err != nil {
 		var stderr string
@@ -100,8 +106,11 @@ func goList(t *testing.T, c buildConfig) []listedPackage {
 		}
 		pkgs = append(pkgs, p)
 	}
-	if len(pkgs) < 3 {
-		t.Fatalf("%s listed only %d packages; the query is not reaching the repository", c.name, len(pkgs))
+	// Counting is not enough: pointing a configuration at `fmt` lists plenty of
+	// standard-library dependencies and passes a count. At least one
+	// first-party package must be present, or the query missed the repository.
+	if !slices.ContainsFunc(pkgs, func(p listedPackage) bool { return isFirstParty(normalise(p.ImportPath)) }) {
+		t.Fatalf("%s listed %d packages and none of them are this repository's", c.name, len(pkgs))
 	}
 	return pkgs
 }
@@ -110,81 +119,222 @@ func goList(t *testing.T, c buildConfig) []listedPackage {
 // reported as "p.test", "p [p.test]" and "p_test [p.test]", all of which are
 // the package p for this rule's purposes.
 func normalise(path string) string {
-	if i := strings.Index(path, " ["); i >= 0 {
-		path = path[:i]
+	i := strings.Index(path, " [")
+	if i < 0 {
+		// Undecorated. A ".test" suffix here is a real directory named test,
+		// not go list's decoration — stripping it unconditionally turned a
+		// package at internal/harbourmaster/store.test into the permitted
+		// store package.
+		return path
 	}
-	return strings.TrimSuffix(path, ".test")
+	// p_test is p's external test package, and for this rule it is p: a driver
+	// imported by the store's own tests is imported by the package that may
+	// hold one, and the filesystem walk already treats it that way.
+	return strings.TrimSuffix(path[:i], "_test")
+}
+
+// reachesDriver reports the path by which one first-party package reaches a
+// driver it may not hold, or "" if it reaches none.
+//
+// The rule, as a graph property: cut the permitted homes out of the dependency
+// graph, and no first-party package may still reach a driver. That phrasing is
+// what makes a wrapper visible — internal/harbourmaster/wal importing
+// github.com/jackc/pglogrepl, which imports pgx/v5/pgconn, reaches a driver
+// without naming one, and a direct-import check reports nothing.
+//
+// The graph is a PARAMETER rather than read from the module, because on this
+// repository nothing imports the store yet: no binary links a driver, so the
+// traversal never runs and every line of it deleted green. A reviewer replaced
+// the whole function with `return ""` and the suite passed. That is the same
+// vacuity this package found in violations() a round earlier and then
+// reproduced here.
+func reachesDriver(imports map[string][]string, path string, seen map[string]bool) string {
+	if seen[path] {
+		return ""
+	}
+	seen[path] = true
+	dir := strings.TrimPrefix(path, modulePath+"/")
+	for _, imp := range imports[path] {
+		if home, ok := driverHome(imp); ok {
+			// Permission is PER DRIVER, via permittedHere. Asking only whether
+			// the importer is some home let internal/pilot/mysql hold pgx with
+			// this check green while the walk refused it — the two mechanisms
+			// disagreeing, with the designated one weaker.
+			if isFirstParty(path) && permittedHere(imp, dir) {
+				continue
+			}
+			return fmt.Sprintf("%s (whose home is %s)", imp, home)
+		}
+		if isPermittedHome(imp) {
+			// The sink. A home is cut out of the graph for the drivers it may
+			// hold, and reaching one is how every binary is meant to.
+			continue
+		}
+		if via := reachesDriver(imports, imp, seen); via != "" {
+			return fmt.Sprintf("%s, through %s", via, imp)
+		}
+	}
+	return ""
+}
+
+// TestReachesDriverOverASyntheticGraph is what makes the rule enforceable
+// rather than merely present. Every case is a shape that has occurred in
+// review.
+func TestReachesDriverOverASyntheticGraph(t *testing.T) {
+	const (
+		pgx   = "github.com/jackc/pgx/v5/stdlib"
+		mysql = "github.com/go-sql-driver/mysql"
+		me    = modulePath + "/"
+	)
+	for name, c := range map[string]struct {
+		graph map[string][]string
+		from  string
+		want  bool
+	}{
+		"a driver in its own home": {
+			map[string][]string{me + "internal/harbourmaster/store": {pgx}},
+			me + "internal/harbourmaster/store", false,
+		},
+		"a driver in the Pilot's PostgreSQL adapter": {
+			map[string][]string{me + "internal/pilot/postgres": {pgx}},
+			me + "internal/pilot/postgres", false,
+		},
+		"the WRONG driver in a home": {
+			map[string][]string{me + "internal/harbourmaster/store": {mysql}},
+			me + "internal/harbourmaster/store", true,
+		},
+		"a driver in a Pilot package that is not its home": {
+			map[string][]string{me + "internal/pilot/mysql": {pgx}},
+			me + "internal/pilot/mysql", true,
+		},
+		"a binary reaching a driver through its home": {
+			map[string][]string{
+				me + "cmd/harbourmaster":            {me + "internal/harbourmaster/store"},
+				me + "internal/harbourmaster/store": {pgx},
+			},
+			me + "cmd/harbourmaster", false,
+		},
+		"a binary reaching a driver through a package that is not a home": {
+			map[string][]string{
+				me + "cmd/harbourmaster":          {me + "internal/harbourmaster/wal"},
+				me + "internal/harbourmaster/wal": {pgx},
+			},
+			me + "cmd/harbourmaster", true,
+		},
+		"a third-party wrapper, which names no driver in the first-party import": {
+			map[string][]string{
+				me + "cmd/harbourmaster":          {me + "internal/harbourmaster/wal"},
+				me + "internal/harbourmaster/wal": {"github.com/jackc/pglogrepl"},
+				"github.com/jackc/pglogrepl":      {"github.com/jackc/pgx/v5/pgconn"},
+			},
+			me + "cmd/harbourmaster", true,
+		},
+		"a long first-party chain": {
+			map[string][]string{
+				me + "cmd/marque": {me + "internal/a"},
+				me + "internal/a": {me + "internal/b"},
+				me + "internal/b": {me + "internal/c"},
+				me + "internal/c": {pgx},
+			},
+			me + "cmd/marque", true,
+		},
+		"a driver behind a permitted home is not attributed to the binary": {
+			map[string][]string{
+				me + "cmd/harbourmaster":            {me + "internal/harbourmaster/store"},
+				me + "internal/harbourmaster/store": {me + "internal/harbourmaster/wal"},
+				me + "internal/harbourmaster/wal":   {pgx},
+			},
+			me + "cmd/harbourmaster", false,
+		},
+		"and IS reported under the package that actually imports it": {
+			map[string][]string{
+				me + "cmd/harbourmaster":            {me + "internal/harbourmaster/store"},
+				me + "internal/harbourmaster/store": {me + "internal/harbourmaster/wal"},
+				me + "internal/harbourmaster/wal":   {pgx},
+			},
+			me + "internal/harbourmaster/wal", true,
+		},
+		"a cycle terminates": {
+			map[string][]string{
+				me + "internal/a": {me + "internal/b"},
+				me + "internal/b": {me + "internal/a"},
+			},
+			me + "internal/a", false,
+		},
+		"no driver anywhere": {
+			map[string][]string{me + "cmd/marque": {"fmt", me + "internal/version"}},
+			me + "cmd/marque", false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := reachesDriver(c.graph, c.from, map[string]bool{})
+			if (got != "") != c.want {
+				t.Errorf("reachesDriver(%s) = %q, want a violation: %v", c.from, got, c.want)
+			}
+		})
+	}
 }
 
 // TestNoBinaryLinksADriverOutsideItsHome is EDR-0042's mechanism.
-//
-// The rule, stated as a graph property: cut the permitted homes out of the
-// dependency graph, and no first-party package may still reach a driver. That
-// phrasing is what makes a wrapper visible — internal/harbourmaster/wal
-// importing github.com/jackc/pglogrepl, which imports pgx/v5/pgconn, reaches a
-// driver without naming one, and a direct-import check reports nothing. A
-// reviewer did exactly that and put a PostgreSQL wire driver in the shipped
-// binary with both of the previous mechanisms green.
 func TestNoBinaryLinksADriverOutsideItsHome(t *testing.T) {
 	for _, c := range buildConfigs {
 		t.Run(c.name, func(t *testing.T) {
-			pkgs := goList(t, c)
-
-			imports := map[string][]string{}
-			for _, p := range pkgs {
-				path := normalise(p.ImportPath)
-				for _, imp := range p.Imports {
-					imports[path] = append(imports[path], normalise(imp))
-				}
-			}
-
-			// Permitted homes are sinks: cmd/harbourmaster reaching pgx
-			// THROUGH internal/harbourmaster/store is the arrangement the
-			// record describes, not a violation.
-			var reaches func(string, map[string]bool) string
-			reaches = func(path string, seen map[string]bool) string {
-				if seen[path] {
-					return ""
-				}
-				seen[path] = true
-				for _, imp := range imports[path] {
-					if home, ok := driverHome(imp); ok {
-						if isPermittedHome(path) {
-							continue
-						}
-						return fmt.Sprintf("%s (whose home is %s)", imp, home)
-					}
-					if isPermittedHome(imp) {
-						continue
-					}
-					if via := reaches(imp, seen); via != "" {
-						if !isFirstParty(imp) {
-							return fmt.Sprintf("%s, through %s", via, imp)
-						}
-						return via
-					}
-				}
-				return ""
-			}
-
+			imports := graphOf(t, c)
 			for path := range imports {
-				if !isFirstParty(path) || isPermittedHome(path) {
+				if !isFirstParty(path) {
 					continue
 				}
-				if via := reaches(path, map[string]bool{}); via != "" {
+				// A fresh seen map per root, deliberately. Sharing one across
+				// roots makes the answer depend on map iteration order, which
+				// is the order-dependence that defeated the walk's global
+				// visited set one round ago.
+				if via := reachesDriver(imports, path, map[string]bool{}); via != "" {
 					t.Errorf(
-						"%s links %s.\n"+
-							"  Configuration: go list -deps%s%s %s\n"+
+						"%s reaches %s.\n"+
+							"  Configuration: %s\n"+
 							"  A driver belongs only in the packages EDR-0042 names, and reaching one\n"+
 							"  through a wrapper is reaching one. This is the graph the compiler builds,\n"+
 							"  so a directory a filesystem walk declines to enter does not help here.",
-						path, via,
-						map[bool]string{true: " -test"}[c.test],
-						map[bool]string{true: " -tags " + c.tags}[c.tags != ""],
-						c.pattern)
+						path, via, c.name)
 				}
 			}
 		})
+	}
+}
+
+func graphOf(t *testing.T, c buildConfig) map[string][]string {
+	t.Helper()
+	imports := map[string][]string{}
+	for _, p := range goList(t, c) {
+		path := normalise(p.ImportPath)
+		for _, imp := range p.Imports {
+			imports[path] = append(imports[path], normalise(imp))
+		}
+	}
+	return imports
+}
+
+// TestTheGraphContainsTheDriverEdge is the positive control. Without it, a
+// configuration pointed at a subtree with no driver in it leaves every
+// assertion above trivially satisfied — a reviewer repointed all six and
+// watched the suite stay green.
+func TestTheGraphContainsTheDriverEdge(t *testing.T) {
+	store := modulePath + "/internal/harbourmaster/store"
+	seenIt := false
+	// Over the REAL buildConfigs, not a config of its own: an earlier version
+	// built its own `./...` listing, so repointing all six of the configurations
+	// the mechanism actually uses left this satisfied and the suite green.
+	for _, c := range buildConfigs {
+		imports := graphOf(t, c)
+		if slices.ContainsFunc(imports[store], func(imp string) bool {
+			_, isDriver := driverHome(imp)
+			return isDriver
+		}) {
+			seenIt = true
+		}
+	}
+	if !seenIt {
+		t.Errorf("no configuration in buildConfigs lists %s importing a driver, so the check above is not looking at this repository", store)
 	}
 }
 

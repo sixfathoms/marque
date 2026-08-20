@@ -299,6 +299,16 @@ func goFilesUnder(t *testing.T, root string) (map[string][]string, []string) {
 	// ORDER decided whether a forbidden alias was examined. A reviewer aliased a
 	// permitted package to a forbidden path, watched the permitted name win the
 	// sort, and watched twelve driver packages reach the binary silently.
+	// Per-ancestry cycle detection means a directory reachable by several
+	// distinct paths is visited once per path, which is correct — each alias is
+	// a place a driver could be imported from — and is exponential in the depth
+	// of nested aliases. Measured by a reviewer at 3^n on a synthetic tree; the
+	// real walk is a tenth of a second, because nothing here nests symlink sets.
+	// A bound so a pathological tree fails with its cause named rather than
+	// appearing to hang.
+	const maxVisits = 200_000
+	visits := 0
+
 	var walk func(dir, rel string, ancestry map[string]bool)
 	walk = func(dir, rel string, ancestry map[string]bool) {
 		resolved, err := filepath.EvalSymlinks(dir)
@@ -308,6 +318,14 @@ func goFilesUnder(t *testing.T, root string) (map[string][]string, []string) {
 		}
 		if ancestry[resolved] {
 			// A loop, not an alias. Descending would not terminate.
+			return
+		}
+		visits++
+		if visits > maxVisits {
+			if visits == maxVisits+1 {
+				problem("the walk visited more than %d directories and stopped; a deeply nested set of "+
+					"symlink aliases makes it exponential, so anything below this point is unchecked", maxVisits)
+			}
 			return
 		}
 		ancestry = maps.Clone(ancestry)
