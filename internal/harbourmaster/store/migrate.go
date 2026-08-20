@@ -5,8 +5,11 @@
 // which said the Harbourmaster linked no such driver at all. It could not
 // survive EDR-0013 fixing Marque's own state on PostgreSQL: PostgreSQL is also
 // a target engine, and one driver serves both. The replacement is import
-// discipline, enforced by depguard, and it is weaker — a linter reads imports,
-// not capability. See EDR-0042's Consequences for the four ways it is defeated.
+// discipline, and it is weaker — a check reads imports, not capability. It is
+// enforced by TestDriverConfinement in this package, which parses every .go
+// file: a linter cannot read a file behind a build tag or anything in gen/, and
+// both are compiled into the binaries. See EDR-0042 for the three ways import
+// discipline is defeated.
 package store
 
 import (
@@ -319,6 +322,12 @@ func applyOne(ctx context.Context, conn *sql.Conn, m migration) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// The lock transaction's SET LOCAL died with it, so bound this one too:
+	// otherwise a migration taking an AccessExclusiveLock waits forever and
+	// queues every reader behind it.
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '30s'`); err != nil {
+		return fmt.Errorf("bounding %s: %w", m.name, err)
+	}
 	if _, err := tx.ExecContext(ctx, m.sql); err != nil {
 		return fmt.Errorf("applying %s: %w", m.name, err)
 	}

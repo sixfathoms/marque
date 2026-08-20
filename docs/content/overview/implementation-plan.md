@@ -127,15 +127,15 @@ and its first migration; a migrator that is an explicit command, refuses a diver
 records each migration's content digest in the transaction that applies it and runs as its own role
 rather than the runtime one, which M6 needs and which costs nothing at migration one; and the
 `depguard` rule
-confining a target engine's driver to the two packages that need one — the Harbourmaster's store and
+confining a target engine's driver to the one package that may hold it — the confinement test, plus a `depguard` rule beside it — the Harbourmaster's store and
 the Pilot's adapter, which must have it — landing in the **same change** as the first package that
 opens a connection.
 
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
 the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
-package that is not the store and watching the confinement test refuse it — a *test* over the
-dependency graph rather than a lint rule, because a linter does not report the blank imports a driver
-arrives by. The rule replaces a mechanism EDR-0005
+package that is not the store and watching the confinement test refuse it. It parses every file
+rather than asking a linter or `go list`, because neither reads a file behind a build tag and neither
+reads `gen/` — both of which are compiled into the binaries. The rule replaces a mechanism EDR-0005
 lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
 signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers

@@ -40,17 +40,23 @@ const harbourmasterPrefix = "internal/harbourmaster"
 
 // TestDriverConfinement is EDR-0042's mechanism, in its third shape.
 //
-//   - `depguard` does not report BLANK imports, and a driver is imported blank
-//     essentially always, because the point is the registration side effect.
-//   - `go list` evaluates build constraints — host GOOS, no tags — so a file
-//     behind `//go:build integration` is invisible, which is where M1's own
-//     integration test lives.
+// A linter cannot do this job, for two reasons that are about tooling reach
+// rather than about what depguard understands:
 //
-// Both were measured, and both were specified and reviewed before anyone ran
-// them. Parsing files directly has neither blind spot: build tags are
-// irrelevant, `_test.go` files are included, `gen/` is included because it is
-// compiled into the binaries, and a file that cannot be parsed is a failure
-// rather than a skip.
+//   - golangci-lint evaluates build constraints — host GOOS, no tags — so a
+//     file behind `//go:build integration` is invisible to it, and that is
+//     where M1's own integration test lives.
+//   - `.golangci.yml` excludes `gen/`, which is compiled into every binary.
+//
+// An earlier version of this comment said depguard cannot see blank imports.
+// That was false: revive's blank-imports rule reports at the same line and
+// golangci-lint's --uniq-by-line shows only one issue per line, so the
+// measurement that produced the claim was measuring the wrong thing. A
+// reviewer said so from the source and was overruled. EDR-0042 records it.
+//
+// Parsing files directly has neither reach problem: build tags are irrelevant,
+// `_test.go` and `gen/` are included, and a file that cannot be parsed is a
+// failure rather than a skip.
 func TestDriverConfinement(t *testing.T) {
 	files := firstPartyGoFiles(t)
 	if len(files) < 5 {
@@ -161,8 +167,15 @@ func firstPartyGoFiles(t *testing.T) map[string][]string {
 			return err
 		}
 		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "dist", "bin":
+			// Root-relative, not by basename: skipping any directory called
+			// "bin" anywhere would let internal/anything/bin/x.go escape, and
+			// that path compiles like any other.
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			switch filepath.ToSlash(rel) {
+			case ".git", "bin", "dist", "website/node_modules":
 				return filepath.SkipDir
 			}
 			return nil

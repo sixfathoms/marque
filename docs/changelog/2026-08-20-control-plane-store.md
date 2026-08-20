@@ -20,7 +20,7 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   code, so it linked no drivers of any kind and the rule was true by vacancy. M1 is the milestone
   that ends that, which is why M1 is where the rule had to be re-expressed.
 
-  EDR-0042 replaces **absence** with **import discipline** — a driver confined by `depguard` to
+  EDR-0042 replaces **absence** with **import discipline** — a driver confined by a test that parses every file to
   the two packages that need one — the Harbourmaster's store and the Pilot's adapter, which must have
   it — with **no exception at all** for an engine Marque does not store its own
   state in, so MySQL stays wholly absent when

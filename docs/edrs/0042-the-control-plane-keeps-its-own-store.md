@@ -3,8 +3,8 @@ id: 42
 title: "Give the control plane's store a schema, a migrator, and a driver rule that survives PostgreSQL"
 summary: "The store was already fixed to PostgreSQL. What M1 owed was the schema, a forward-only digest-checked migrator, and a replacement for EDR-0005's no-driver-linked rule, which PostgreSQL for Marque's own state makes unachievable."
 status: accepted
-implementation: none
-implementation_note: "Nothing stores anything. This is the decision M1 owed before it could write a line of storage code; the import rule it describes lands in the same change as the first package that opens a connection."
+implementation: partial
+implementation_note: "The schema, the migrator and the confinement test exist and run in CI; nothing serves yet, and no binary opens a connection. This is the decision M1 owed before it could write a line of storage code; the import rule it describes lands in the same change as the first package that opens a connection."
 date: 2026-08-20
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
@@ -80,23 +80,27 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
    about it. No other package imports either, and **no Harbourmaster package imports the Pilot
    adapter**, which is the boundary that carries the weight.
-2. **Enforced by a test that parses every file.** `depguard` was this record's first answer and it does
-   not work: it does not report **blank imports**, and a database driver is imported blank
-   essentially always, because the point of importing it is the registration side effect. Measured,
-   not reasoned — a blank import of a denied package produces no diagnostic and a named import of the
-   same package produces one, for a driver and for a standard-library package alike.
+2. **Enforced by a test that parses every file**, with `depguard` beside it. The test walks the
+   repository and reads each `.go` file's imports with `go/parser`, because two things a linter
+   cannot do are load-bearing here: `golangci-lint` evaluates **build constraints** — host `GOOS`, no
+   tags — so a file behind `//go:build integration` is invisible to it, and that is where M1's own
+   integration test lives; and it does not read `gen/`, which is compiled into every binary. Neither
+   gap is configurable away.
 
-   `go list` was the second answer and has its own blind spot: it evaluates build constraints, using
-   the host `GOOS` and no tags, so a file behind `//go:build integration` is invisible to it — and
-   M1's integration test, the file most certain to import a driver, is behind exactly that. Also
-   measured.
+   **An earlier version of this record said `depguard` cannot see blank imports. That was false**,
+   and the story is worth keeping because the corpus is otherwise about exactly this. A reviewer
+   reading `depguard`'s source said blank and named imports are indistinguishable to it. A
+   measurement appeared to refute them — and the measurement was confounded: `revive`'s
+   `blank-imports` rule reports at the *same file and line*, and `golangci-lint`'s `--uniq-by-line`
+   (on by default) discards the second issue at a line. The "control" on a standard-library package
+   reproduced the artefact rather than isolating the variable. With `--uniq-by-line=false`, or in the
+   parenthesised-block form this repository actually uses, `depguard` reports a blank driver import
+   perfectly well. **The reviewer was right and the measurement was wrong**, which is a worse failure
+   than the one it was diagnosing: a correct challenge was overridden by an experiment that had not
+   been designed to isolate anything.
 
-   The test therefore **parses every `.go` file in the repository directly**, with `go/parser` in
-   `ImportsOnly` mode. That reads a file whatever its build tags say, on any host, including
-   `_test.go` files, and there is no configuration under which a first-party file escapes it. A file
-   it cannot parse is a *failure* rather than a skip, because treating unknown imports as permitted
-   is the silent pass this whole mechanism exists to avoid. `depguard` stays enabled as a cheap
-   redundant check on named imports.
+   The mechanism stays a parser because of build tags and `gen/`, which is a good reason and is not
+   the reason first given.
 
 3. **The Harbourmaster holds no target connection parameters and no target credential.** EDR-0005
    already decides the credential half; where a target's *connection parameters* live it does not
@@ -250,10 +254,9 @@ Named individually, because a reader who sees only one will assume the rest is r
   does not look at. It buys "the capability arrives by a reviewed edit rather than by accident", and
   no more. Anyone touching the permitted list is touching a security control.
 
-  Two defeats earlier drafts listed are **gone**, and it took three mechanisms. A lint rule could not
-  see a blank import. The graph test that replaced it could not see a file behind a build tag —
-  `go list` evaluates build constraints, so it was blind to exactly the file M1 puts its integration
-  test in. Parsing every file directly closed both.
+  One defeat an earlier draft listed is **gone**: a file behind a build tag, which `go list` cannot
+  see and a parser does not care about. Another was never real — the claim that a lint rule cannot see
+  a blank import, which a confounded measurement produced and this record now retracts above.
 
   Two mechanisms failed on the import shape they existed to police, both after being specified and
   reviewed. That is the part worth remembering: neither failure was visible in review, and both were
@@ -290,4 +293,4 @@ Named individually, because a reader who sees only one will assume the rest is r
 ## Changelog
 
 - **2026-08-20**: Accepted.
-- **2026-08-20**: Amended when M1 built it, twice. The rule was specified as a `depguard` block and does not work: `depguard` does not report blank imports, and a driver is imported blank essentially always. The replacement, a `go list -deps` graph test, does not work either: `go list` evaluates build constraints — host GOOS, no tags — so it cannot see a file behind `//go:build integration`, which is where M1's own integration test lives. Both were measured, and both were specified and reviewed before anyone ran them. The mechanism now parses every `.go` file with `go/parser`, which has neither blind spot and reaches `_test.go` and generated code as well. The allowlist is per driver and per package rather than per directory tree, and a second check refuses a Harbourmaster package importing a Pilot adapter — the transitive path no direct-import check can see. The defeats list is three: an edit to the permitted list, a `sql.Open` by driver name, and a transitive dependency. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger, and that `rows_affected` is absent exactly when the outcome is `indeterminate`. The decision is unchanged.
+- **2026-08-20**: Amended when M1 built it. The rule was specified as a `depguard` block, replaced with a `go list -deps` graph test, and replaced again with a test that parses every `.go` file. Only the last replacement was justified by a true claim. `go list` really does evaluate build constraints, so it cannot see a file behind `//go:build integration` — which is where M1's integration test lives — and it does not reach `gen/`, which is compiled into every binary. The *first* replacement rested on a measurement that `depguard` cannot see blank imports, and that measurement was wrong: `revive` reports `blank-imports` at the same line and `--uniq-by-line` discards the second issue there, so the control reproduced the artefact. A reviewer had said so from the source and was overruled. The allowlist is now per driver and per package rather than per directory tree, and a second check refuses a Harbourmaster package importing a Pilot adapter — the transitive path no direct-import check can see. Defeats are three: an edit to the permitted list, a `sql.Open` by driver name, and a transitive dependency. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger, and that `rows_affected` is absent exactly when the outcome is `indeterminate`. The decision is unchanged.
