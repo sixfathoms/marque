@@ -221,6 +221,38 @@ func TestEveryBuildConfigurationIsPresent(t *testing.T) {
 	}
 }
 
+// The -test and -tags switches must actually change what is listed, or the six
+// configurations are one configuration written six times. Both could be dropped
+// with everything green, because on a repository with no violation every
+// listing finds the same nothing.
+func TestTheModeSwitchesChangeWhatIsListed(t *testing.T) {
+	store := modulePath + "/internal/harbourmaster/store"
+
+	plain := graphOf(t, buildConfig{"plain", "./...", "", false})
+	withTest := graphOf(t, buildConfig{"test", "./...", "", true})
+	tagged := graphOf(t, buildConfig{"tagged", "./...", "integration", true})
+
+	// -test pulls in the test binary's own dependencies; testing is the one
+	// every test binary has and no library here imports.
+	if _, ok := plain["testing"]; ok {
+		t.Error("the non-test listing names testing, so -test cannot be distinguishing anything")
+	}
+	if _, ok := withTest["testing"]; !ok {
+		t.Error("the -test listing does not name testing, so -test is not in effect")
+	}
+
+	// The tag adds integration_test.go to the store's external test package —
+	// which normalise folds back onto the store itself — and that file imports
+	// sync, which nothing else in the package does.
+	if slices.Contains(withTest[store], "sync") {
+		t.Error("the untagged test listing already imports sync; pick another import that only the tagged file has")
+	}
+	if !slices.Contains(tagged[store], "sync") {
+		t.Errorf("the tagged listing does not show %s importing sync, so --tags integration is not in effect:\n  %v",
+			store, tagged[store])
+	}
+}
+
 func TestReachesDriverOverASyntheticGraph(t *testing.T) {
 	const (
 		pgx   = "github.com/jackc/pgx/v5/stdlib"

@@ -391,6 +391,14 @@ func TestStripSQLComments(t *testing.T) {
 			"CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; -- x $$ LANGUAGE sql;",
 			"CREATE FUNCTION f() RETURNS int AS   LANGUAGE sql;",
 		},
+		// dollarTag's identifier class, at its edges: an underscore and both
+		// ends of the digit range are legal in a tag and were unpinned.
+		"an underscore in the tag": {
+			"AS $_t$ /* $_t$ END", "AS   END",
+		},
+		"a digit at each end of the range": {
+			"AS $t0$ /* $t0$ AND $t9$ -- $t9$ END", "AS   AND   END",
+		},
 		"a tagged dollar quote too": {
 			"AS $body$ anything /* at all $body$ END",
 			"AS   END",
