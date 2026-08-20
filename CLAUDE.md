@@ -113,8 +113,14 @@ a commit message.
   by two of data-oncall (EDR-0030). The Pilot additionally **recomputes** the requirement from the
   anchored policy artefact and refuses on mismatch — the payload's copy is authored by the adversary
   it defends against (EDR-0036).
-- **The control plane holds no target credential**, and has no target database driver linked in. Any
-  feature that needs a connection is a Pilot API, not a Harbourmaster one (EDR-0005).
+- **The control plane holds no target credential**, and no target connection parameters. Any feature
+  needing a *target* connection is a Pilot API, not a Harbourmaster one (EDR-0005) — the
+  Harbourmaster connects to one database, its own (EDR-0042). The old form of this —
+  "It has no database driver for target engines linked in" — was stronger and is not available: Marque's own state is
+  PostgreSQL (EDR-0013), which is also a target engine, so one driver serves both. It is now import
+  discipline confining the driver to the store package and the Pilot's adapter (EDR-0042), which is
+  weaker, and a change to that
+  lint rule is a change to a security control.
 - **A delegated row scope is a fence that aborts, never a rewrite.** Conjoining the predicate into the
   operator's `WHERE` is sound and silently narrows the statement, which produces a partially-applied
   change nobody reviewed. The pre-check, the post-assert and the row-count assert are three separate

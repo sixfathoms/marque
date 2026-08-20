@@ -121,8 +121,21 @@ This milestone deliberately builds something insecure, so it is contained by con
 - **M5 deletes the flag**, and a test asserts no such path exists in the binary. That test is written
   now, skipped with a reason, and un-skipped in M5.
 
+Three things arrive with the store
+([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)): the tenant-partitioned schema
+and its first migration; a migrator that is an explicit command, refuses a divergent history, and
+records each migration's content digest in the transaction that applies it and runs as its own role
+rather than the runtime one, which M6 needs and which costs nothing at migration one; and the
+`depguard` rule
+confining a target engine's driver to the two packages that need one — the Harbourmaster's store and
+the Pilot's adapter, which must have it — landing in the **same change** as the first package that
+opens a connection.
+
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
-the row changed. The first genuine end-to-end signal, available in week one rather than month three.
+the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
+package that is not the store and watching the lint refuse it. The rule replaces a mechanism EDR-0005
+lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
+signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
 above.
 
@@ -178,6 +191,10 @@ The heart of the security argument
    ([EDR-0036](../../edrs/0036-what-is-signed-must-be-what-was-seen.md)).
 4. The principal roster, anchored outside the control plane
    ([EDR-0031](../../edrs/0031-approver-keys-are-anchored-outside-the-control-plane.md)).
+5. The signed marque replaces M1's `approvals` table
+   ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)), which is a row per
+   approver rather than a signature — carrying `stage`, so it is not the flat shape EDR-0030 exists
+   to refuse. M3 builds the marque; M7 wires it into the M1 path and deletes the stub.
 
 **Exit:** the negative tests, each seen to fail first — a marque with only the control plane's limb
 is rejected; stripping one of two signature entries is rejected; **a two-stage marque is not
@@ -197,6 +214,11 @@ satisfied by two signatures from the same stage**, which is the exact defect
    waits for the console in Phase 2 — the envelope split exists precisely so it can.
 4. Freshness on **producing an approver signature**, not on execution
    ([EDR-0035](../../edrs/0035-execution-freshness-is-a-property-of-the-approval.md)).
+5. `tenant_id` comes from the authenticated principal, replacing M1's single configured development
+   tenant ([EDR-0025](../../edrs/0025-tenants-are-partitioned-from-day-one.md),
+   [EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)). It is **never** a request
+   field, and the column has been there since the first migration precisely so this is a change of
+   source rather than a change of schema.
 
 **Exit:** a replayed token fails; a token presented without its proof fails; a token bound to a
 different key fails.
@@ -251,6 +273,10 @@ control it does not have.
 2. The grant setup as a migration: Marque's role holds `INSERT` and `SELECT` and **does not own the
    table**, because an owner can grant itself anything.
 3. Chain verification, and the tail.
+4. The journal becomes authoritative. M1 made `requests.state` the truth because there was no journal
+   to project from ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)); from here
+   current state is a rebuildable projection, which is what
+   [EDR-0012](../../edrs/0012-the-logbook-is-append-only.md) decided.
 
 **Exit:** a test connecting *as Marque's own role* proves `UPDATE` and `DELETE` are denied, and that
 it cannot grant them to itself. The immutability claim is worth exactly as much as that test.
@@ -277,7 +303,7 @@ drifts toward.
 | The Leadsman | Phase 2. An analyser with nothing to analyse is a demo |
 | Delegation and compiled sentences | Phase 3. M5 builds the fence; *granting* through it is a separate problem |
 | Agents | Phase 3b, in that order, for the same reason |
-| Relays, cross-cloud, deployment | Phase 3 and beyond. Phase 1 deploys nowhere on purpose |
+| Relays, cross-cloud, deployment | Phase 3 and beyond. Phase 1 deploys nowhere on purpose — which is also why backup, restore and roll-forward for the control plane's store are absent, and why a forward-only schema is acceptable until they exist ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)) |
 | Slack | Phase 2. It rides the WAL stream, so it is cheap whenever it lands |
 
 ## Decision debt
@@ -285,7 +311,14 @@ drifts toward.
 Decisions that will have to be made during Phase 1 and do not have a record yet. Each becomes one
 before the milestone that needs it closes.
 
-- **The control-plane storage schema and its migration tooling** — M1.
+- ~~The control-plane storage schema and its migration tooling — M1.~~ Settled by
+  [EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md).
+- **Where the Pilot keeps its execution ledger** — M5. It is the fence
+  ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)), it must be Pilot-local and
+  survive a target transaction rolling back, and the target database is the wrong place for it:
+  [issue #34](https://github.com/sixfathoms/marque/issues/34).
+- **Where a target's connection parameters live** — M1's Pilot, which is the change that will
+  otherwise settle it by accident: [issue #36](https://github.com/sixfathoms/marque/issues/36).
 - **The Go module and package layout**, specifically where the engine-shaped boundary sits so a second
   engine is an implementation rather than a fork — M2.
 - **The test-issuer and local-development story**, which is also the adopting team's first experience
