@@ -53,13 +53,15 @@ const RETIRED_STATUSES = new Set(['deprecated', 'superseded']);
 // decision back to `proposed`, which in this repository arms the
 // `proposed_until` build-failure timer.
 //
-// The vocabulary is CLOSED, and this is the only place it is written down: the
-// build validates against it and the roadmap page derives its groups, their
-// order and their blurbs from it. Each entry is [state, blurb, note-required],
-// where note-required is the phrasing of what the note must say, or null when
-// no note is compelled. Ordered most-built to least; the roadmap reverses it so
-// a reader meets the outstanding work first. Adding a state means editing this
-// array and docs/edrs/README.md together.
+// The vocabulary is CLOSED. This array is what the build enforces: it validates
+// frontmatter against it and derives the roadmap from it. It is written down
+// twice — here and in docs/edrs/README.md, which people read — and
+// assertVocabularies() below is what stops the two drifting apart.
+//
+// `implementation_note` is required for the states whose third element names
+// what the note must say, and optional for the rest, so a state that needs no
+// note compels none. Ordered most-built to least; the roadmap reverses it so a
+// reader meets the outstanding work first.
 const IMPLEMENTATION_STATES = [
   ['shipped', 'Built and running — the whole decision, not the easy half.', null],
   ['partial', 'Some of it runs, some does not.', 'saying which half is missing'],
@@ -76,9 +78,11 @@ const ALIAS_RE = /^[a-z0-9][a-z0-9-]*$/;
 const EDR_SLUG_RE = /^\d{4}-[a-z0-9-]+$/;
 const SUMMARY_MAX = 240;
 
-// The changelog tag vocabulary is CLOSED, and this is the only place it is
-// written down: the build validates entries against it and renders the filter
-// bar from it. An open set degrades into a synonym pile nobody can filter on.
+// The changelog tag vocabulary is CLOSED: the build validates entries against
+// it and renders the filter bar from it. An open set degrades into a synonym
+// pile nobody can filter on. It is written down twice — here and in
+// docs/changelog/README.md, which people read — and assertVocabularies() below
+// is what stops the two drifting apart.
 const CHANGELOG_TAGS = [
   ['product', 'A user-visible capability'],
   ['policy', 'Approval policy, delegation and scope'],
@@ -752,6 +756,8 @@ async function main() {
   await mkdir(DIST_DIR, { recursive: true });
   const layout = await readFile(join(TEMPLATES_DIR, 'layout.html'), 'utf8');
 
+  await assertVocabularies();
+
   const docs = await loadDocs();
   const edrs = await loadEdrs();
   const entries = await loadChangelogEntries();
@@ -776,6 +782,185 @@ async function main() {
   console.log(
     `Built landing + ${docs.length} doc page(s) + ${edrs.length} EDR(s) + ${entries.length} changelog entr${entries.length === 1 ? 'y' : 'ies'} → ${DIST_DIR}`,
   );
+}
+
+// Three closed vocabularies are written down twice: once as a constant here,
+// which the build enforces, and once as a table in a README, which people
+// actually read. CLAUDE.md states the coupling as a rule — "adding a tag means
+// editing both" — which is the honest admission that nothing enforced it, and
+// this repository's own position is that a rule depending on someone
+// remembering it is not a rule.
+//
+// So the build parses the tables back out and compares. The README is located
+// by an explicit marker rather than by guessing which table is the vocabulary,
+// because a heuristic that silently matches the wrong table is worse than no
+// check: it would pass while comparing nothing.
+//
+// Only the VALUES are compared, in ORDER. Descriptions are prose and are
+// allowed to differ in wording — asserting those would make the check a
+// nuisance that gets deleted. Order is compared because both orders are
+// load-bearing: implementation states run most-built to least and the roadmap
+// reverses them, and the changelog filter bar renders tags in array order.
+const VOCABULARIES = [
+  {
+    marker: 'implementation',
+    header: 'Implementation',
+    file: 'edrs/README.md',
+    constant: 'IMPLEMENTATION_STATES in website/build.mjs',
+    values: () => IMPLEMENTATION_STATE_NAMES,
+  },
+  {
+    marker: 'status',
+    header: 'Status',
+    file: 'edrs/README.md',
+    constant: 'VALID_STATUSES in website/build.mjs',
+    // A Set has no meaningful order, so this one is compared as a sorted set.
+    values: () => [...VALID_STATUSES].sort(),
+    sorted: true,
+  },
+  {
+    marker: 'changelog-tags',
+    header: 'Tag',
+    file: 'changelog/README.md',
+    constant: 'CHANGELOG_TAGS in website/build.mjs',
+    values: () => CHANGELOG_TAG_NAMES,
+  },
+];
+
+// Read a vocabulary table out of a README, from the MARKDOWN AST rather than
+// from the text. The first version of this matched lines beginning with `|`,
+// and review made the build pass while a vocabulary was wrong in four ways:
+// GFM permits a leading space before the pipe and permits rows with no leading
+// pipe at all, so two valid rows were invisible; the header and separator lines
+// were skipped unconditionally, so a value hidden in the header went unread;
+// and a marker with a decoy table inside a fenced code block shadowed the real
+// one, because indexOf does not know what a fence is.
+//
+// None of those is exotic — they are ordinary markdown. Inferring a table with
+// string matching was the mistake, and the parser the build already uses does
+// not make it.
+function readVocabularyTable(text, marker, file, problems, headerLabel) {
+  const tree = unified().use(remarkParse).use(remarkGfm).parse(text);
+  const cellText = (node) => {
+    let out = '';
+    visit(node, (n) => {
+      if (n.type === 'text' || n.type === 'inlineCode') out += n.value;
+    });
+    // `raw` is deliberately untrimmed: String.trim() strips U+FEFF and NBSP,
+    // so trimming before the pattern test would let `shipped\uFEFF` through as
+    // `shipped` while `shipped\u200B` failed. The value is matched raw; only
+    // the header, which is prose, is trimmed.
+    return {
+      raw: out,
+      text: out.trim(),
+      code: node.children?.length === 1 && node.children[0].type === 'inlineCode',
+    };
+  };
+
+  // Only TOP-LEVEL html nodes count, so a marker inside a code fence is not one:
+  // a fenced block parses as `code`, and its contents never become nodes.
+  const hits = tree.children.filter((n) => n.type === 'html' && n.value.trim() === `<!-- @vocabulary:${marker} -->`);
+  if (hits.length === 0) {
+    problems.push(
+      `${file}: no <!-- @vocabulary:${marker} --> marker outside a code block.\n` +
+        `  The build compares that table against a constant and finds it by this marker.`,
+    );
+    return null;
+  }
+  if (hits.length > 1) {
+    problems.push(`${file}: <!-- @vocabulary:${marker} --> appears ${hits.length} times; only the first table would ever be compared`);
+    return null;
+  }
+
+  const table = tree.children[tree.children.indexOf(hits[0]) + 1];
+  if (!table || table.type !== 'table') {
+    problems.push(
+      `${file}: <!-- @vocabulary:${marker} --> is not immediately followed by a table` +
+        (table ? ` (found a ${table.type})` : ' (end of file)'),
+    );
+    return null;
+  }
+
+  // The header is a real AST row, so it is checked rather than skipped — a
+  // value smuggled into it would otherwise never be read.
+  const [header, ...rows] = table.children;
+  const headerCell = cellText(header.children[0]).text;
+  if (headerCell !== headerLabel) {
+    problems.push(`${file}: the table under <!-- @vocabulary:${marker} --> has first column '${headerCell}', expected '${headerLabel}'`);
+    return null;
+  }
+
+  // Every value in all three vocabularies is a lowercase kebab identifier, and
+  // requiring that outright is what closes the invisible-character cases.
+  // Trimming decided equality before, and `String.trim()` strips U+FEFF and
+  // NBSP while leaving U+200B alone — so `shipped\uFEFF` compared equal to
+  // `shipped` and `shipped\u200B` did not. Three spellings, three behaviours,
+  // none of them stated. A pattern has one behaviour and it is visible.
+  const VALUE_RE = /^[a-z][a-z0-9-]*$/;
+  const values = [];
+  for (const [i, row] of rows.entries()) {
+    const { raw: value, code } = cellText(row.children[0]);
+    if (!code || !VALUE_RE.test(value)) {
+      problems.push(
+        `${file}: row ${i + 1} under <!-- @vocabulary:${marker} --> is not a single \`backticked\` ` +
+          `lowercase value\n` +
+          `  got: ${JSON.stringify(value)}${code ? '' : ' (not inline code)'}\n` +
+          `  Every row is one value matching ${VALUE_RE}; annotations belong in the second column.`,
+      );
+      return null;
+    }
+    values.push(value);
+  }
+
+  // A second table straight after the vocabulary one reads, to a person, as
+  // more of the same vocabulary — and would be silently unchecked.
+  const after = tree.children[tree.children.indexOf(table) + 1];
+  if (after && after.type === 'table') {
+    problems.push(
+      `${file}: a second table follows the one under <!-- @vocabulary:${marker} -->.\n` +
+        `  Only the first is compared, so rows in the second would go unchecked.`,
+    );
+    return null;
+  }
+  if (!values.length) {
+    problems.push(`${file}: the table under <!-- @vocabulary:${marker} --> has no value rows`);
+    return null;
+  }
+  return values;
+}
+
+async function assertVocabularies() {
+  const cache = new Map();
+  const problems = [];
+  for (const v of VOCABULARIES) {
+    if (!cache.has(v.file)) cache.set(v.file, await readFile(join(DOCS_DIR, v.file), 'utf8'));
+    const documented = readVocabularyTable(cache.get(v.file), v.marker, `docs/${v.file}`, problems, v.header);
+    if (documented === null) continue;
+    const enforced = v.values();
+    const inTable = v.sorted ? [...documented].sort() : documented;
+
+    const missing = enforced.filter((x) => !inTable.includes(x));
+    const extra = inTable.filter((x) => !enforced.includes(x));
+    // Length is compared separately because membership cannot see a repeat: a
+    // table listing `accepted` twice has the same members and is still wrong.
+    const dupes = inTable.filter((x, i) => inTable.indexOf(x) !== i);
+    if (dupes.length) {
+      problems.push(`docs/${v.file}: ${[...new Set(dupes)].map((d) => `'${d}'`).join(', ')} listed more than once under the marker`);
+    } else if (missing.length || extra.length) {
+      const lines = [`${v.constant} and docs/${v.file} disagree:`];
+      for (const x of missing) lines.push(`  '${x}' is enforced but undocumented — add it to docs/${v.file}`);
+      for (const x of extra) lines.push(`  '${x}' is documented but not enforced — add it to ${v.constant}, or remove the row`);
+      problems.push(lines.join('\n'));
+    } else if (!v.sorted && inTable.join('\u0000') !== enforced.join('\u0000')) {
+      problems.push(
+        `${v.constant} and docs/${v.file} list the same values in a different order:\n` +
+          `  enforced:   ${enforced.join(', ')}\n` +
+          `  documented: ${inTable.join(', ')}\n` +
+          `  The order is load-bearing — it is the order the site renders — so make the table match.`,
+      );
+    }
+  }
+  if (problems.length) throw new Error(problems.join('\n\n'));
 }
 
 // Marque is at design stage and this site is deliberately kept out of search

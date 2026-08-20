@@ -49,6 +49,13 @@ not a fresh opinion" — and when a record *departs* from a Field Note, it has t
 
 ## Status values
 
+Closed, and enforced from `VALID_STATUSES` in [`website/build.mjs`](../../website/build.mjs). As with
+the implementation states below, the build compares that constant against this table and fails if
+they disagree — so this is documentation the build keeps honest rather than documentation you have to
+remember to update.
+
+<!-- @vocabulary:status -->
+
 | Status | Meaning |
 |---|---|
 | `accepted` | Merged and authoritative. The default for almost every record on `main`. |
@@ -67,9 +74,13 @@ push every settled-but-unbuilt decision back to `proposed` — which here requir
 and *fails the build* once that date passes. A decision does not become unsettled by waiting for a
 schedule.
 
-The vocabulary is **closed**, ordered most-built to least, and defined once in
+The vocabulary is **closed**, ordered most-built to least, and enforced from
 `IMPLEMENTATION_STATES` in [`website/build.mjs`](../../website/build.mjs). Adding a state means
-editing that array and this table together.
+editing that array and this table together, and **the build fails if you edit only one** — it parses
+this table back out and compares, naming the value and the file to fix. The order is compared too,
+because it is the order the roadmap reverses.
+
+<!-- @vocabulary:implementation -->
 
 | Implementation | Meaning |
 |---|---|
