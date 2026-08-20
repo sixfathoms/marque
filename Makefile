@@ -194,7 +194,7 @@ test-integration: ## Run the tests that need a real PostgreSQL
 		docker exec marque-test-pg psql -q -U postgres -c \
 			"CREATE ROLE marque_runtime NOLOGIN" >/dev/null || exit 1; \
 		MARQUE_TEST_DSN="$$dsn" \
-			go test -tags integration -count=1 -timeout 10m ./internal/harbourmaster/store/
+			go test -tags integration -race -count=1 -timeout 10m ./internal/harbourmaster/store/
 
 lint: $(GOLANGCI) $(BUF) ## Check formatting, and lint the schema and the Go
 	$(BUF) format --diff --exit-code

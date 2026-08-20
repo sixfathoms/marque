@@ -4,9 +4,9 @@
 // behaviour PostgreSQL decides: which function a search_path resolves, whether
 // an advisory lock serialises, what a CHECK refuses, what a GRANT grants.
 //
-// They are behind a build tag so `make test` stays offline, and they are the
-// reason the confinement test parses files rather than asking a linter: with no
-// tags, `golangci-lint` and `go list` do not read this file at all.
+// They are behind a build tag so `make test` stays offline. `make lint` passes
+// `--build-tags integration`, so the linter reads this file too — the claim
+// that it could not was one of the several EDR-0042 retracts.
 //
 // The DSN comes from MARQUE_TEST_DSN and its absence is a FAILURE, not a skip.
 // A build-tagged suite that skips itself when unconfigured is the vacuous pass
@@ -68,11 +68,31 @@ func freshDB(t *testing.T) (*sql.DB, string) {
 
 	d := replaceDBName(dsn(t), name)
 	db, err := Open(ctx, d)
+	if err == nil {
+		// A schema named after the migrating role, present in every test
+		// database. PostgreSQL's default search_path is `"$user", public`, and
+		// an unqualified CREATE TABLE targets the first schema in that list
+		// that EXISTS — so without this, `"$user"` never resolves and the
+		// migration lands in public whether it is pinned or not. A reviewer
+		// deleted the pin entirely and watched the whole suite pass.
+		if _, err := db.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS "`+currentUser(t, db)+`"`); err != nil {
+			t.Fatalf("creating the role's own schema: %v", err)
+		}
+	}
 	if err != nil {
 		t.Fatalf("connecting to %s: %v", name, err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db, d
+}
+
+func currentUser(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var user string
+	if err := db.QueryRowContext(t.Context(), `SELECT current_user`).Scan(&user); err != nil {
+		t.Fatalf("reading current_user: %v", err)
+	}
+	return user
 }
 
 func replaceDBName(d, name string) string {
@@ -125,13 +145,44 @@ func TestMigrateThenVerify(t *testing.T) {
 // NOT named. A public.length(text) then binds into every length CHECK at DDL
 // time, and a constraint holds the pg_proc OID so the shadow cannot even be
 // dropped afterwards.
+// The pin's real job, and the one no test covered: an unqualified CREATE TABLE
+// targets the first EXISTING schema on the search_path, and the default path
+// leads with `"$user"`. With a schema of that name present — which freshDB now
+// guarantees — every table in an unpinned migration lands there instead of
+// public, `Verify` still passes because it qualifies schema_migrations, and the
+// runtime role then finds nothing.
+func TestTheMigrationLandsInPublic(t *testing.T) {
+	db, _ := freshDB(t)
+	ctx := t.Context()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+
+	for _, table := range []string{"schema_migrations", "tenants", "requests", "approvals", "executions"} {
+		var schema string
+		err := db.QueryRowContext(ctx,
+			`SELECT schemaname FROM pg_tables WHERE tablename = $1`, table).Scan(&schema)
+		if err != nil {
+			t.Errorf("looking for %s: %v", table, err)
+			continue
+		}
+		if schema != "public" {
+			t.Errorf("%s landed in schema %q, not public: the search_path pin is not in force", table, schema)
+		}
+	}
+}
+
 func TestAShadowedBuiltinDoesNotCaptureTheSchema(t *testing.T) {
 	db, _ := freshDB(t)
 	ctx := t.Context()
 
+	// 50, deliberately IN RANGE for every bound. A decoy returning 9999 makes
+	// every CHECK false, so the insert below fails either way and the assertion
+	// cannot tell the pin from the decoy — a reviewer found the test was being
+	// carried by the migration's own seed row failing instead.
 	if _, err := db.ExecContext(ctx, `
 		CREATE FUNCTION public.length(text) RETURNS integer
-		LANGUAGE sql IMMUTABLE AS $$ SELECT 9999 $$`); err != nil {
+		LANGUAGE sql IMMUTABLE AS $$ SELECT 50 $$`); err != nil {
 		t.Fatalf("planting the shadow: %v", err)
 	}
 	if err := Migrate(ctx, db); err != nil {
@@ -208,18 +259,26 @@ func TestConcurrentMigratorsSerialise(t *testing.T) {
 	db, d := freshDB(t)
 	ctx := t.Context()
 
-	var wg sync.WaitGroup
+	// The pools stay OPEN until after pg_locks is read. Closing them first —
+	// which the earlier version did, by deferring Close inside each goroutine —
+	// ends every migrator's session, so no advisory lock could be held by the
+	// time the assertion ran and it could not fail. A reviewer deleted the
+	// unlock defer AND the connection discard together and watched it pass.
+	pools := make([]*sql.DB, 4)
 	errs := make([]error, 4)
-	for i := range errs {
+	var wg sync.WaitGroup
+	for i := range pools {
+		own, err := Open(ctx, d)
+		if err != nil {
+			t.Fatalf("connecting migrator %d: %v", i, err)
+		}
+		pools[i] = own
+		t.Cleanup(func() { _ = own.Close() })
+	}
+	for i, own := range pools {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			own, err := Open(ctx, d)
-			if err != nil {
-				errs[i] = err
-				return
-			}
-			defer func() { _ = own.Close() }()
 			errs[i] = Migrate(ctx, own)
 		}()
 	}
@@ -237,13 +296,19 @@ func TestConcurrentMigratorsSerialise(t *testing.T) {
 	if n != 1 {
 		t.Errorf("schema_migrations holds %d rows after four concurrent migrators, want 1", n)
 	}
+
+	// Scoped to THIS database and THIS key. pg_locks is cluster-wide, so an
+	// unscoped count reports locks taken by anything else on the server —
+	// including another test, which makes it a flake rather than a check.
 	var locks int
-	if err := db.QueryRowContext(ctx,
-		`SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'`).Scan(&locks); err != nil {
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM pg_locks
+		WHERE locktype = 'advisory'
+		  AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`).Scan(&locks); err != nil {
 		t.Fatalf("reading pg_locks: %v", err)
 	}
 	if locks != 0 {
-		t.Errorf("%d advisory locks are still held", locks)
+		t.Errorf("%d advisory locks are still held in this database", locks)
 	}
 }
 
@@ -253,24 +318,33 @@ func TestTheMigratorLeaksNothingOntoThePool(t *testing.T) {
 	db, _ := freshDB(t)
 	ctx := t.Context()
 
+	// Captured BEFORE, and compared for equality. Asserting the value merely
+	// lacks "pg_catalog" is an assertion that can never fail: the default is
+	// `"$user", public` and the pin is `public`, so neither contains it. A
+	// reviewer removed the connection discard and the timeout together and
+	// watched this pass while the connection provably carried the migrator's
+	// search_path back to the pool.
+	before := map[string]string{}
+	for _, guc := range []string{"lock_timeout", "search_path"} {
+		var v string
+		if err := db.QueryRowContext(ctx, `SELECT current_setting($1)`, guc).Scan(&v); err != nil {
+			t.Fatalf("reading %s: %v", guc, err)
+		}
+		before[guc] = v
+	}
+
 	if err := Migrate(ctx, db); err != nil {
 		t.Fatalf("migrating: %v", err)
 	}
-	for _, guc := range []string{"lock_timeout", "search_path"} {
+
+	for guc, want := range before {
 		for range 8 {
-			var v string
-			if err := db.QueryRowContext(ctx, `SELECT current_setting($1)`, guc).Scan(&v); err != nil {
+			var got string
+			if err := db.QueryRowContext(ctx, `SELECT current_setting($1)`, guc).Scan(&got); err != nil {
 				t.Fatalf("reading %s: %v", guc, err)
 			}
-			switch guc {
-			case "lock_timeout":
-				if v != "0" {
-					t.Errorf("a pooled connection carries lock_timeout=%s from the migrator", v)
-				}
-			case "search_path":
-				if strings.Contains(v, "pg_catalog") {
-					t.Errorf("a pooled connection carries the migrator's search_path=%s", v)
-				}
+			if got != want {
+				t.Errorf("a pooled connection carries the migrator's %s: %q, want %q", guc, got, want)
 			}
 		}
 	}
@@ -328,6 +402,55 @@ func TestAHeldLockTimesOutRatherThanWaitingForever(t *testing.T) {
 	}
 }
 
+// The twin of the test above, and the one that matters: the regression round 4
+// fixed was in MIGRATE's timeout, and the existing test calls Verify. A
+// reviewer reverted the migrator's set_config to the transaction-local form it
+// had when it covered nothing, and the whole suite stayed green.
+func TestMigrateTimesOutRatherThanWaitingForever(t *testing.T) {
+	db, d := freshDB(t)
+	ctx := t.Context()
+
+	restore := lockWait
+	lockWait = "1s"
+	t.Cleanup(func() { lockWait = restore })
+
+	// Bootstrap the history table first, so the lock below is contended by the
+	// migrator's own reads and DDL rather than by its creation.
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("migrating: %v", err)
+	}
+
+	holder, err := Open(ctx, d)
+	if err != nil {
+		t.Fatalf("connecting the holder: %v", err)
+	}
+	defer func() { _ = holder.Close() }()
+	tx, err := holder.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("beginning the holder's transaction: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE public.schema_migrations IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatalf("taking the lock: %v", err)
+	}
+
+	short, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Migrate(short, db) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Migrate returned nil while an ACCESS EXCLUSIVE lock was held on schema_migrations")
+		}
+		if !strings.Contains(err.Error(), "lock timeout") {
+			t.Errorf("want a lock-timeout refusal, got %v", err)
+		}
+	case <-short.Done():
+		t.Fatal("Migrate blocked past its deadline: its lock waits are not bounded")
+	}
+}
+
 func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 	db, _ := freshDB(t)
 	ctx := t.Context()
@@ -335,21 +458,35 @@ func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 		t.Fatalf("migrating: %v", err)
 	}
 
-	for _, c := range []struct {
+	// Every table, every privilege. Sampling SELECT/INSERT/UPDATE on `requests`
+	// alone meant removing the grants on tenants, approvals and executions left
+	// the suite green.
+	var cases []struct {
 		table string
 		priv  string
 		want  bool
-	}{
-		{"public.requests", "SELECT", true},
-		{"public.requests", "INSERT", true},
-		{"public.requests", "UPDATE", true},
+	}
+	add := func(table, priv string, want bool) {
+		cases = append(cases, struct {
+			table string
+			priv  string
+			want  bool
+		}{table, priv, want})
+	}
+	for _, table := range []string{"public.tenants", "public.requests", "public.approvals", "public.executions"} {
+		add(table, "SELECT", true)
+		add(table, "INSERT", true)
+		add(table, "UPDATE", true)
 		// EDR-0012's shape: nothing the runtime role holds lets it erase.
-		{"public.requests", "DELETE", false},
-		{"public.approvals", "DELETE", false},
-		{"public.executions", "DELETE", false},
-		{"public.schema_migrations", "SELECT", true},
-		{"public.schema_migrations", "INSERT", false},
-	} {
+		add(table, "DELETE", false)
+		add(table, "TRUNCATE", false)
+	}
+	add("public.schema_migrations", "SELECT", true)
+	add("public.schema_migrations", "INSERT", false)
+	add("public.schema_migrations", "UPDATE", false)
+	add("public.schema_migrations", "DELETE", false)
+
+	for _, c := range cases {
 		var got bool
 		if err := db.QueryRowContext(ctx,
 			`SELECT has_table_privilege('marque_runtime', $1, $2)`, c.table, c.priv).Scan(&got); err != nil {
@@ -360,14 +497,84 @@ func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 		}
 	}
 
-	var owner string
+	// Every table, for the same reason.
+	for _, table := range []string{"schema_migrations", "tenants", "requests", "approvals", "executions"} {
+		var owner string
+		if err := db.QueryRowContext(ctx,
+			`SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename = $1`, table).Scan(&owner); err != nil {
+			t.Errorf("reading the owner of %s: %v", table, err)
+			continue
+		}
+		if owner == runtimeRole {
+			t.Errorf("%s owns %s; an owner can grant itself anything, which makes the withheld DELETE decorative (EDR-0012)",
+				runtimeRole, table)
+		}
+	}
+}
+
+// EDR-0012's non-ownership is only checkable at the moment the tables are
+// created, so the migrator refuses to run as the runtime role at all. Nothing
+// exercised that: the harness always migrates as the superuser, so the guard
+// could be neutered green, and the ownership assertions above were asserting a
+// property of the DSN rather than of the code.
+func TestMigratingAsTheRuntimeRoleIsRefused(t *testing.T) {
+	db, d := freshDB(t)
+	ctx := t.Context()
+
+	if _, err := db.ExecContext(ctx,
+		`ALTER ROLE `+runtimeRole+` LOGIN PASSWORD 'marque'`); err != nil {
+		t.Fatalf("giving the runtime role a login: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.WithoutCancel(ctx), `ALTER ROLE `+runtimeRole+` NOLOGIN`)
+	})
+	if _, err := db.ExecContext(ctx,
+		`GRANT CREATE, USAGE ON SCHEMA public TO `+runtimeRole); err != nil {
+		t.Fatalf("granting CREATE: %v", err)
+	}
+
+	asRuntime, err := Open(ctx, replaceUser(d, runtimeRole))
+	if err != nil {
+		t.Fatalf("connecting as %s: %v", runtimeRole, err)
+	}
+	defer func() { _ = asRuntime.Close() }()
+
+	err = Migrate(ctx, asRuntime)
+	if err == nil {
+		t.Fatal("the migrator ran as the runtime role, which would make it the owner of every table")
+	}
+	if !strings.Contains(err.Error(), runtimeRole) {
+		t.Errorf("the refusal should name the role; got %v", err)
+	}
+
+	// And it must refuse BEFORE creating anything: the bootstrap CREATE TABLE
+	// assigns ownership, and IF NOT EXISTS then preserves it for every later
+	// run. A reviewer watched the SQL-level guard refuse while leaving
+	// schema_migrations owned by the runtime role.
+	var exists bool
 	if err := db.QueryRowContext(ctx,
-		`SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename = 'requests'`).Scan(&owner); err != nil {
-		t.Fatalf("reading the owner: %v", err)
+		`SELECT pg_catalog.to_regclass('public.schema_migrations') IS NOT NULL`).Scan(&exists); err != nil {
+		t.Fatalf("looking for schema_migrations: %v", err)
 	}
-	if owner == "marque_runtime" {
-		t.Error("marque_runtime owns requests; an owner can grant itself anything, which makes the withheld DELETE decorative (EDR-0012)")
+	if exists {
+		var owner string
+		_ = db.QueryRowContext(ctx,
+			`SELECT tableowner FROM pg_tables WHERE tablename = 'schema_migrations'`).Scan(&owner)
+		t.Errorf("the refused run still created schema_migrations, owned by %q", owner)
 	}
+}
+
+func replaceUser(d, user string) string {
+	fields := strings.Fields(d)
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if strings.HasPrefix(f, "user=") {
+			out = append(out, "user="+user)
+			continue
+		}
+		out = append(out, f)
+	}
+	return strings.Join(out, " ")
 }
 
 // The schema's vocabularies and bounds, each watched refusing. Every one of
@@ -379,14 +586,36 @@ func TestTheSchemaRefusesWhatItSaysItRefuses(t *testing.T) {
 		t.Fatalf("migrating: %v", err)
 	}
 
-	insertRequest := func(ref string) error {
+	// Distinct values, so exactly one CHECK can refuse each case. Passing the
+	// same string as reference AND idempotency_key meant deleting either bound
+	// left the suite green: the other refused the same value.
+	insertRequest := func(ref, key string) error {
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO requests (tenant_id, reference, statement, reason, target, role, submitter, state, idempotency_key)
-			VALUES ('development', $1, 'UPDATE accounts SET tier = 2', 'a reason', 't', 'r', 's', 'pending', $1)`, ref)
+			VALUES ('development', $1, 'UPDATE accounts SET tier = 2', 'a reason', 't', 'r', 's', 'pending', $2)`, ref, key)
 		return err
 	}
-	if err := insertRequest("req_ok"); err != nil {
+	if err := insertRequest("req_ok", "key_ok"); err != nil {
 		t.Fatalf("a well-formed request was refused: %v", err)
+	}
+
+	// One column at a time, each with every other column well-formed.
+	field := func(column, value string) func() error {
+		return func() error {
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO requests (tenant_id, reference, statement, reason, target, role, submitter, state, idempotency_key)
+				VALUES ('development',
+					COALESCE(NULLIF($1, ''), 'req_x') || $2,
+					CASE WHEN $1 = 'statement' THEN $3 ELSE 'UPDATE accounts SET tier = 2' END,
+					CASE WHEN $1 = 'reason'    THEN $3 ELSE 'a reason' END,
+					CASE WHEN $1 = 'target'    THEN $3 ELSE 't' END,
+					CASE WHEN $1 = 'role'      THEN $3 ELSE 'r' END,
+					CASE WHEN $1 = 'submitter' THEN $3 ELSE 's' END,
+					'pending',
+					CASE WHEN $1 = 'idempotency_key' THEN $3 ELSE 'key_' || $2 END)`,
+				column, column+value[:1], value)
+			return err
+		}
 	}
 
 	for name, exec := range map[string]func() error{
@@ -396,7 +625,18 @@ func TestTheSchemaRefusesWhatItSaysItRefuses(t *testing.T) {
 				VALUES ('development', 'req_8', 's', 'r', 't', 'r', 's', 'contemplating', 'k8')`)
 			return err
 		},
-		"a whitespace-only reference": func() error { return insertRequest("   ") },
+		"a whitespace-only reference":       func() error { return insertRequest("   ", "key_ws") },
+		"a whitespace-only statement":       field("statement", "   "),
+		"a whitespace-only reason":          field("reason", "   "),
+		"a whitespace-only target":          field("target", "   "),
+		"a whitespace-only role":            field("role", "   "),
+		"a whitespace-only submitter":       field("submitter", "   "),
+		"a whitespace-only idempotency key": field("idempotency_key", "   "),
+		"an over-long submitter":            field("submitter", strings.Repeat("s", 400)),
+		"an over-long target":               field("target", strings.Repeat("t", 400)),
+		"a second request with the same idempotency key": func() error {
+			return insertRequest("req_second", "key_ok")
+		},
 		"a request in a tenant that does not exist": func() error {
 			_, err := db.ExecContext(ctx, `
 				INSERT INTO requests (tenant_id, reference, statement, reason, target, role, submitter, state, idempotency_key)
@@ -410,7 +650,9 @@ func TestTheSchemaRefusesWhatItSaysItRefuses(t *testing.T) {
 		},
 		"an approval whose tenant differs from its request's": func() error {
 			if _, err := db.ExecContext(ctx, `INSERT INTO tenants (id, name) VALUES ('other', 'Other')`); err != nil {
-				return err
+				// A setup failure returned here would PASS the subtest, which
+				// is what it did until a reviewer made the insert fail.
+				t.Fatalf("setting up a second tenant: %v", err)
 			}
 			_, err := db.ExecContext(ctx,
 				`INSERT INTO approvals (tenant_id, reference, stage, approver) VALUES ('other', 'req_ok', 1, 'sam')`)
@@ -527,5 +769,22 @@ func TestTheQueueIndexIsUsed(t *testing.T) {
 	}
 	if !strings.Contains(plan.String(), "requests_queue") {
 		t.Errorf("the queue query does not use requests_queue:\n%s", plan.String())
+	}
+
+	// And that it is PARTIAL, which is the whole argument in its comment: a
+	// plain index on the same columns satisfies the name above, so dropping the
+	// WHERE clause left this green. Read the definition rather than infer it.
+	var def string
+	if err := db.QueryRowContext(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE indexname = 'requests_queue'`).Scan(&def); err != nil {
+		t.Fatalf("reading the index definition: %v", err)
+	}
+	if !strings.Contains(def, "WHERE") {
+		t.Errorf("requests_queue is not partial, so it indexes every state: %s", def)
+	}
+	for _, state := range []string{"pending", "approved"} {
+		if !strings.Contains(def, state) {
+			t.Errorf("requests_queue does not cover %s: %s", state, def)
+		}
 	}
 }

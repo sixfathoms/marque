@@ -125,14 +125,19 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // EDR-0042 promised this and nothing implemented it; a reviewer grepped the
 // package and found the mechanism did not exist.
 //
-// Deliberately coarse. A migration needing CREATE INDEX CONCURRENTLY is a real
-// need, and the answer is a decision about how this migrator runs statements
-// outside a transaction, not a quiet exception here.
+// Deliberately coarse, and coarse in the safe direction. A migration needing
+// CREATE INDEX CONCURRENTLY is a real need, and the answer is a decision about
+// how this migrator runs statements outside a transaction, not a quiet
+// exception here.
+//
+// What it gets wrong, stated rather than discovered: a bare identifier equal to
+// one of these words — a column named `reindex` — is refused, because the word
+// stands alone there exactly as it does in the statement. `vacuum_log` is fine,
+// since the underscore makes it one identifier. This is an accident-guard for
+// the people who write these migrations, not a security control; nothing stops
+// someone determined from spelling a statement in a way it does not match.
 func rejectNonTransactional(name, body string) error {
-	// Comments and string literals are not stripped, so a mention in a comment
-	// refuses too. That is the safe direction: the fix is to reword the
-	// comment, and the alternative is parsing SQL to find out.
-	upper := strings.ToUpper(body)
+	stripped := collapseSpace(stripSQLComments(body))
 	for _, s := range []string{
 		"CONCURRENTLY",
 		"VACUUM",
@@ -142,15 +147,83 @@ func rejectNonTransactional(name, body string) error {
 		"CREATE TABLESPACE",
 		"ALTER SYSTEM",
 	} {
-		if strings.Contains(upper, s) {
-			return fmt.Errorf(
-				"migrations/%s contains %s, which PostgreSQL refuses to run inside a transaction block.\n"+
-					"  Every migration is applied inside one, so this would fail as SQLSTATE 25001 part-way\n"+
-					"  through a migration rather than here. Running statements outside a transaction is a\n"+
-					"  decision this migrator has not taken (EDR-0042)", name, s)
+		if !containsPhrase(stripped, s) {
+			continue
 		}
+		return fmt.Errorf(
+			"migrations/%s contains %s, which PostgreSQL refuses to run inside a transaction block.\n"+
+				"  Every migration is applied inside one, so this would fail as SQLSTATE 25001 part-way\n"+
+				"  through a migration rather than here. Running statements outside a transaction is a\n"+
+				"  decision this migrator has not taken (EDR-0042)", name, s)
 	}
 	return nil
+}
+
+// stripSQLComments removes -- and /* */ comments. Without it, `CREATE/* x
+// */DATABASE` slipped past a raw substring match while PostgreSQL still refused
+// it — measured by a reviewer, who also found `CREATE TABLE vacuum_log` wrongly
+// refused because VACUUM appeared inside an identifier.
+//
+// Not a SQL parser, and does not try to be: a dollar-quoted body containing the
+// literal text of one of these statements is refused, which is the safe
+// direction and is a comment away from being fixed.
+func stripSQLComments(body string) string {
+	var out strings.Builder
+	for i := 0; i < len(body); {
+		switch {
+		case strings.HasPrefix(body[i:], "--"):
+			j := strings.IndexByte(body[i:], '\n')
+			if j < 0 {
+				return out.String()
+			}
+			out.WriteByte('\n')
+			i += j + 1
+		case strings.HasPrefix(body[i:], "/*"):
+			j := strings.Index(body[i+2:], "*/")
+			if j < 0 {
+				return out.String()
+			}
+			// A space, so `CREATE/* x */DATABASE` becomes two words rather
+			// than one and the phrase match below sees it.
+			out.WriteByte(' ')
+			i += j + 4
+		default:
+			out.WriteByte(body[i])
+			i++
+		}
+	}
+	return out.String()
+}
+
+// collapseSpace turns every run of whitespace into one space, so `CREATE
+// DATABASE` split across lines still reads as the phrase it is. PostgreSQL does
+// not care where the newline falls and neither should this.
+func collapseSpace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// containsPhrase reports whether upper-cased phrase appears in body delimited
+// by non-identifier characters, so `vacuum_log` is not a VACUUM.
+func containsPhrase(body, phrase string) bool {
+	isIdent := func(b byte) bool {
+		return b == '_' || b == '$' ||
+			(b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+	}
+	upper := strings.ToUpper(body)
+	for i := 0; ; {
+		j := strings.Index(upper[i:], phrase)
+		if j < 0 {
+			return false
+		}
+		s := i + j
+		e := s + len(phrase)
+		beforeOK := s == 0 || !isIdent(upper[s-1])
+		afterOK := e == len(upper) || !isIdent(upper[e])
+		if beforeOK && afterOK {
+			return true
+		}
+		i = s + 1
+	}
 }
 
 // Verify reports whether the database's applied history matches this binary's
@@ -242,6 +315,11 @@ func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 // thirty seconds or asserts nothing; the earlier version chose a deadline
 // shorter than the timeout and failed itself.
 var lockWait = "30s"
+
+// runtimeRole is the role the Harbourmaster serves as, and the one the migrator
+// must NOT be. It is spelled here and in 0001_initial.sql, which cannot take a
+// parameter — see issue #40.
+const runtimeRole = "marque_runtime"
 
 // ErrSchemaMismatch is returned when the database's history and the binary's
 // embedded set disagree in a way no migration can fix.
@@ -358,6 +436,22 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		defer cancel()
 		_, _ = conn.ExecContext(unlockCtx, `SELECT pg_advisory_unlock($1)`, lockKey)
 	}()
+
+	// Checked HERE, before anything is created. The same check exists in
+	// 0001_initial.sql, and by the time that runs the bootstrap table below has
+	// already been created and owned — a reviewer watched the SQL guard refuse
+	// the migration and leave schema_migrations owned by marque_runtime, which
+	// IF NOT EXISTS then preserves forever. EDR-0012's non-ownership needs the
+	// refusal to come first.
+	var user string
+	if err := conn.QueryRowContext(ctx, `SELECT current_user`).Scan(&user); err != nil {
+		return fmt.Errorf("reading the migrating role: %w", err)
+	}
+	if user == runtimeRole {
+		return fmt.Errorf(
+			"refusing to migrate as %s: it would own these tables, and an owner can grant "+
+				"itself anything, which is what EDR-0012's withheld grant is for", runtimeRole)
+	}
 
 	if _, err := conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS public.schema_migrations (

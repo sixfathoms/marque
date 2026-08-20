@@ -248,3 +248,69 @@ func TestNonTransactionalStatementsAreRefused(t *testing.T) {
 		t.Errorf("the shipped migrations no longer load: %v", err)
 	}
 }
+
+// A raw substring match over the body was defeated in both directions: a
+// reviewer split a keyword with a comment and slipped past it, and found an
+// ordinary table named vacuum_log wrongly refused.
+func TestNonTransactionalDetectionReadsSQLNotSubstrings(t *testing.T) {
+	load := func(body string) error {
+		_, err := loadMigrationsFrom(fstest.MapFS{
+			"migrations/0001_a.sql": &fstest.MapFile{Data: []byte(body)},
+		})
+		return err
+	}
+
+	for name, body := range map[string]string{
+		"a keyword split by a block comment": "CREATE/* split */DATABASE probe;",
+		"a keyword split across lines":       "CREATE\nDATABASE probe;",
+		"a keyword after a line comment":     "-- harmless\nVACUUM FULL t;",
+		"CREATE TABLESPACE":                  "CREATE TABLESPACE ts LOCATION '/x';",
+		"DROP DATABASE":                      "DROP DATABASE probe;",
+		"CREATE DATABASE":                    "CREATE DATABASE probe;",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := load(body); err == nil {
+				t.Errorf("%s was accepted", name)
+			}
+		})
+	}
+
+	// And the known coarseness, asserted so it is a decision rather than a
+	// surprise: a bare identifier equal to one of the words is refused, because
+	// there the word stands alone exactly as it does in the statement.
+	t.Run("a column named reindex is refused, which is the accepted cost", func(t *testing.T) {
+		if err := load("CREATE TABLE t (reindex boolean);"); err == nil {
+			t.Error("expected a refusal; if there is none, the comment in migrate.go is stale")
+		}
+	})
+
+	for name, body := range map[string]string{
+		"an identifier containing VACUUM":       "CREATE TABLE vacuum_log (id integer);",
+		"an identifier containing CONCURRENTLY": "CREATE TABLE concurrently_applied (id integer);",
+		"an ordinary migration":                 "CREATE TABLE t (id integer);",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := load(body); err != nil {
+				t.Errorf("%s was refused: %v", name, err)
+			}
+		})
+	}
+}
+
+// Contiguity would refuse a duplicate anyway, with a different message, so the
+// duplicate check could be deleted green. It exists to say which two files
+// collide, which is the only actionable part.
+func TestDuplicateNumbersAreRefusedByName(t *testing.T) {
+	_, err := loadMigrationsFrom(fstest.MapFS{
+		"migrations/0001_a.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},
+		"migrations/0001_b.sql": &fstest.MapFile{Data: []byte("SELECT 2;")},
+	})
+	if err == nil {
+		t.Fatal("two migrations claiming number 1 were accepted")
+	}
+	for _, want := range []string{"0001_a.sql", "0001_b.sql", "a number is an identity"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the message should contain %q; got %q", want, err)
+		}
+	}
+}
