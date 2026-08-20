@@ -788,3 +788,17 @@ func TestTheQueueIndexIsUsed(t *testing.T) {
 		}
 	}
 }
+
+// EDR-0005's reason for pinging on Open: "a pool that connects on first use
+// hides broken authentication until an incident". Deleting the ping left the
+// suite green, because every other test connects successfully.
+func TestOpenRefusesABadDSNImmediately(t *testing.T) {
+	ctx := t.Context()
+	_, err := Open(ctx, replaceUser(dsn(t), "no_such_role_"+t.Name()))
+	if err == nil {
+		t.Fatal("Open returned a pool for a role that does not exist; the failure is deferred to first use")
+	}
+	if !strings.Contains(err.Error(), "connecting") {
+		t.Errorf("the error should say connecting failed; got %v", err)
+	}
+}
