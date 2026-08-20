@@ -46,6 +46,13 @@ the escape the pinned `search_path` closes. Separate fields mean there is nothin
 string checked for a dot would accept `.accounts`, `public.`, and the quoted identifier
 `"accounts.archive"`, none of which is a qualified relation.
 
+That spelling is now [EDR-0041](../../docs/edrs/0041-one-spelling-for-a-scope.md)'s, and it is what
+every grant uses too — so the relation and the operation are named the same thing on both sides of
+the containment proof. What stays different is deliberate. A vector's `operation` is singular because
+it describes one statement; its `columns_written` says what a statement *does* write where a grant's
+`columns` says what *may* be written; and its `predicate` stays a single string where a grant's
+`fence` is a list of conjuncts, because the two are composed rather than compared.
+
 **A key is legal only where the format puts it.** `predicate` belongs to a scope and
 `subset_version` to the corpus; neither is a vector's, and the strict struct decode is what enforces
 that. It is a separate guard from the one below, and losing either loses half the check.

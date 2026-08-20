@@ -68,9 +68,11 @@ is unsure, correctness beats availability, and the answer is a human.
   "grants": ["submit", "self_approve"],   // or ["approve"] to delegate reviewing
   "target": "prod-primary",
   "role": "settings_writer",
-  "operations": ["UPDATE"],
-  "objects": [ { "table": "public.accounts", "columns": ["settings", "settings_updated_at"] } ],
-  "fence": "tier = 'sandbox'",
+  "operations": ["update"],
+  "objects": [
+    { "schema": "public", "relation": "accounts", "columns": ["settings", "settings_updated_at"] }
+  ],
+  "fence": ["tier = 'sandbox'"],
   "max_rows": 100,
   "not_after": "2026-11-30T00:00:00Z",
   "granted_by": "theo@acme.example"
@@ -114,28 +116,51 @@ operator who does not know why they are queueing will assume the tool is broken.
 
 ### 2. Row scope: the fence
 
-The fence never rewrites the operator's statement. The Pilot executes, in one transaction:
+The fence never rewrites the operator's statement. The Pilot settles the session, then executes in
+one transaction:
 
 ```sql
+-- Connection setup, its own round trip. standard_conforming_strings and
+-- backslash_quote are read by the LEXER, and PostgreSQL raw-parses a whole
+-- simple-query message before running any of it — so a SET sent beside the
+-- fence is inert while the GUC still reads back correct. The Pilot VERIFIES
+-- both with current_setting() and refuses on a mismatch — at connection
+-- setup, and again before every step that follows code the Pilot did not
+-- compose: the fence's own evaluation, the operator's statement, and
+-- SET CONSTRAINTS. See rule 3.
+SET standard_conforming_strings = on;       -- pinned: see rule 3
+SET backslash_quote             = off;      -- E'…' escapes regardless of the above
+
 BEGIN ISOLATION LEVEL REPEATABLE READ;
-SET LOCAL search_path       = pg_catalog;   -- pinned: see rule 4
+SET LOCAL search_path      = pg_catalog;    -- pinned: see rule 3
 SET LOCAL statement_timeout = …;
 SET LOCAL lock_timeout      = …;
 
 -- (a) pre-check: would this touch anything outside the fence?
 --     NOTE: `IS NOT TRUE`, never `NOT (…)`. A row whose fence expression is
 --     UNKNOWN is OUTSIDE the fence.
+--     The fence is a list of conjuncts (EDR-0041). `<fence>` is the bare
+--     conjunction, each conjunct parenthesised: `(c1) AND (c2)`. The
+--     template's own parentheses are the outer wrap, so this composes to
+--     `((c1) AND (c2)) IS NOT TRUE` — and never `(c1) AND (c2) IS NOT TRUE`,
+--     which tests c2 alone, because `IS` binds tighter than `AND`.
 SELECT count(*) FROM public.accounts
- WHERE (<the statement's own predicate>) AND (tier = 'sandbox') IS NOT TRUE;
+ WHERE (<the statement's own predicate>) AND (<fence>) IS NOT TRUE;
 --   > 0  →  ROLLBACK, and report the count
 
+-- re-verify the three pins (rule 3): evaluating the fence in (a) may have
+--     called a function, and a function can call set_config
 -- (b) the operator's statement, unmodified, with RETURNING added
 UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
+-- re-verify the three pins (rule 3): the statement above may have fired a
+--     BEFORE trigger that called set_config and moved them
 -- (c) post-assert: did any affected row end up outside the fence?
 --     same TRUE-only rule; catches an update that moves a row out of scope
 -- (d) affected rows <= max_rows            (of the NAMED RELATION only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire BEFORE (e)
+-- re-verify the three pins again (rule 3): (c) evaluated the fence again,
+--     and SET CONSTRAINTS just ran user-defined trigger code
 -- (e) write-set assert                      (EDR-0033)
 
 COMMIT;
@@ -148,15 +173,23 @@ COMMIT;
 - Any of (a) through (e) failing rolls the transaction back. **Nothing is partially applied**, and the
   operator is told which check failed and by how much.
 
-Three rules govern how those checks are written, and each closes a way the fence would otherwise fail
-**open**:
+Six rules govern how those checks are written. The first five each close a way the fence would
+otherwise fail **open** — rule 5's is a concurrent change to a row the fence depends on and this
+transaction never writes — and the sixth bounds what a row count covers:
 
 1. **A row is inside the fence only when the fence predicate evaluates TRUE. UNKNOWN is outside.**
    Written as `NOT (tier = 'sandbox')`, a row with `tier IS NULL` yields `NOT NULL` = `NULL`, `WHERE`
    admits only TRUE, and the row is silently *not counted* — so a NULL-fenced row passes the
    pre-check, the post-assert and the row count with no concurrency involved at all. Every fence
    comparison is therefore written `(<fence>) IS NOT TRUE`, and every future engine binding inherits
-   this rule ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)).
+   this rule ([EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md)). `<fence>` is the bare
+   conjunction of the fence's conjuncts, each conjunct parenthesised — `(c1) AND (c2)`
+   ([EDR-0041](./0041-one-spelling-for-a-scope.md)). It is always written inside the parentheses this
+   rule requires, so the TRUE-only test applies to the whole fence and never to one conjunct of it.
+   The parentheses belong to the template, not to `<fence>` — they are idempotent, so reading them
+   into both is harmless. Reading the whole *comparison* into `<fence>` is not: that yields
+   `X IS NOT TRUE IS NOT TRUE`, which is `X IS TRUE`, and inverts the check into one that counts the
+   rows inside the fence and passes every row outside it.
 2. **The execution transaction runs at REPEATABLE READ or stricter.** At READ COMMITTED, (a) and (b)
    take different snapshots, and because the fence is deliberately *not* conjoined into the `WHERE`,
    PostgreSQL's `EvalPlanQual` re-check never re-evaluates it — so a concurrent update that moves a
@@ -169,15 +202,49 @@ Three rules govern how those checks are written, and each closes a way the fence
    unqualified names — relations, functions *and operators* — through `search_path`, so an
    unqualified fence like `tier = 'sandbox'` can be made to mean something else by anyone who can
    create an object in an earlier schema. The session sets `search_path = pg_catalog`, the grammar
-   already requires relations to be named directly (`public.accounts`), and a fence containing an
-   unqualified non-builtin reference is refused at compile time
-   ([EDR-0016](./0016-natural-language-delegations-are-compiled.md)).
+   already requires relations to be named directly (`public.accounts`). The pin does **not** reach an
+   explicitly-qualified operator — `tier OPERATOR(public.===) 'x'` resolves past it — and which
+   references a conjunct may make at all is undefined:
+   [issue #25](https://github.com/sixfathoms/marque/issues/25). An earlier version of this rule said
+   such a reference was "refused at compile time (EDR-0016)"; EDR-0016 states no such rule, and a
+   compile-time rule would not reach a hand-authored delegation or an agent's declared scope in any
+   case, neither of which meets the compiler.
+
+   `standard_conforming_strings` and `backslash_quote` are pinned for a related reason — the fence's
+   conjuncts are composed as text — and they are **verified with `current_setting()` rather than set
+   beside the fence**: both are read by the lexer, and PostgreSQL raw-parses a whole simple-query
+   message before executing any of it, so a `SET` in the same message is inert while the GUC reads
+   back correct. All three pins are re-verified immediately before **every step that follows code the
+   Pilot did not compose itself**, not once at `BEGIN`. Three things run such code: **the fence
+   itself**, because a conjunct may call a function ([EDR-0041](./0041-one-spelling-for-a-scope.md)
+   bounds a conjunct's shape and not its behaviour); the operator's own statement, whose `BEFORE`
+   trigger can call `set_config`; and `SET CONSTRAINTS ALL IMMEDIATE`, whose whole purpose is to fire
+   deferred constraint triggers. So the pins are re-verified before (b), before (c) and before (e).
+   Check (a) needs none, because between `BEGIN` and it only the Pilot's own `SET LOCAL`s have run.
+
+   **Re-verification bounds the damage; it does not prevent it.** Not for the obvious reason: a
+   `set_config` called during (a) cannot rebind (a)'s own identifiers, because PostgreSQL resolves
+   those at parse analysis, before execution begins. Two mechanisms survive that, and both apply to
+   (c) as well as (a), since both evaluate the fence. A function carrying its own `SET search_path`
+   clause **restores it on exit**, so every later `current_setting()` check passes while resolution
+   inside that function has already happened under the attacker's path. And more simply, with no setting involved at all: a
+   volatile conjunct function can read or write whatever it likes and return whatever it likes, so it
+   can spoil the count (a) produces without touching a pin.
+
+   So the pins are worth re-verifying, and re-verification is not the control. Bounding what a
+   conjunct may *do* is, and nothing does yet —
+   [issue #25](https://github.com/sixfathoms/marque/issues/25). Revalidating a conjunct's shape
+   before composing it is a different control, and not a substitute.
 4. **Deferred constraint triggers are forced to fire before the write-set assertion.** A
    `DEFERRABLE INITIALLY DEFERRED` constraint fires at `COMMIT` — *after* check (e) has read a clean
    write set — so its writes would land inside the committed transaction unchecked, by a mechanism
    designed to defer until commit. `SET CONSTRAINTS ALL IMMEDIATE` immediately before (e) pulls them
    forward into the checked window ([EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
-5. **A fence may reference only columns of the target relation.** REPEATABLE READ makes the
+5. **Every conjunct may reference only columns of the target relation**, tested when the delegation
+   is authored rather than by the Pilot at execution — §1's enumeration is about the *statement*, and
+   does not carry this. The rule is per conjunct, and it holds for each
+   separately — one conjunct naming a column of some other relation in the grant's `objects` puts the
+   fence outside the subset just as a single-predicate fence would. REPEATABLE READ makes the
    pre-check and the statement agree about rows *this* transaction writes; it does not protect a
    fence that depends on some other row — a tenant row, a parent — which a concurrent transaction may
    change between (a) and (b). A fence needing another relation is outside the checkable subset
@@ -251,3 +318,4 @@ to apply. They execute in one transaction, so the whole request commits or none 
 - **2026-08-16**: Amended after the expert panel's should-fix pass: stated that `max_rows` bounds the named relation only, and added the write-set assertion as check (e) — see [EDR-0033](./0033-assert-the-whole-write-set-not-just-the-named-relation.md).
 - **2026-08-16**: Amended after a second expert panel: pinned `search_path` (PostgreSQL resolves unqualified relations, functions **and operators** through it, so an unqualified fence can be redefined by anyone who can create an object in an earlier schema), forced deferred constraint triggers to fire before the write-set assertion, and restricted a fence to columns of the target relation — REPEATABLE READ protects only rows this transaction writes.
 - **2026-08-16**: Amended in the second panel's should-fix pass: attenuation compares fences by **syntactic conjunct-set inclusion**, not entailment — the undecidable check EDR-0029 was rewritten to avoid, which otherwise arrives once per hop in a chain.
+- **2026-08-19**: Amended so the worked delegation matches this record's own prose, and so the fence SQL survives the fence becoming a list. The decision is unchanged — attenuation by syntactic conjunct-set inclusion, never by entailment — but the encoding contradicted it: `fence` was a string eleven lines above the sentence calling it an array, the relation was one dotted string, and the operation was uppercase. All three now follow [EDR-0041](./0041-one-spelling-for-a-scope.md), which also settles when two conjuncts are equal and therefore what the inclusion test compares. The worked SQL says what `<fence>` denotes — the bare conjunction `(c1) AND (c2)`, wrapped by the template so the comparison reads `((c1) AND (c2)) IS NOT TRUE`; `IS` binds tighter than `AND`, so the unwrapped form tests c2 alone and lets a row failing c1 through, which is the fail-open the 2026-08-15 `NOT (fence)` correction closed and the list reopened. Rule 3 drops a claim that was never true — it attributed the refusal of a non-builtin reference in a fence to EDR-0016, which states no such rule — pins `standard_conforming_strings` and `backslash_quote` at connection setup and verifies them with `current_setting()`, since the lexer reads them and PostgreSQL raw-parses a whole simple-query message before running any of it; and re-verifies all three pins before (b), (c) and (e), because three kinds of code the Pilot does not compose can move them: a fence conjunct calling a function, a `BEFORE` trigger, and a deferred constraint trigger fired by `SET CONSTRAINTS ALL IMMEDIATE`. It also says plainly that re-verification bounds the damage without preventing it, since a function that restores `search_path` on exit or simply returns a spoiled answer leaves every later check passing — which is why bounding a conjunct's behaviour ([issue #25](https://github.com/sixfathoms/marque/issues/25)) is load-bearing rather than tidying. Rule 5 is restated per conjunct and says when it is tested; the preamble said "Three rules" above six; and a stale "see rule 4" against the `search_path` pin now says rule 3. The positive rule that the Pilot revalidates each conjunct's shape, and the correction that rule 5 is not a refusal the Pilot makes, both belong to [EDR-0041](./0041-one-spelling-for-a-scope.md) and [EDR-0016](./0016-natural-language-delegations-are-compiled.md), which is where they were made.

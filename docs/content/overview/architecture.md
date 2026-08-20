@@ -199,27 +199,46 @@ The delegated row predicate is never conjoined into the operator's `WHERE`. Sile
 statement produces a partially-applied change nobody reviewed. Instead:
 
 ```sql
+-- first, its own round trip: the lexer reads these, and a simple-query
+-- message is raw-parsed whole, so a SET beside the fence is inert
+SET standard_conforming_strings = on;       -- verified with current_setting()
+SET backslash_quote             = off;
+
 BEGIN ISOLATION LEVEL REPEATABLE READ;      -- READ COMMITTED is unsound here
 SET LOCAL search_path = pg_catalog;         -- else an unqualified fence can be redefined
 -- capture write-set baseline (a delta, not a snapshot)
 
 -- (a) would this touch anything outside the fence?
 --     `IS NOT TRUE`, never `NOT (…)` — a NULL fence value is OUTSIDE the fence
+--     `<fence>` is the bare conjunction, each conjunct parenthesised:
+--     `(c1) AND (c2)`. The parens below are the outer wrap, giving
+--     `((c1) AND (c2)) IS NOT TRUE`. `IS` binds tighter than `AND`.
 SELECT count(*) FROM public.accounts
- WHERE (<statement's own predicate>) AND (tier = 'sandbox') IS NOT TRUE;
+ WHERE (<statement's own predicate>) AND (<fence>) IS NOT TRUE;
 --    > 0  →  ROLLBACK and report the count
 
+-- re-verify the pins: evaluating the fence above may have called a function
 UPDATE public.accounts SET settings = … WHERE … RETURNING id, tier;
 
+-- re-verify the pins: a BEFORE trigger can call set_config and move them
 -- (c) did any affected row end up outside the fence?   (catches tier := 'production')
 -- (d) affected rows <= max_rows                        (named relation only)
 SET CONSTRAINTS ALL IMMEDIATE;              -- deferred triggers must fire before (e)
+-- re-verify the pins: (c) evaluated the fence and this ran trigger code
 -- (e) write-set assert: nothing outside the marque's `objects` was written
 COMMIT;
 ```
 
-Three things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
+Six things here are easy to get wrong and each fails **open**: `NOT (fence)` lets a row with a NULL
 fence column pass every check ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md));
+joining conjuncts as `c1 AND c2` rather than `(c1) AND (c2)` lets one carrying a top-level `OR`
+rebind against the following `AND`; the
+session pins do not survive code the Pilot did not compose — a fence conjunct may call a function, a
+`BEFORE` trigger may, and so may a deferred constraint trigger fired by `SET CONSTRAINTS` — so they
+are re-verified before every step that follows any of it;
+composing a multi-conjunct fence as `(c1) AND (c2) IS NOT TRUE` rather than
+`((c1) AND (c2)) IS NOT TRUE` applies the TRUE-only test to the last conjunct alone, so a row failing
+any earlier one is never counted ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md));
 READ COMMITTED lets the pre-check and the statement see different snapshots; and **(e)** is what
 bounds writes the engine performs on the statement's behalf — a cascading delete returns one row and
 can destroy millions in a table no delegation names

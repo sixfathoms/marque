@@ -85,9 +85,9 @@ is pasted into a prompt.
   "purpose": "Unstick order 88213 reported in ticket ACME-4471",
   "declared_scope": {
     "target": "prod-primary", "role": "support_writer",
-    "operations": ["SELECT", "UPDATE"],
-    "objects": [ { "table": "public.orders", "columns": ["status", "updated_at"] } ],
-    "fence": "id = '88213'",
+    "operations": ["select", "update"],
+    "objects": [ { "schema": "public", "relation": "orders", "columns": ["status", "updated_at"] } ],
+    "fence": ["id = '88213'"],
     "max_rows": 1
   },
   "expires_in": "30m"
@@ -192,3 +192,4 @@ inside that window.
 - **2026-08-15**: Accepted.
 - **2026-08-16**: Amended after the expert panel's should-fix pass: constrained `on_behalf_of` and notified the named human at task open, bounded task TTL and rate, stated that only the agent's own declaration is frozen, and made explicit that the declared-scope signal bounds accidental blast radius rather than detecting compromise.
 - **2026-08-16**: Amended for the emergency paths and operator surfaces: an agent can never break glass either, for the same mechanical reason it cannot approve ([EDR-0037](./0037-emergency-paths.md)).
+- **2026-08-19**: Amended for the artefact spelling ([EDR-0041](./0041-one-spelling-for-a-scope.md)): the declared scope's `fence` is an array of conjuncts, its relation is two fields, and its operations are lowercase. Making the spellings agree exposed a question this record and [EDR-0029](./0029-the-fast-path-authority-chain.md) had between them and neither stated — an effective fence is the *union* of three conjunct sets, which check 7's identity comparison refuses. Open as [issue #20](https://github.com/sixfathoms/marque/issues/20), due before Phase 3b, where agents land. Until it is settled an agent has no fast path, which is the fail-closed reading.

@@ -106,8 +106,8 @@ A signed artefact in the same family as a standing order
   "to": "theo@acme.example",              // a named principal, never a group
   "target": "prod-primary",
   "role": "settings_writer",              // or "*" where policy permits
-  "scope": { "operations": ["UPDATE"],
-             "objects": [ { "schema": "public", "table": "*" } ] },   // or "any"
+  "scope": { "operations": ["update"],
+             "objects": [ { "schema": "public", "relation": "*" } ] },   // or "any"
   "co_sign": "none",                      // | "any_break_glass_holder" | "group:data-oncall"
   "max_ttl": "15m",
   "not_after": "2026-11-30T00:00:00Z",
@@ -225,3 +225,4 @@ The requirement the operator asked for, stated as mechanism:
 ## Changelog
 
 - **2026-08-16**: Accepted.
+- **2026-08-19**: Amended for the artefact spelling ([EDR-0041](./0041-one-spelling-for-a-scope.md)): the grant's `operations` are lowercase, and its relation field is named `relation` rather than `table`. The wildcard is unaffected — it is a value of the field, not a different shape, though that `"*"` is also a legal quoted identifier is [issue #22](https://github.com/sixfathoms/marque/issues/22). Separately, and with the decision untouched: this record lists the fence among the controls break-glass leaves unchanged, and no signed artefact on that path carries one — the grant has no `fence` field, and [EDR-0029](./0029-the-fast-path-authority-chain.md)'s break-glass verification compares none. True of the mechanism, hollow as a control, and open as [issue #26](https://github.com/sixfathoms/marque/issues/26).

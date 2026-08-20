@@ -174,7 +174,11 @@ a commit message.
   `SET CONSTRAINTS ALL IMMEDIATE` before the write-set check.** `NOT (fence)` lets a NULL-fenced row
   through every check; READ COMMITTED lets the pre-check and the statement see different snapshots; an
   unqualified fence can be redefined via `search_path`; and a deferred constraint trigger otherwise
-  fires at COMMIT, after the write set was read (EDR-0007, EDR-0033).
+  fires at COMMIT, after the write set was read (EDR-0007, EDR-0033). **A fence is a list of
+  conjuncts, composed `(c1) AND (c2)` and wrapped again before `IS NOT TRUE`** — unparenthesised, a
+  conjunct carrying a top-level `OR` rebinds against the following `AND`; and because `IS` binds
+  tighter than `AND`, `(c1) AND (c2) IS NOT TRUE` tests `c2` alone. Both come out wider than written
+  (EDR-0041).
 - **The write-set assertion bounds everything the engine writes on the statement's behalf.**
   `max_rows` bounds the named relation only; a cascade is invisible to `RETURNING` (EDR-0033).
 - **Every Pilot method verifies a submitter signature.** The control plane relays, it does not

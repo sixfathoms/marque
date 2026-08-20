@@ -137,7 +137,9 @@ The foundation the rest of the authority model stands on
    `unsupported`. Start smaller than feels useful — single-relation `UPDATE` and `DELETE` with a
    conjunctive predicate over literals. A too-narrow subset produces a good error message; a
    too-broad one produces a soundness bug.
-3. Scope extraction: relation, columns written, and the predicate the fence will be built from.
+3. Scope extraction: relation, columns written, and the predicate the fence will be built from —
+   spelled as [EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md) has it, which is what the
+   loader already enforces.
 4. The conformance corpus, populated. Include the cases that should *fail* — a function call in a
    predicate, a CTE, a second relation appearing via `FROM`, a subquery — because a corpus of only
    happy paths tests nothing.
@@ -194,10 +196,18 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 ([EDR-0007](../../edrs/0007-delegation-by-containment-proof.md),
 [EDR-0033](../../edrs/0033-assert-the-whole-write-set-not-just-the-named-relation.md)).
 
-1. Session setup: `REPEATABLE READ`, pinned `search_path`, `SET CONSTRAINTS ALL IMMEDIATE`, statement
-   and lock timeouts.
-2. The three checks — pre-check, post-assert, row-count assert — each **TRUE-only**, none of them
-   `NOT (…)`.
+1. Session setup: `REPEATABLE READ`, pinned `search_path`, statement and lock timeouts — plus
+   `standard_conforming_strings` and `backslash_quote`, which are read by the lexer and so must be
+   settled in an earlier round trip and **verified** with `current_setting()` rather than assumed
+   from the `SET`. All three pins are re-verified before every step that follows code the Pilot did
+   not compose, not once at `BEGIN`: a fence conjunct may call a function, a `BEFORE` trigger may,
+   and so may a deferred constraint trigger fired by `SET CONSTRAINTS ALL IMMEDIATE` — which runs
+   immediately before the write-set assertion, not at setup.
+2. The pre-check and the post-assert are **TRUE-only**, neither of them `NOT (…)`; the row-count
+   assertion is the separate numeric one that enforces `max_rows`. A fence is a list of conjuncts, so
+   each is composed `(c1) AND (c2) AND …` and the whole conjunction is wrapped again before
+   `IS NOT TRUE` ([EDR-0041](../../edrs/0041-one-spelling-for-a-scope.md)). Both halves fail open if
+   skipped, and both look right without them.
 3. The write-set assertion over everything the engine wrote, not only the named relation.
 4. The execution nonce, claimed **before** the statement runs, with the budget consumed by the claim
    ([EDR-0011](../../edrs/0011-execution-is-idempotent-and-fenced.md)).
@@ -205,8 +215,23 @@ The milestone with the most ways to be subtly wrong, so it is mostly adversarial
 
 **Exit:** each escape route proven to abort — a row whose fence predicate is NULL; a row an `UPDATE`
 moves *out* of scope; a cascade the fence never named; a deferred constraint trigger that would
-otherwise fire after the write set was read; a crash between claim and commit losing the attempt
-rather than the count.
+otherwise fire after the write set was read; a two-conjunct fence whose first conjunct carries a
+top-level `OR`, composed both correctly and as `c1 AND c2`, where only the second admits a row
+outside the fence; the same fence composed as `(c1) AND (c2) IS NOT TRUE` rather than
+`((c1) AND (c2)) IS NOT TRUE`, where a row failing `c1` alone goes uncounted; a conjunct that closes
+its own parenthesis; a conjunct carrying a `$n` parameter reference, a comment token or a control
+character; an empty fence array, an empty-string conjunct and a duplicate conjunct, each refused by
+the Pilot rather than assumed away at authoring; a `BEFORE` trigger on the target that calls
+`set_config` to move `search_path` out from under the checks that follow the statement; a deferred
+constraint trigger that calls `set_config` between `SET CONSTRAINTS ALL IMMEDIATE` and the write-set
+assertion; a fence conjunct that calls `set_config` during the pre-check and leaves the pins moved,
+caught before (b); and a crash between claim and commit losing the attempt rather than the count.
+
+One escape route is deliberately **not** on that list, because it does not abort: a conjunct whose
+function restores `search_path` on exit, or which simply returns a spoiled answer, defeats the
+pre-check without leaving anything for a later check to see. That is the gap pinned to
+[issue #25](https://github.com/sixfathoms/marque/issues/25), and M5 records it rather than implying a
+control it does not have.
 
 ### M6 — The logbook
 

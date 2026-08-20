@@ -68,9 +68,9 @@ delegation plus a per-clause account of how it got there:
   "source": "Sam can always update the settings field on accounts, for sandbox accounts, up to 100 rows.",
   "compiled": {
     "to": "sam@acme.example", "target": "prod-primary", "role": "settings_writer",
-    "operations": ["UPDATE"],
-    "objects": [ { "table": "public.accounts", "columns": ["settings"] } ],
-    "fence": "tier = 'sandbox'",
+    "operations": ["update"],
+    "objects": [ { "schema": "public", "relation": "accounts", "columns": ["settings"] } ],
+    "fence": ["tier = 'sandbox'"],
     "max_rows": 100,
     "not_after": "2026-11-30T00:00:00Z",
     "issued_at": "…", "roster_epoch": 47   // the grantor signature resolves against this epoch
@@ -142,9 +142,15 @@ come from a database that operators and customers write to. They are passed as a
 escaped data block, never in an instruction position**, and the compiler's *output* is constrained
 rather than its input trusted:
 
-- every literal in an emitted fence predicate must come from the supplied distinct-value set;
-- every named column must exist in the supplied schema;
-- the predicate must parse under [EDR-0007](./0007-delegation-by-containment-proof.md)'s grammar.
+- every literal in an emitted fence conjunct must come from the supplied distinct-value set;
+- every named column must exist in the supplied schema, and belong to the target relation
+  ([EDR-0007](./0007-delegation-by-containment-proof.md) rule 5);
+- **each conjunct** must satisfy the shape rules in
+  [EDR-0041](./0041-one-spelling-for-a-scope.md) — it parses standalone as a boolean expression, and
+  carries no comment token, newline, control character or parameter reference. An earlier version of
+  this list said "the predicate must parse under EDR-0007's grammar", which is a *statement* grammar;
+  no expression subset for a fence exists yet, and that gap is
+  [issue #25](https://github.com/sixfathoms/marque/issues/25).
 
 A compilation failing any of those is refused. **What those constraints actually buy is narrower than
 it first reads**: they make a compilation *ungroundable in fabricated evidence* — a literal it did not
@@ -206,3 +212,4 @@ what someone is already permitted to do.
 - **2026-08-15**: Amended after review: the signed compilation supplies the approver limb of a marque minted by a delegation match, and travels with it so a Pilot can verify offline that a human signed the scope ([EDR-0029](./0029-the-fast-path-authority-chain.md)).
 - **2026-08-16**: Amended after the expert panel's should-fix pass: gated distinct values to columns classified non-sensitive — this is the only path by which production data reaches a model whose output becomes a candidate authority artefact — and declared schema evidence untrusted input with the compiler's output constrained rather than its input trusted.
 - **2026-08-16**: Amended in the second panel's should-fix pass: added `issued_at` and `roster_epoch`; and corrected an overclaim — the output constraints make a compilation ungroundable in fabricated evidence, they do not bound its *meaning*, so a steered-but-well-formed predicate is bounded by the grantor's signature and attenuation instead.
+- **2026-08-19**: Amended for the artefact spelling ([EDR-0041](./0041-one-spelling-for-a-scope.md)): the compiled delegation's `fence` is an array of conjuncts, its relation is two fields, and its operations are lowercase. The `derivation` entries stay prose — they are an account for a human of how a clause was compiled, not a copy of the compiled field. The compiler's output constraints also required an emitted fence to "parse under EDR-0007's grammar", which is a *statement* grammar — the mirror of the false attribution removed from EDR-0007 in this change: each record pointed at the other for a rule neither states. They are now stated per conjunct, against EDR-0041's shape rules and EDR-0007 rule 5's target-relation requirement, with what a conjunct may *do* left open as [issue #25](https://github.com/sixfathoms/marque/issues/25). The cost lands here rather than anywhere else: the grantor now signs a list where they used to sign a predicate.
