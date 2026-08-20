@@ -37,11 +37,22 @@ Every failure mode was **seen to fail** before being relied on — a value remov
 value added to one, the same values reordered, a marker deleted — each producing the intended message
 and each restoring cleanly to green.
 
-That was not sufficient. Review found three ways the first version passed *while the vocabularies
-disagreed*: an annotated row like `` | `hotfix` (planned) | `` did not match the value pattern and
-was silently dropped; a second `<!-- @vocabulary:… -->` marker shadowed the real table, so every
-later edit to it would have gone unchecked; and a value listed twice was invisible to a
-membership test. Each is now a loud failure of its own, and each was seen to fail before being
-believed. The first version had been watched to fail in the four directions its author thought of,
-which is exactly how a guard ends up trusted for more than it does — and is the same defect, one
-level up, as the arrangement it replaces.
+That was not sufficient, twice. Review made the build pass *while the vocabularies disagreed* in
+seven distinct ways across two rounds — an annotated row the value pattern did not match; a duplicate
+marker shadowing the real table; a value listed twice, invisible to a membership test; a row with a
+leading space, which GFM permits; a row with no leading pipe, which GFM also permits; a value
+smuggled into the header row, which was skipped unconditionally; and a marker with a decoy table
+inside a fenced code block.
+
+The root cause of the last four is one decision: **the table was inferred by matching lines that
+begin with `|`.** That is not what a markdown table is, and the build already had a real parser
+imported for other purposes. The check now reads the **AST** — a marker is only a marker if it is a
+top-level HTML node, so a fence cannot hold one; the header is a row like any other and is checked
+rather than skipped; and the shape of a row is a fact about the tree rather than a guess about the
+text.
+
+The lesson is not that the mutations were wrong. It is that they were chosen from the same mental
+model that wrote the code, so they tested the four failures its author had thought of — which is
+exactly how a guard ends up trusted for more than it does, and is the same defect one level up as
+the arrangement it replaces. All eight directions now fail, and are recorded here so the next
+person to extend this knows which ones were not obvious.

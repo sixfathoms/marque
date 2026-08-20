@@ -804,12 +804,14 @@ async function main() {
 const VOCABULARIES = [
   {
     marker: 'implementation',
+    header: 'Implementation',
     file: 'edrs/README.md',
     constant: 'IMPLEMENTATION_STATES in website/build.mjs',
     values: () => IMPLEMENTATION_STATE_NAMES,
   },
   {
     marker: 'status',
+    header: 'Status',
     file: 'edrs/README.md',
     constant: 'VALID_STATUSES in website/build.mjs',
     // A Set has no meaningful order, so this one is compared as a sorted set.
@@ -818,68 +820,83 @@ const VOCABULARIES = [
   },
   {
     marker: 'changelog-tags',
+    header: 'Tag',
     file: 'changelog/README.md',
     constant: 'CHANGELOG_TAGS in website/build.mjs',
     values: () => CHANGELOG_TAG_NAMES,
   },
 ];
 
-// Pull the first column out of the markdown table following a marker comment.
-// Values are the backticked cell contents, so a row whose first cell is not
-// `like this` is not a vocabulary row and is skipped — which is what lets the
-// table carry a header and a separator without special-casing them.
-function readVocabularyTable(text, marker, file, problems) {
-  const tag = `<!-- @vocabulary:${marker} -->`;
-  const first = text.indexOf(tag);
-  if (first === -1) {
+// Read a vocabulary table out of a README, from the MARKDOWN AST rather than
+// from the text. The first version of this matched lines beginning with `|`,
+// and review made the build pass while a vocabulary was wrong in four ways:
+// GFM permits a leading space before the pipe and permits rows with no leading
+// pipe at all, so two valid rows were invisible; the header and separator lines
+// were skipped unconditionally, so a value hidden in the header went unread;
+// and a marker with a decoy table inside a fenced code block shadowed the real
+// one, because indexOf does not know what a fence is.
+//
+// None of those is exotic — they are ordinary markdown. Inferring a table with
+// string matching was the mistake, and the parser the build already uses does
+// not make it.
+function readVocabularyTable(text, marker, file, problems, headerLabel) {
+  const tree = unified().use(remarkParse).use(remarkGfm).parse(text);
+  const cellText = (node) => {
+    let out = '';
+    visit(node, (n) => {
+      if (n.type === 'text' || n.type === 'inlineCode') out += n.value;
+    });
+    return { text: out.trim(), code: node.children?.length === 1 && node.children[0].type === 'inlineCode' };
+  };
+
+  // Only TOP-LEVEL html nodes count, so a marker inside a code fence is not one:
+  // a fenced block parses as `code`, and its contents never become nodes.
+  const hits = tree.children.filter((n) => n.type === 'html' && n.value.trim() === `<!-- @vocabulary:${marker} -->`);
+  if (hits.length === 0) {
     problems.push(
-      `${file}: no ${tag} marker.\n` +
-        `  The build compares that table against a constant, and it locates the\n` +
-        `  table by this marker. Put it on the line before the table.`,
+      `${file}: no <!-- @vocabulary:${marker} --> marker outside a code block.\n` +
+        `  The build compares that table against a constant and finds it by this marker.`,
     );
     return null;
   }
-  // A second marker would mean the first table shadows the real one, and every
-  // later edit to the real one would go unchecked while the build stayed green.
-  if (text.indexOf(tag, first + tag.length) !== -1) {
-    problems.push(`${file}: ${tag} appears more than once, so only the first table would ever be compared`);
+  if (hits.length > 1) {
+    problems.push(`${file}: <!-- @vocabulary:${marker} --> appears ${hits.length} times; only the first table would ever be compared`);
     return null;
   }
 
-  const lines = text.slice(first).split('\n').slice(1);
+  const table = tree.children[tree.children.indexOf(hits[0]) + 1];
+  if (!table || table.type !== 'table') {
+    problems.push(
+      `${file}: <!-- @vocabulary:${marker} --> is not immediately followed by a table` +
+        (table ? ` (found a ${table.type})` : ' (end of file)'),
+    );
+    return null;
+  }
+
+  // The header is a real AST row, so it is checked rather than skipped — a
+  // value smuggled into it would otherwise never be read.
+  const [header, ...rows] = table.children;
+  const headerCell = cellText(header.children[0]).text;
+  if (headerCell !== headerLabel) {
+    problems.push(`${file}: the table under <!-- @vocabulary:${marker} --> has first column '${headerCell}', expected '${headerLabel}'`);
+    return null;
+  }
+
   const values = [];
-  let row = 0;
-  for (const line of lines) {
-    if (!line.startsWith('|')) {
-      if (row) break;
-      // The table must START here. Anything but blank lines between the marker
-      // and the table means the marker is not on the table it looks attached to.
-      if (line.trim()) {
-        problems.push(`${file}: ${tag} is not immediately followed by a table (found: ${JSON.stringify(line.trim().slice(0, 40))})`);
-        return null;
-      }
-      continue;
-    }
-    row += 1;
-    // Row 1 is the header, row 2 the separator. Neither carries a value.
-    if (row <= 2) continue;
-    const cell = line.split('|')[1]?.trim() ?? '';
-    const m = /^`([^`]+)`$/.exec(cell);
-    if (!m) {
-      // Silence here is the whole danger: an annotated row like
-      // `| `hotfix` (planned) |` would otherwise vanish and the build would
-      // pass while the table documented a value the constant rejects.
+  for (const [i, row] of rows.entries()) {
+    const { text: value, code } = cellText(row.children[0]);
+    if (!code || !value) {
       problems.push(
-        `${file}: row ${row - 2} under ${tag} does not start with a single \`backticked\` value\n` +
-          `  got: ${JSON.stringify(cell)}\n` +
-          `  Every row of a vocabulary table is a value. Annotations belong in the second column.`,
+        `${file}: row ${i + 1} under <!-- @vocabulary:${marker} --> is not a single \`backticked\` value\n` +
+          `  got: ${JSON.stringify(value)}\n` +
+          `  Every row is a value; annotations belong in the second column.`,
       );
       return null;
     }
-    values.push(m[1]);
+    values.push(value);
   }
   if (!values.length) {
-    problems.push(`${file}: the table under ${tag} has no value rows`);
+    problems.push(`${file}: the table under <!-- @vocabulary:${marker} --> has no value rows`);
     return null;
   }
   return values;
@@ -890,7 +907,7 @@ async function assertVocabularies() {
   const problems = [];
   for (const v of VOCABULARIES) {
     if (!cache.has(v.file)) cache.set(v.file, await readFile(join(DOCS_DIR, v.file), 'utf8'));
-    const documented = readVocabularyTable(cache.get(v.file), v.marker, `docs/${v.file}`, problems);
+    const documented = readVocabularyTable(cache.get(v.file), v.marker, `docs/${v.file}`, problems, v.header);
     if (documented === null) continue;
     const enforced = v.values();
     const inTable = v.sorted ? [...documented].sort() : documented;

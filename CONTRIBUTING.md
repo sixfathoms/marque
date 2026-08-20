@@ -46,8 +46,8 @@ pnpm run serve
 The build fails on a record with a missing or oversized `summary`, a record with a missing or unknown
 `implementation`, a duplicate or mismatched id, a `proposed` record past its `proposed_until`, a
 changelog entry with an unknown tag or a malformed filename, a doc page in a directory that is not a
-sidebar category, and a vocabulary table in a README that has drifted from the constant the build
-enforces. That is deliberate: these are the mistakes that otherwise ship and are noticed months
+sidebar category, and a vocabulary table in a README that has drifted from the constant it mirrors or
+cannot be read as a vocabulary table. That is deliberate: these are the mistakes that otherwise ship and are noticed months
 later.
 
 **Render any mermaid diagram before committing.** Nothing validates them at build time — a broken

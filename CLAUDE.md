@@ -46,8 +46,10 @@ The build **is** the test suite. It fails on: a record with a missing or over-24
 with no `implementation_note`; a duplicate id or an id/filename mismatch; a `proposed` record past
 its `proposed_until`; a changelog entry with an unknown tag, a malformed filename, or a `## `
 heading; a doc page in a directory that is not a sidebar category; a changelog page missing its
-`<!-- @entries -->` marker; and a vocabulary table that disagrees with its constant, is out of order,
-lists a value twice, or has lost its `<!-- @vocabulary:… -->` marker.
+`<!-- @entries -->` marker; and a vocabulary table that disagrees with the constant it mirrors, or
+that cannot be read as a vocabulary table at all. That last clause is a category rather than a list
+on purpose — the enumeration of ways a table can be unreadable grew three times under review, and an
+exhaustive list here would just go stale again.
 
 ## Rules
 
@@ -64,9 +66,11 @@ lists a value twice, or has lost its `<!-- @vocabulary:… -->` marker.
    and `IMPLEMENTATION_STATES` and `VALID_STATUSES` with `docs/edrs/README.md`. Adding a value means
    editing both, and **the build fails if you edit only one** — it parses the tables back out and
    compares, naming the value and the file to fix. It finds each table by an explicit
-   `<!-- @vocabulary:… -->` marker, and refuses a marker that appears twice, a marker with prose
-   before its table, and a row that is not a single backticked value, because each of those would
-   otherwise let the build pass while comparing the wrong thing or nothing at all.
+   `<!-- @vocabulary:… -->` marker, read from the **markdown AST** rather than by matching lines —
+   which is the difference between a check and the appearance of one. Every way a table can fail to
+   be a vocabulary table is a loud failure: a repeated marker, a marker inside a code fence, a table
+   that is not there, an unexpected header, a row that is not a single backticked value. Each of
+   those was a demonstrated silent pass in an earlier draft.
 4. **The site is deliberately not indexable or archivable.** Marque is at design stage, so
    `website/templates/layout.html` carries `noindex, nofollow, noarchive, nosnippet, noimageindex`
    plus per-crawler and archiver variants, and the build **fails** if any emitted page lacks them. A
