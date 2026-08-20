@@ -132,6 +132,32 @@ exists to correct. What changes is the mechanism, because the old one is not ava
    name to a host is undecided. Flagged rather than assumed:
    [issue #36](https://github.com/sixfathoms/marque/issues/36).
 
+### What this rule is for, and who it does not stop
+
+Stated because five rounds of review defeated the mechanism five times, and the sixth attempt would
+have succeeded too. **The rule catches a driver arriving by accident. It does not stop a committer
+who is trying.**
+
+That is not a hedge, it is the boundary the mechanism actually has, and it is worth being precise
+about because the two cases need different answers:
+
+- **The accident** — someone adds a query helper to a Harbourmaster package, reaches for `pgx`
+  because that is what is in `go.mod`, and nobody notices in review. This is the realistic case, it
+  is the one EDR-0005's original sentence caught for free, and it is the one this rule catches.
+- **The adversary with commit access** — this rule cannot help, and neither can any check that lives
+  in the same repository as the thing it checks. Demonstrated during review, each with the binary
+  linking a driver and every mechanism green: a package under `testdata/`, `_x/` or `.x/`; a
+  directory reached through a symlink alias; a wrapper module that imports a driver so the first-party
+  import names something else; and `#cgo LDFLAGS: -lpq` with no Go import at all. Not demonstrated
+  and not doubted: `go:linkname`, `-overlay`, `-toolexec`, a `go.work` pointing outside the
+  repository. **That list has no end**, which is the point. A committer who wants a driver in the
+  binary will get one, and the control that stops them is code review and commit signing, not a test.
+
+So the mechanism is chosen to make the accident loud and cheap to catch, and its residue is listed
+rather than argued away. A reviewer who defeats it with a deliberate construction has demonstrated
+something already written here, not found a new hole — the question worth asking of this record is
+whether every claim in it is true as stated, which is a finite question.
+
 **Say plainly what this is not.** The test reads **imports**, not capability. `database/sql`
 registration is process-wide, so once `internal/harbourmaster/store` registers a driver, any package
 in the binary can call `sql.Open("pgx", …)` without importing anything the linter would see. This is
