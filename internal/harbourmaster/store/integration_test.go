@@ -849,3 +849,52 @@ func TestOpenRefusesABadDSNImmediately(t *testing.T) {
 		t.Errorf("the error should say connecting failed; got %v", err)
 	}
 }
+
+// Migrate must propagate a migration's failure. Changing the error check after
+// applyOne from `err != nil` to `err == nil` left the whole suite green: every
+// test migrates a clean database, where nothing fails.
+func TestAFailingMigrationIsReported(t *testing.T) {
+	db, _ := freshDB(t)
+	ctx := t.Context()
+
+	// A table the first migration also creates, so its CREATE TABLE fails.
+	if _, err := db.ExecContext(ctx, `CREATE TABLE public.tenants (id text)`); err != nil {
+		t.Fatalf("planting the conflict: %v", err)
+	}
+
+	err := Migrate(ctx, db)
+	if err == nil {
+		t.Fatal("Migrate reported success while its migration failed")
+	}
+	if !strings.Contains(err.Error(), "0001") {
+		t.Errorf("the error should name the migration that failed; got %v", err)
+	}
+
+	// And nothing was recorded, because the DDL and its bookkeeping row commit
+	// together.
+	var n int
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM pg_tables WHERE tablename = 'schema_migrations'`).Scan(&n); err != nil {
+		t.Fatalf("looking for schema_migrations: %v", err)
+	}
+	if n == 1 {
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM public.schema_migrations`).Scan(&n); err != nil {
+			t.Fatalf("counting: %v", err)
+		}
+		if n != 0 {
+			t.Errorf("a failed migration recorded %d rows", n)
+		}
+	}
+}
+
+// Zero means forever, and a pool that never retires a connection ages badly
+// across a failover, a DNS change or a pooler in front.
+func TestThePoolRetiresConnections(t *testing.T) {
+	if poolMaxLifetime <= 0 || poolMaxIdleTime <= 0 {
+		t.Errorf("poolMaxLifetime=%v poolMaxIdleTime=%v; zero disables retirement entirely",
+			poolMaxLifetime, poolMaxIdleTime)
+	}
+	if poolMaxIdleTime > poolMaxLifetime {
+		t.Errorf("an idle bound longer than the lifetime bound never applies")
+	}
+}

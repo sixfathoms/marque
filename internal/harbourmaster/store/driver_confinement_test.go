@@ -17,7 +17,7 @@ import (
 )
 
 // Drivers this project could plausibly link, mapped to the ONE package allowed
-// to import each. A driver with no entry is allowed nowhere.
+// to import each. A driver with no entry here is caught by nothing.
 //
 // This is a denylist and therefore not engine-complete: a driver with no entry
 // here is caught by nothing. A reviewer imported go-mssqldb, go-ora, sqlite and
@@ -433,7 +433,7 @@ func TestWalkReachesGeneratedCode(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("the walk skipped gen/, which the test binaries and schemacheck link")
+	t.Fatal("the walk skipped gen/, which the test binaries and schemacheck link — no shipped binary does")
 }
 
 func repoRoot(t *testing.T) string {

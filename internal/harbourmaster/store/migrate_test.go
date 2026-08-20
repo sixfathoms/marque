@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -411,5 +412,70 @@ func TestADOBlockExecutingAForbiddenStatementIsRefused(t *testing.T) {
 				t.Errorf("%s was accepted; PostgreSQL refuses it at run time", name)
 			}
 		})
+	}
+}
+
+// Migrations are sorted numerically, and with one migration in the repository
+// nothing could see the sort reversed — a reviewer negated it and both suites
+// stayed green. Two migrations is the smallest set where order is observable,
+// and ten is where lexical and numeric order disagree.
+func TestMigrationsAreSortedNumerically(t *testing.T) {
+	files := fstest.MapFS{}
+	for i := 1; i <= 10; i++ {
+		files[fmt.Sprintf("migrations/%04d_m.sql", i)] = &fstest.MapFile{
+			Data: []byte(fmt.Sprintf("SELECT %d;", i)),
+		}
+	}
+	got, err := loadMigrationsFrom(files)
+	if err != nil {
+		t.Fatalf("loading ten migrations: %v", err)
+	}
+	for i, m := range got {
+		if m.number != i+1 {
+			t.Fatalf("migration %d of the set is number %d (%s); the set is not in numeric order",
+				i, m.number, m.name)
+		}
+	}
+
+	// And unpadded names, where lexical order puts 10 before 2.
+	got, err = loadMigrationsFrom(fstest.MapFS{
+		"migrations/1_a.sql":  &fstest.MapFile{Data: []byte("SELECT 1;")},
+		"migrations/2_b.sql":  &fstest.MapFile{Data: []byte("SELECT 2;")},
+		"migrations/10_c.sql": &fstest.MapFile{Data: []byte("SELECT 10;")},
+	})
+	if err == nil {
+		if got[1].number != 2 {
+			t.Errorf("unpadded names sorted lexically: got %d second, want 2", got[1].number)
+		}
+	}
+}
+
+// containsPhrase's identifier boundaries, at the edges. Changing any endpoint
+// of the ranges made vacuum0, vacuuma or vacuumZ match, and nothing noticed.
+func TestContainsPhraseIdentifierBoundaries(t *testing.T) {
+	for body, want := range map[string]bool{
+		"VACUUM":     true,
+		"VACUUM;":    true,
+		"a VACUUM b": true,
+		"(VACUUM)":   true,
+		"vacuum0":    false,
+		"vacuum9":    false,
+		"vacuuma":    false,
+		"vacuumz":    false,
+		"vacuumA":    false,
+		"vacuumZ":    false,
+		"vacuum_":    false,
+		"vacuum$":    false,
+		"0vacuum":    false,
+		"zvacuum":    false,
+		"Avacuum":    false,
+		"_vacuum":    false,
+		"$vacuum":    false,
+		"log_vacuum": false,
+		"vacuum_log": false,
+	} {
+		if got := containsPhrase(strings.ToUpper(body), "VACUUM"); got != want {
+			t.Errorf("containsPhrase(%q, VACUUM) = %v, want %v", body, got, want)
+		}
 	}
 }

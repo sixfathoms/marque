@@ -158,7 +158,9 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // a concurrent REFRESH of a materialised view is refused although PostgreSQL
 // runs it inside a transaction perfectly well, because the list matches
 // CONCURRENTLY on its own. Both over-refuse, which is the direction to be wrong
-// in, and both are a reworded migration away from passing. This is an accident-guard for
+// in, and both are a reworded migration away from passing. `CREATE SUBSCRIPTION`
+// is a third: with `connect = false` it runs inside a transaction, and the list
+// does not read options. This is an accident-guard for
 // the people who write these migrations, not a security control; nothing stops
 // someone determined from spelling a statement in a way it does not match.
 func rejectNonTransactional(name, body string) error {
@@ -200,7 +202,7 @@ func rejectNonTransactional(name, body string) error {
 		"CONCURRENTLY",
 		"VACUUM",
 		"CLUSTER",
-		"DISCARD",
+		"DISCARD ALL",
 		"CREATE DATABASE",
 		"DROP DATABASE",
 		"CREATE TABLESPACE",
@@ -347,9 +349,12 @@ func collapseSpace(s string) string {
 // containsPhrase reports whether upper-cased phrase appears in body delimited
 // by non-identifier characters, so `vacuum_log` is not a VACUUM.
 func containsPhrase(body, phrase string) bool {
+	// Upper case only: body is upper-cased below before any of this runs, so a
+	// lowercase range here would be dead code that reads as though it were
+	// load-bearing — a reviewer mutated one and nothing noticed, which is how
+	// it was found.
 	isIdent := func(b byte) bool {
-		return b == '_' || b == '$' ||
-			(b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+		return b == '_' || b == '$' || (b >= '0' && b <= '9') || (b >= 'A' && b <= 'Z')
 	}
 	upper := strings.ToUpper(body)
 	for i := 0; ; {
@@ -464,6 +469,13 @@ func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 // lock and waits for the refusal. At thirty seconds that test either takes
 // thirty seconds or asserts nothing; the earlier version chose a deadline
 // shorter than the timeout and failed itself.
+// Bounds on how long a pooled connection lives. Zero means forever, which is
+// what a mutation to either of these produced while nothing noticed.
+const (
+	poolMaxLifetime = 30 * time.Minute
+	poolMaxIdleTime = 5 * time.Minute
+)
+
 var lockWait = "30s"
 
 // runtimeRole is the role the Harbourmaster serves as, and the one the migrator
@@ -685,8 +697,8 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	// Connections do not live forever. An unbounded lifetime ages badly across
 	// a failover, a DNS change or a pooler in front, where the pool keeps
 	// handing out connections to somewhere that has moved.
-	db.SetConnMaxLifetime(30 * time.Minute)
-	db.SetConnMaxIdleTime(5 * time.Minute)
+	db.SetConnMaxLifetime(poolMaxLifetime)
+	db.SetConnMaxIdleTime(poolMaxIdleTime)
 
 	// Verify positively rather than lazily. A pool that connects on first use
 	// hides broken authentication until an incident (EDR-0005).
