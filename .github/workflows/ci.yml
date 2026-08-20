@@ -66,6 +66,24 @@ jobs:
       - run: make build
       - run: make test
 
+  # M1's exit criterion: the six steps against a real PostgreSQL. linux/amd64
+  # only, and behind a build tag, so `make test` stays offline — the plan's
+  # tiers say why. It is a separate job rather than a step in build-test
+  # because a database failure and a compile failure should not report as one
+  # result.
+  integration:
+    name: integration (linux/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - run: make test-integration
+
   lint:
     name: lint
     runs-on: ubuntu-latest

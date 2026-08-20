@@ -14,6 +14,7 @@ linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
     - bodyclose
+    - depguard
     - errorlint
     - exhaustive
     - gosec
@@ -28,6 +29,65 @@ linters:
     - usetesting
 
   settings:
+    # EDR-0042. EDR-0005 originally said the Harbourmaster "has no database
+    # driver for target engines linked in" — a mechanism that stopped being
+    # available when EDR-0013 fixed Marque's own state on PostgreSQL, since
+    # PostgreSQL is also a target engine and one driver serves both.
+    #
+    # This block is NOT the replacement. TestNoBinaryLinksADriverOutsideItsHome
+    # in internal/harbourmaster/store is, with a filesystem walk beside it. But
+    # NOT because this linter is incapable: several claims of that shape have
+    # been made on this repository and every one was false. It does see blank
+    # imports (revive's blank-imports rule reports at the same line and
+    # --uniq-by-line hid the second issue); it does read a file behind a build
+    # tag under --build-tags, which `make lint` now passes; and gen/ is skipped
+    # by the two deletable settings below, not by inability. EDR-0042 retracts
+    # them all.
+    #
+    # The honest split is that every mechanism's coverage is CONFIGURATION —
+    # this one's is flags and exclusions, the walk's is its skip rule, go list's
+    # is the patterns it is given — so none may claim capability, and all are
+    # probed. This one reports at edit time, and is deliberately WIDER: its
+    # exemptions are directory globs rather than exact packages.
+    #
+    # What import discipline buys either way is that the capability arrives by a
+    # reviewed edit rather than by accident. It is not capability containment:
+    # database/sql registration is process-wide, so a package importing no
+    # driver can still sql.Open one by name.
+    #
+    # Editing this block is editing a security control.
+    depguard:
+      rules:
+        # Two packages may hold a target-engine driver: the Harbourmaster's own
+        # store, and the Pilot's adapter, which must have one to reach a target.
+        control-plane-driver:
+          files:
+            - "$all"
+            - "!**/internal/harbourmaster/store/**"
+            - "!**/internal/pilot/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
+            - pkg: github.com/lib/pq
+              desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
+            - pkg: github.com/jackc/pgconn
+              desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
+            - pkg: github.com/jackc/pgproto3
+              desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
+        # An engine Marque does not store its own state in has no CONTROL-PLANE
+        # exception: its only home is the Pilot's adapter, which is why the
+        # Pilot tree is excluded below. EDR-0013 forced the PostgreSQL one, and
+        # nothing forces this.
+        no-other-target-engine:
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!**/internal/pilot/**"
+          deny:
+            - pkg: github.com/go-sql-driver/mysql
+              desc: a MySQL driver is a target driver only; the control plane stores no state in MySQL (EDR-0042)
+            - pkg: github.com/ziutek/mymysql
+              desc: a MySQL driver is a target driver only; the control plane stores no state in MySQL (EDR-0042)
     misspell:
       # British spelling is a house rule for prose (CONTRIBUTING.md), and
       # comments are prose. This is the rule enforced rather than remembered.

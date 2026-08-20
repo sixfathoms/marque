@@ -8,10 +8,9 @@ option go_package = "github.com/sixfathoms/marque/gen/marque/v1;marquev1";
 
 // HarbourmasterService is the control plane: requests, policy, delegations and
 // the logbook. It never touches a target database and never holds a target
-// credential (EDR-0001, EDR-0005).
-//
-// At M0 it carries one method, which exists so that the annotation rule and
-// `buf breaking` are wired up while there is exactly one thing to get right.
+// credential (EDR-0001, EDR-0005). From M1 the Harbourmaster's store package
+// connects to one database, its own, through the single package EDR-0042
+// confines the driver to. No binary links it yet.
 service HarbourmasterService {
   // GetVersion reports the software the control plane is running, so a client
   // can say what it was talking to.
@@ -26,6 +25,205 @@ service HarbourmasterService {
       idempotency: IDEMPOTENCY_NATURAL
     };
   }
+
+  // Submit records a statement an operator wants to run. It decides nothing:
+  // the statement is not parsed, not scoped and not rehearsed at M1, and the
+  // reply carries the request's reference so the operator can watch it
+  // (EDR-0038).
+  rpc Submit(SubmitRequest) returns (SubmitResponse) {
+    // KEYED on the caller's own key rather than NATURAL. A resubmitted
+    // statement is a *second request* by default — two people asking for the
+    // same change is not one change — so sameness has to be asserted by the
+    // caller rather than inferred from the text.
+    //
+    // This is a promise that cannot be taken back: EDR-0040 makes KEYED to
+    // UNSAFE, and moving the key's field, both breaking changes needing a new
+    // method name. Declared KEYED because it is true, not because it leaves
+    // room.
+    option (marque.v1.behaviour) = {
+      idempotency: IDEMPOTENCY_KEYED
+      idempotency_field: "idempotency_key"
+    };
+  }
+
+  // GetRequest returns one request by reference. A reference is an identifier
+  // and not a capability, so resolving one still requires entitlement and a
+  // caller who may not see it gets not-found rather than permission-denied —
+  // which is M4's work, since M1 has no identity to check (EDR-0038).
+  rpc GetRequest(GetRequestRequest) returns (GetRequestResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (marque.v1.behaviour) = {
+      safe: true
+      idempotency: IDEMPOTENCY_NATURAL
+    };
+  }
+
+  // Approve records that a named human approved a request at a stage.
+  //
+  // At M1 this writes a row and nothing more. It is not an approval in the
+  // sense the rest of the design means: an approval is a signature over a
+  // payload, verifiable offline by a Pilot that can call nobody back
+  // (EDR-0004), and M3 replaces this method's effect with one. The name is
+  // plain on purpose so nothing here reads as an early marque.
+  rpc Approve(ApproveRequest) returns (ApproveResponse) {
+    // NATURAL because the row is keyed by (request, stage, approver): the same
+    // person approving the same stage twice is one approval.
+    //
+    // M3 inherits that promise. EDR-0040 forbids NATURAL becoming KEYED or
+    // UNSAFE — both break a client that cached the old policy — so if a signed
+    // approval turns out not to be naturally idempotent, M3 needs a new method
+    // name rather than a new annotation. Declaring it NATURAL says the repeat
+    // is genuinely harmless, which for a row keyed on those three columns it
+    // is.
+    option (marque.v1.behaviour) = {idempotency: IDEMPOTENCY_NATURAL};
+  }
+
+  // RecordExecution stores what a Pilot reported about an attempt. The Pilot
+  // records the outcome in its own ledger first — that is the fence — and then
+  // reports it here, retried until acknowledged (EDR-0011).
+  rpc RecordExecution(RecordExecutionRequest) returns (RecordExecutionResponse) {
+    // KEYED on the attempt's nonce, which is what makes the Pilot's retry
+    // idempotent. M1 enforces this with a unique constraint and nothing else:
+    // the claim-before-run protocol, the incarnation and the budget are M5's,
+    // and a repeat here returns the stored outcome rather than recording a
+    // second attempt.
+    option (marque.v1.behaviour) = {
+      idempotency: IDEMPOTENCY_KEYED
+      idempotency_field: "nonce"
+    };
+  }
+}
+
+message SubmitRequest {
+  // statement is the SQL the operator wants to run, verbatim. M1 stores it and
+  // does not parse it; M2 is where a statement is classified (EDR-0039).
+  string statement = 1;
+
+  // target names the database this is meant for. A name, never a host — what
+  // resolves it is undecided and is deliberately not the control plane's
+  // (EDR-0005).
+  string target = 2;
+
+  // role is the database identity the statement should run as (EDR-0006).
+  string role = 3;
+
+  // reason is why, in the operator's words. Required, because a request with no
+  // stated reason is one an approver cannot judge.
+  string reason = 4;
+
+  // idempotency_key makes a retried submission one request rather than two. The
+  // caller chooses it; two different keys are two requests even for identical
+  // statements.
+  string idempotency_key = 5;
+}
+
+message SubmitResponse {
+  // reference is the `req_…` an operator can paste into chat (EDR-0038).
+  string reference = 1;
+}
+
+message GetRequestRequest {
+  string reference = 1;
+}
+
+message GetRequestResponse {
+  Request request = 1;
+}
+
+message ApproveRequest {
+  string reference = 1;
+
+  // approver is who approved, as a bare string. M4 replaces this with an
+  // authenticated principal; until then it is an assertion by the caller.
+  string approver = 2;
+
+  // stage is the escalation stage this approval satisfies, numbered from 1.
+  // M1 has no chain, so it is always 1 — the column exists from the first
+  // migration because a stage-less approvals table is the flat shape EDR-0030
+  // exists to refuse (EDR-0042).
+  uint32 stage = 3;
+}
+
+message ApproveResponse {
+  Request request = 1;
+}
+
+message RecordExecutionRequest {
+  string reference = 1;
+
+  // nonce identifies one attempt. Repeating it returns the stored outcome.
+  string nonce = 2;
+
+  ExecutionOutcome outcome = 3;
+
+  // rows_affected is what the statement reported, and is M1's whole notion of a
+  // result (EDR-0042). **Optional**, and absent exactly when the outcome is
+  // INDETERMINATE: a presence-less int64 could only say zero, and zero is a
+  // count. The schema enforces the same equivalence with a CHECK, because the
+  // one thing not to do about an outcome meaning "nobody knows" is invent a
+  // number for it.
+  optional int64 rows_affected = 4;
+}
+
+message RecordExecutionResponse {
+  Request request = 1;
+
+  // execution is what was stored for this nonce. A repeat returns the recorded
+  // attempt rather than recording a second one, so the caller can tell an
+  // accepted report from an acknowledged repeat — which is what makes the
+  // Pilot's retry safe (EDR-0011).
+  Execution execution = 2;
+}
+
+// Execution is one recorded attempt.
+message Execution {
+  string nonce = 1;
+  ExecutionOutcome outcome = 2;
+
+  // Absent exactly when outcome is INDETERMINATE. See RecordExecutionRequest.
+  optional int64 rows_affected = 3;
+}
+
+// Request is a submitted statement and what has happened to it.
+message Request {
+  string reference = 1;
+  string statement = 2;
+  string target = 3;
+  string role = 4;
+  string submitter = 5;
+  string reason = 6;
+  RequestState state = 7;
+}
+
+// RequestState is EDR-0038's vocabulary, whole. M1 produces only PENDING,
+// APPROVED and EXECUTED; the rest exist from the first migration because a
+// forward-only schema makes widening a constrained column an unnecessary
+// migration, and the vocabulary is not this milestone's to shorten (EDR-0042).
+enum RequestState {
+  REQUEST_STATE_UNSPECIFIED = 0;
+  REQUEST_STATE_PENDING = 1;
+  REQUEST_STATE_VERIFYING = 2;
+  REQUEST_STATE_APPROVED = 3;
+  REQUEST_STATE_REFUSED = 4;
+  REQUEST_STATE_EXPIRED = 5;
+  REQUEST_STATE_EXECUTED = 6;
+  REQUEST_STATE_INDETERMINATE = 7;
+}
+
+// ExecutionOutcome is decided by EDR-0042, not borrowed: EDR-0011 names three
+// tokens, closes no set and settles no success token. IN_PROGRESS is
+// deliberately absent — a control-plane report is written when an attempt ends,
+// and in-flight state belongs to the Pilot's own ledger.
+enum ExecutionOutcome {
+  EXECUTION_OUTCOME_UNSPECIFIED = 0;
+  EXECUTION_OUTCOME_COMMITTED = 1;
+  EXECUTION_OUTCOME_ROLLED_BACK = 2;
+  // ABORTED_NOT_APPLIED is terminal but clean: re-runnable under the same
+  // nonce without a second budget decrement (EDR-0011).
+  EXECUTION_OUTCOME_ABORTED_NOT_APPLIED = 3;
+  // INDETERMINATE is the truthful terminal state when a Pilot cannot know
+  // whether the statement committed. It is never `failed` (EDR-0011, EDR-0021).
+  EXECUTION_OUTCOME_INDETERMINATE = 4;
 }
 
 message GetVersionRequest {}

@@ -21,6 +21,753 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// RequestState is EDR-0038's vocabulary, whole. M1 produces only PENDING,
+// APPROVED and EXECUTED; the rest exist from the first migration because a
+// forward-only schema makes widening a constrained column an unnecessary
+// migration, and the vocabulary is not this milestone's to shorten (EDR-0042).
+type RequestState int32
+
+const (
+	RequestState_REQUEST_STATE_UNSPECIFIED   RequestState = 0
+	RequestState_REQUEST_STATE_PENDING       RequestState = 1
+	RequestState_REQUEST_STATE_VERIFYING     RequestState = 2
+	RequestState_REQUEST_STATE_APPROVED      RequestState = 3
+	RequestState_REQUEST_STATE_REFUSED       RequestState = 4
+	RequestState_REQUEST_STATE_EXPIRED       RequestState = 5
+	RequestState_REQUEST_STATE_EXECUTED      RequestState = 6
+	RequestState_REQUEST_STATE_INDETERMINATE RequestState = 7
+)
+
+// Enum value maps for RequestState.
+var (
+	RequestState_name = map[int32]string{
+		0: "REQUEST_STATE_UNSPECIFIED",
+		1: "REQUEST_STATE_PENDING",
+		2: "REQUEST_STATE_VERIFYING",
+		3: "REQUEST_STATE_APPROVED",
+		4: "REQUEST_STATE_REFUSED",
+		5: "REQUEST_STATE_EXPIRED",
+		6: "REQUEST_STATE_EXECUTED",
+		7: "REQUEST_STATE_INDETERMINATE",
+	}
+	RequestState_value = map[string]int32{
+		"REQUEST_STATE_UNSPECIFIED":   0,
+		"REQUEST_STATE_PENDING":       1,
+		"REQUEST_STATE_VERIFYING":     2,
+		"REQUEST_STATE_APPROVED":      3,
+		"REQUEST_STATE_REFUSED":       4,
+		"REQUEST_STATE_EXPIRED":       5,
+		"REQUEST_STATE_EXECUTED":      6,
+		"REQUEST_STATE_INDETERMINATE": 7,
+	}
+)
+
+func (x RequestState) Enum() *RequestState {
+	p := new(RequestState)
+	*p = x
+	return p
+}
+
+func (x RequestState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RequestState) Descriptor() protoreflect.EnumDescriptor {
+	return file_marque_v1_harbourmaster_proto_enumTypes[0].Descriptor()
+}
+
+func (RequestState) Type() protoreflect.EnumType {
+	return &file_marque_v1_harbourmaster_proto_enumTypes[0]
+}
+
+func (x RequestState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RequestState.Descriptor instead.
+func (RequestState) EnumDescriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{0}
+}
+
+// ExecutionOutcome is decided by EDR-0042, not borrowed: EDR-0011 names three
+// tokens, closes no set and settles no success token. IN_PROGRESS is
+// deliberately absent — a control-plane report is written when an attempt ends,
+// and in-flight state belongs to the Pilot's own ledger.
+type ExecutionOutcome int32
+
+const (
+	ExecutionOutcome_EXECUTION_OUTCOME_UNSPECIFIED ExecutionOutcome = 0
+	ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED   ExecutionOutcome = 1
+	ExecutionOutcome_EXECUTION_OUTCOME_ROLLED_BACK ExecutionOutcome = 2
+	// ABORTED_NOT_APPLIED is terminal but clean: re-runnable under the same
+	// nonce without a second budget decrement (EDR-0011).
+	ExecutionOutcome_EXECUTION_OUTCOME_ABORTED_NOT_APPLIED ExecutionOutcome = 3
+	// INDETERMINATE is the truthful terminal state when a Pilot cannot know
+	// whether the statement committed. It is never `failed` (EDR-0011, EDR-0021).
+	ExecutionOutcome_EXECUTION_OUTCOME_INDETERMINATE ExecutionOutcome = 4
+)
+
+// Enum value maps for ExecutionOutcome.
+var (
+	ExecutionOutcome_name = map[int32]string{
+		0: "EXECUTION_OUTCOME_UNSPECIFIED",
+		1: "EXECUTION_OUTCOME_COMMITTED",
+		2: "EXECUTION_OUTCOME_ROLLED_BACK",
+		3: "EXECUTION_OUTCOME_ABORTED_NOT_APPLIED",
+		4: "EXECUTION_OUTCOME_INDETERMINATE",
+	}
+	ExecutionOutcome_value = map[string]int32{
+		"EXECUTION_OUTCOME_UNSPECIFIED":         0,
+		"EXECUTION_OUTCOME_COMMITTED":           1,
+		"EXECUTION_OUTCOME_ROLLED_BACK":         2,
+		"EXECUTION_OUTCOME_ABORTED_NOT_APPLIED": 3,
+		"EXECUTION_OUTCOME_INDETERMINATE":       4,
+	}
+)
+
+func (x ExecutionOutcome) Enum() *ExecutionOutcome {
+	p := new(ExecutionOutcome)
+	*p = x
+	return p
+}
+
+func (x ExecutionOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ExecutionOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_marque_v1_harbourmaster_proto_enumTypes[1].Descriptor()
+}
+
+func (ExecutionOutcome) Type() protoreflect.EnumType {
+	return &file_marque_v1_harbourmaster_proto_enumTypes[1]
+}
+
+func (x ExecutionOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ExecutionOutcome.Descriptor instead.
+func (ExecutionOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{1}
+}
+
+type SubmitRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// statement is the SQL the operator wants to run, verbatim. M1 stores it and
+	// does not parse it; M2 is where a statement is classified (EDR-0039).
+	Statement string `protobuf:"bytes,1,opt,name=statement,proto3" json:"statement,omitempty"`
+	// target names the database this is meant for. A name, never a host — what
+	// resolves it is undecided and is deliberately not the control plane's
+	// (EDR-0005).
+	Target string `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	// role is the database identity the statement should run as (EDR-0006).
+	Role string `protobuf:"bytes,3,opt,name=role,proto3" json:"role,omitempty"`
+	// reason is why, in the operator's words. Required, because a request with no
+	// stated reason is one an approver cannot judge.
+	Reason string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	// idempotency_key makes a retried submission one request rather than two. The
+	// caller chooses it; two different keys are two requests even for identical
+	// statements.
+	IdempotencyKey string `protobuf:"bytes,5,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SubmitRequest) Reset() {
+	*x = SubmitRequest{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitRequest) ProtoMessage() {}
+
+func (x *SubmitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitRequest.ProtoReflect.Descriptor instead.
+func (*SubmitRequest) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *SubmitRequest) GetStatement() string {
+	if x != nil {
+		return x.Statement
+	}
+	return ""
+}
+
+func (x *SubmitRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *SubmitRequest) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *SubmitRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *SubmitRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type SubmitResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// reference is the `req_…` an operator can paste into chat (EDR-0038).
+	Reference     string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubmitResponse) Reset() {
+	*x = SubmitResponse{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubmitResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubmitResponse) ProtoMessage() {}
+
+func (x *SubmitResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubmitResponse.ProtoReflect.Descriptor instead.
+func (*SubmitResponse) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *SubmitResponse) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+type GetRequestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reference     string                 `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRequestRequest) Reset() {
+	*x = GetRequestRequest{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRequestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRequestRequest) ProtoMessage() {}
+
+func (x *GetRequestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRequestRequest.ProtoReflect.Descriptor instead.
+func (*GetRequestRequest) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *GetRequestRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+type GetRequestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *Request               `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRequestResponse) Reset() {
+	*x = GetRequestResponse{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRequestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRequestResponse) ProtoMessage() {}
+
+func (x *GetRequestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRequestResponse.ProtoReflect.Descriptor instead.
+func (*GetRequestResponse) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetRequestResponse) GetRequest() *Request {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+type ApproveRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Reference string                 `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	// approver is who approved, as a bare string. M4 replaces this with an
+	// authenticated principal; until then it is an assertion by the caller.
+	Approver string `protobuf:"bytes,2,opt,name=approver,proto3" json:"approver,omitempty"`
+	// stage is the escalation stage this approval satisfies, numbered from 1.
+	// M1 has no chain, so it is always 1 — the column exists from the first
+	// migration because a stage-less approvals table is the flat shape EDR-0030
+	// exists to refuse (EDR-0042).
+	Stage         uint32 `protobuf:"varint,3,opt,name=stage,proto3" json:"stage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveRequest) Reset() {
+	*x = ApproveRequest{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveRequest) ProtoMessage() {}
+
+func (x *ApproveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveRequest.ProtoReflect.Descriptor instead.
+func (*ApproveRequest) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ApproveRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *ApproveRequest) GetApprover() string {
+	if x != nil {
+		return x.Approver
+	}
+	return ""
+}
+
+func (x *ApproveRequest) GetStage() uint32 {
+	if x != nil {
+		return x.Stage
+	}
+	return 0
+}
+
+type ApproveResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Request       *Request               `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveResponse) Reset() {
+	*x = ApproveResponse{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveResponse) ProtoMessage() {}
+
+func (x *ApproveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveResponse.ProtoReflect.Descriptor instead.
+func (*ApproveResponse) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ApproveResponse) GetRequest() *Request {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+type RecordExecutionRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Reference string                 `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	// nonce identifies one attempt. Repeating it returns the stored outcome.
+	Nonce   string           `protobuf:"bytes,2,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Outcome ExecutionOutcome `protobuf:"varint,3,opt,name=outcome,proto3,enum=marque.v1.ExecutionOutcome" json:"outcome,omitempty"`
+	// rows_affected is what the statement reported, and is M1's whole notion of a
+	// result (EDR-0042). **Optional**, and absent exactly when the outcome is
+	// INDETERMINATE: a presence-less int64 could only say zero, and zero is a
+	// count. The schema enforces the same equivalence with a CHECK, because the
+	// one thing not to do about an outcome meaning "nobody knows" is invent a
+	// number for it.
+	RowsAffected  *int64 `protobuf:"varint,4,opt,name=rows_affected,json=rowsAffected,proto3,oneof" json:"rows_affected,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordExecutionRequest) Reset() {
+	*x = RecordExecutionRequest{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordExecutionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordExecutionRequest) ProtoMessage() {}
+
+func (x *RecordExecutionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordExecutionRequest.ProtoReflect.Descriptor instead.
+func (*RecordExecutionRequest) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RecordExecutionRequest) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *RecordExecutionRequest) GetNonce() string {
+	if x != nil {
+		return x.Nonce
+	}
+	return ""
+}
+
+func (x *RecordExecutionRequest) GetOutcome() ExecutionOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return ExecutionOutcome_EXECUTION_OUTCOME_UNSPECIFIED
+}
+
+func (x *RecordExecutionRequest) GetRowsAffected() int64 {
+	if x != nil && x.RowsAffected != nil {
+		return *x.RowsAffected
+	}
+	return 0
+}
+
+type RecordExecutionResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Request *Request               `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	// execution is what was stored for this nonce. A repeat returns the recorded
+	// attempt rather than recording a second one, so the caller can tell an
+	// accepted report from an acknowledged repeat — which is what makes the
+	// Pilot's retry safe (EDR-0011).
+	Execution     *Execution `protobuf:"bytes,2,opt,name=execution,proto3" json:"execution,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordExecutionResponse) Reset() {
+	*x = RecordExecutionResponse{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordExecutionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordExecutionResponse) ProtoMessage() {}
+
+func (x *RecordExecutionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordExecutionResponse.ProtoReflect.Descriptor instead.
+func (*RecordExecutionResponse) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RecordExecutionResponse) GetRequest() *Request {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *RecordExecutionResponse) GetExecution() *Execution {
+	if x != nil {
+		return x.Execution
+	}
+	return nil
+}
+
+// Execution is one recorded attempt.
+type Execution struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Nonce   string                 `protobuf:"bytes,1,opt,name=nonce,proto3" json:"nonce,omitempty"`
+	Outcome ExecutionOutcome       `protobuf:"varint,2,opt,name=outcome,proto3,enum=marque.v1.ExecutionOutcome" json:"outcome,omitempty"`
+	// Absent exactly when outcome is INDETERMINATE. See RecordExecutionRequest.
+	RowsAffected  *int64 `protobuf:"varint,3,opt,name=rows_affected,json=rowsAffected,proto3,oneof" json:"rows_affected,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Execution) Reset() {
+	*x = Execution{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Execution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Execution) ProtoMessage() {}
+
+func (x *Execution) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Execution.ProtoReflect.Descriptor instead.
+func (*Execution) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Execution) GetNonce() string {
+	if x != nil {
+		return x.Nonce
+	}
+	return ""
+}
+
+func (x *Execution) GetOutcome() ExecutionOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return ExecutionOutcome_EXECUTION_OUTCOME_UNSPECIFIED
+}
+
+func (x *Execution) GetRowsAffected() int64 {
+	if x != nil && x.RowsAffected != nil {
+		return *x.RowsAffected
+	}
+	return 0
+}
+
+// Request is a submitted statement and what has happened to it.
+type Request struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reference     string                 `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	Statement     string                 `protobuf:"bytes,2,opt,name=statement,proto3" json:"statement,omitempty"`
+	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Role          string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	Submitter     string                 `protobuf:"bytes,5,opt,name=submitter,proto3" json:"submitter,omitempty"`
+	Reason        string                 `protobuf:"bytes,6,opt,name=reason,proto3" json:"reason,omitempty"`
+	State         RequestState           `protobuf:"varint,7,opt,name=state,proto3,enum=marque.v1.RequestState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Request) Reset() {
+	*x = Request{}
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Request) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Request) ProtoMessage() {}
+
+func (x *Request) ProtoReflect() protoreflect.Message {
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Request.ProtoReflect.Descriptor instead.
+func (*Request) Descriptor() ([]byte, []int) {
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Request) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *Request) GetStatement() string {
+	if x != nil {
+		return x.Statement
+	}
+	return ""
+}
+
+func (x *Request) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *Request) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *Request) GetSubmitter() string {
+	if x != nil {
+		return x.Submitter
+	}
+	return ""
+}
+
+func (x *Request) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *Request) GetState() RequestState {
+	if x != nil {
+		return x.State
+	}
+	return RequestState_REQUEST_STATE_UNSPECIFIED
+}
+
 type GetVersionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -29,7 +776,7 @@ type GetVersionRequest struct {
 
 func (x *GetVersionRequest) Reset() {
 	*x = GetVersionRequest{}
-	mi := &file_marque_v1_harbourmaster_proto_msgTypes[0]
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +788,7 @@ func (x *GetVersionRequest) String() string {
 func (*GetVersionRequest) ProtoMessage() {}
 
 func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_marque_v1_harbourmaster_proto_msgTypes[0]
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -54,7 +801,7 @@ func (x *GetVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetVersionRequest) Descriptor() ([]byte, []int) {
-	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{0}
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{10}
 }
 
 type GetVersionResponse struct {
@@ -78,7 +825,7 @@ type GetVersionResponse struct {
 
 func (x *GetVersionResponse) Reset() {
 	*x = GetVersionResponse{}
-	mi := &file_marque_v1_harbourmaster_proto_msgTypes[1]
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -90,7 +837,7 @@ func (x *GetVersionResponse) String() string {
 func (*GetVersionResponse) ProtoMessage() {}
 
 func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_marque_v1_harbourmaster_proto_msgTypes[1]
+	mi := &file_marque_v1_harbourmaster_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -103,7 +850,7 @@ func (x *GetVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetVersionResponse) Descriptor() ([]byte, []int) {
-	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{1}
+	return file_marque_v1_harbourmaster_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetVersionResponse) GetVersion() string {
@@ -145,7 +892,47 @@ var File_marque_v1_harbourmaster_proto protoreflect.FileDescriptor
 
 const file_marque_v1_harbourmaster_proto_rawDesc = "" +
 	"\n" +
-	"\x1dmarque/v1/harbourmaster.proto\x12\tmarque.v1\x1a\x16marque/v1/common.proto\"\x13\n" +
+	"\x1dmarque/v1/harbourmaster.proto\x12\tmarque.v1\x1a\x16marque/v1/common.proto\"\x9a\x01\n" +
+	"\rSubmitRequest\x12\x1c\n" +
+	"\tstatement\x18\x01 \x01(\tR\tstatement\x12\x16\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12\x12\n" +
+	"\x04role\x18\x03 \x01(\tR\x04role\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12'\n" +
+	"\x0fidempotency_key\x18\x05 \x01(\tR\x0eidempotencyKey\".\n" +
+	"\x0eSubmitResponse\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\"1\n" +
+	"\x11GetRequestRequest\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\"B\n" +
+	"\x12GetRequestResponse\x12,\n" +
+	"\arequest\x18\x01 \x01(\v2\x12.marque.v1.RequestR\arequest\"`\n" +
+	"\x0eApproveRequest\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\x12\x1a\n" +
+	"\bapprover\x18\x02 \x01(\tR\bapprover\x12\x14\n" +
+	"\x05stage\x18\x03 \x01(\rR\x05stage\"?\n" +
+	"\x0fApproveResponse\x12,\n" +
+	"\arequest\x18\x01 \x01(\v2\x12.marque.v1.RequestR\arequest\"\xbf\x01\n" +
+	"\x16RecordExecutionRequest\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\x12\x14\n" +
+	"\x05nonce\x18\x02 \x01(\tR\x05nonce\x125\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2\x1b.marque.v1.ExecutionOutcomeR\aoutcome\x12(\n" +
+	"\rrows_affected\x18\x04 \x01(\x03H\x00R\frowsAffected\x88\x01\x01B\x10\n" +
+	"\x0e_rows_affected\"{\n" +
+	"\x17RecordExecutionResponse\x12,\n" +
+	"\arequest\x18\x01 \x01(\v2\x12.marque.v1.RequestR\arequest\x122\n" +
+	"\texecution\x18\x02 \x01(\v2\x14.marque.v1.ExecutionR\texecution\"\x94\x01\n" +
+	"\tExecution\x12\x14\n" +
+	"\x05nonce\x18\x01 \x01(\tR\x05nonce\x125\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2\x1b.marque.v1.ExecutionOutcomeR\aoutcome\x12(\n" +
+	"\rrows_affected\x18\x03 \x01(\x03H\x00R\frowsAffected\x88\x01\x01B\x10\n" +
+	"\x0e_rows_affected\"\xd6\x01\n" +
+	"\aRequest\x12\x1c\n" +
+	"\treference\x18\x01 \x01(\tR\treference\x12\x1c\n" +
+	"\tstatement\x18\x02 \x01(\tR\tstatement\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\x12\x1c\n" +
+	"\tsubmitter\x18\x05 \x01(\tR\tsubmitter\x12\x16\n" +
+	"\x06reason\x18\x06 \x01(\tR\x06reason\x12-\n" +
+	"\x05state\x18\a \x01(\x0e2\x17.marque.v1.RequestStateR\x05state\"\x13\n" +
 	"\x11GetVersionRequest\"\xa2\x01\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
@@ -154,10 +941,30 @@ const file_marque_v1_harbourmaster_proto_rawDesc = "" +
 	"sourceDate\x12\x1d\n" +
 	"\n" +
 	"go_version\x18\x04 \x01(\tR\tgoVersion\x12\x1a\n" +
-	"\bplatform\x18\x05 \x01(\tR\bplatform2n\n" +
+	"\bplatform\x18\x05 \x01(\tR\bplatform*\xf4\x01\n" +
+	"\fRequestState\x12\x1d\n" +
+	"\x19REQUEST_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15REQUEST_STATE_PENDING\x10\x01\x12\x1b\n" +
+	"\x17REQUEST_STATE_VERIFYING\x10\x02\x12\x1a\n" +
+	"\x16REQUEST_STATE_APPROVED\x10\x03\x12\x19\n" +
+	"\x15REQUEST_STATE_REFUSED\x10\x04\x12\x19\n" +
+	"\x15REQUEST_STATE_EXPIRED\x10\x05\x12\x1a\n" +
+	"\x16REQUEST_STATE_EXECUTED\x10\x06\x12\x1f\n" +
+	"\x1bREQUEST_STATE_INDETERMINATE\x10\a*\xc9\x01\n" +
+	"\x10ExecutionOutcome\x12!\n" +
+	"\x1dEXECUTION_OUTCOME_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bEXECUTION_OUTCOME_COMMITTED\x10\x01\x12!\n" +
+	"\x1dEXECUTION_OUTCOME_ROLLED_BACK\x10\x02\x12)\n" +
+	"%EXECUTION_OUTCOME_ABORTED_NOT_APPLIED\x10\x03\x12#\n" +
+	"\x1fEXECUTION_OUTCOME_INDETERMINATE\x10\x042\xd1\x03\n" +
 	"\x14HarbourmasterService\x12V\n" +
 	"\n" +
-	"GetVersion\x12\x1c.marque.v1.GetVersionRequest\x1a\x1d.marque.v1.GetVersionResponse\"\v\xa2\x9c$\x04\b\x01\x10\x01\x90\x02\x01B5Z3github.com/sixfathoms/marque/gen/marque/v1;marquev1b\x06proto3"
+	"GetVersion\x12\x1c.marque.v1.GetVersionRequest\x1a\x1d.marque.v1.GetVersionResponse\"\v\xa2\x9c$\x04\b\x01\x10\x01\x90\x02\x01\x12V\n" +
+	"\x06Submit\x12\x18.marque.v1.SubmitRequest\x1a\x19.marque.v1.SubmitResponse\"\x17\xa2\x9c$\x13\x10\x02\x1a\x0fidempotency_key\x12V\n" +
+	"\n" +
+	"GetRequest\x12\x1c.marque.v1.GetRequestRequest\x1a\x1d.marque.v1.GetRequestResponse\"\v\xa2\x9c$\x04\b\x01\x10\x01\x90\x02\x01\x12H\n" +
+	"\aApprove\x12\x19.marque.v1.ApproveRequest\x1a\x1a.marque.v1.ApproveResponse\"\x06\xa2\x9c$\x02\x10\x01\x12g\n" +
+	"\x0fRecordExecution\x12!.marque.v1.RecordExecutionRequest\x1a\".marque.v1.RecordExecutionResponse\"\r\xa2\x9c$\t\x10\x02\x1a\x05nonceB5Z3github.com/sixfathoms/marque/gen/marque/v1;marquev1b\x06proto3"
 
 var (
 	file_marque_v1_harbourmaster_proto_rawDescOnce sync.Once
@@ -171,19 +978,47 @@ func file_marque_v1_harbourmaster_proto_rawDescGZIP() []byte {
 	return file_marque_v1_harbourmaster_proto_rawDescData
 }
 
-var file_marque_v1_harbourmaster_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_marque_v1_harbourmaster_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_marque_v1_harbourmaster_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_marque_v1_harbourmaster_proto_goTypes = []any{
-	(*GetVersionRequest)(nil),  // 0: marque.v1.GetVersionRequest
-	(*GetVersionResponse)(nil), // 1: marque.v1.GetVersionResponse
+	(RequestState)(0),               // 0: marque.v1.RequestState
+	(ExecutionOutcome)(0),           // 1: marque.v1.ExecutionOutcome
+	(*SubmitRequest)(nil),           // 2: marque.v1.SubmitRequest
+	(*SubmitResponse)(nil),          // 3: marque.v1.SubmitResponse
+	(*GetRequestRequest)(nil),       // 4: marque.v1.GetRequestRequest
+	(*GetRequestResponse)(nil),      // 5: marque.v1.GetRequestResponse
+	(*ApproveRequest)(nil),          // 6: marque.v1.ApproveRequest
+	(*ApproveResponse)(nil),         // 7: marque.v1.ApproveResponse
+	(*RecordExecutionRequest)(nil),  // 8: marque.v1.RecordExecutionRequest
+	(*RecordExecutionResponse)(nil), // 9: marque.v1.RecordExecutionResponse
+	(*Execution)(nil),               // 10: marque.v1.Execution
+	(*Request)(nil),                 // 11: marque.v1.Request
+	(*GetVersionRequest)(nil),       // 12: marque.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),      // 13: marque.v1.GetVersionResponse
 }
 var file_marque_v1_harbourmaster_proto_depIdxs = []int32{
-	0, // 0: marque.v1.HarbourmasterService.GetVersion:input_type -> marque.v1.GetVersionRequest
-	1, // 1: marque.v1.HarbourmasterService.GetVersion:output_type -> marque.v1.GetVersionResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	11, // 0: marque.v1.GetRequestResponse.request:type_name -> marque.v1.Request
+	11, // 1: marque.v1.ApproveResponse.request:type_name -> marque.v1.Request
+	1,  // 2: marque.v1.RecordExecutionRequest.outcome:type_name -> marque.v1.ExecutionOutcome
+	11, // 3: marque.v1.RecordExecutionResponse.request:type_name -> marque.v1.Request
+	10, // 4: marque.v1.RecordExecutionResponse.execution:type_name -> marque.v1.Execution
+	1,  // 5: marque.v1.Execution.outcome:type_name -> marque.v1.ExecutionOutcome
+	0,  // 6: marque.v1.Request.state:type_name -> marque.v1.RequestState
+	12, // 7: marque.v1.HarbourmasterService.GetVersion:input_type -> marque.v1.GetVersionRequest
+	2,  // 8: marque.v1.HarbourmasterService.Submit:input_type -> marque.v1.SubmitRequest
+	4,  // 9: marque.v1.HarbourmasterService.GetRequest:input_type -> marque.v1.GetRequestRequest
+	6,  // 10: marque.v1.HarbourmasterService.Approve:input_type -> marque.v1.ApproveRequest
+	8,  // 11: marque.v1.HarbourmasterService.RecordExecution:input_type -> marque.v1.RecordExecutionRequest
+	13, // 12: marque.v1.HarbourmasterService.GetVersion:output_type -> marque.v1.GetVersionResponse
+	3,  // 13: marque.v1.HarbourmasterService.Submit:output_type -> marque.v1.SubmitResponse
+	5,  // 14: marque.v1.HarbourmasterService.GetRequest:output_type -> marque.v1.GetRequestResponse
+	7,  // 15: marque.v1.HarbourmasterService.Approve:output_type -> marque.v1.ApproveResponse
+	9,  // 16: marque.v1.HarbourmasterService.RecordExecution:output_type -> marque.v1.RecordExecutionResponse
+	12, // [12:17] is the sub-list for method output_type
+	7,  // [7:12] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_marque_v1_harbourmaster_proto_init() }
@@ -192,18 +1027,21 @@ func file_marque_v1_harbourmaster_proto_init() {
 		return
 	}
 	file_marque_v1_common_proto_init()
+	file_marque_v1_harbourmaster_proto_msgTypes[6].OneofWrappers = []any{}
+	file_marque_v1_harbourmaster_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_marque_v1_harbourmaster_proto_rawDesc), len(file_marque_v1_harbourmaster_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   2,
+			NumEnums:      2,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_marque_v1_harbourmaster_proto_goTypes,
 		DependencyIndexes: file_marque_v1_harbourmaster_proto_depIdxs,
+		EnumInfos:         file_marque_v1_harbourmaster_proto_enumTypes,
 		MessageInfos:      file_marque_v1_harbourmaster_proto_msgTypes,
 	}.Build()
 	File_marque_v1_harbourmaster_proto = out.File

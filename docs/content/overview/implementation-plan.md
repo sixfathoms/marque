@@ -125,19 +125,30 @@ Three things arrive with the store
 ([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)): the tenant-partitioned schema
 and its first migration; a migrator that is an explicit command, refuses a divergent history, and
 records each migration's content digest in the transaction that applies it and runs as its own role
-rather than the runtime one, which M6 needs and which costs nothing at migration one; and the
-`depguard` rule
-confining a target engine's driver to the two packages that need one — the Harbourmaster's store and
-the Pilot's adapter, which must have it — landing in the **same change** as the first package that
-opens a connection.
+rather than the runtime one, which M6 needs and which costs nothing at migration one; and the rule
+confining a target engine's driver to the two packages that may hold one — the Harbourmaster's store
+and the Pilot's adapter — landing in the **same change** as the first package that opens a
+connection. That rule asks `go list -deps` what each binary links, with a filesystem walk as a
+cross-check and a `depguard` block as the edit-time report.
 
-**Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
+**Exit:** an integration test against a real PostgreSQL running the six steps and asserting
 the row changed; and the import rule **seen to fail**, by adding a driver import to a Harbourmaster
-package that is not the store and watching the lint refuse it. The rule replaces a mechanism EDR-0005
+package that is not the store and watching the confinement test refuse it. It asks `go list -deps`
+what each binary links, with a walk that parses every first-party file as a cross-check — and not
+because a linter is incapable, since several claims of that shape were made here and every one was false
+(EDR-0042). A linter's reach is its flags and exclusions, a walk's is its own skip rule, and
+`go list`'s is the patterns and tags it is given, so none of them may be asserted and all of them
+are probed. The rule replaces a mechanism EDR-0005
 lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end
 signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
-above.
+above. `make test-integration` starts a disposable PostgreSQL in Docker on an ephemeral port,
+creates the runtime role before the first migration because the schema grants unconditionally, and
+removes the container on exit. No testcontainers dependency: a library that drives Docker is a
+large dependency graph in the module the control plane ships from, and a Makefile target and a CI
+job do the same job here. The DSN comes from the environment, and its absence is a **failure**
+rather than a skip — a build-tagged suite that skips itself when unconfigured reports success
+having run nothing.
 
 ### M2 — The grammar
 

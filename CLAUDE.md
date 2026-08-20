@@ -119,8 +119,10 @@ a commit message.
   "It has no database driver for target engines linked in" — was stronger and is not available: Marque's own state is
   PostgreSQL (EDR-0013), which is also a target engine, so one driver serves both. It is now import
   discipline confining the driver to the store package and the Pilot's adapter (EDR-0042), which is
-  weaker, and a change to that
-  lint rule is a change to a security control.
+  weaker, and a change to that confinement check is a change to a security control. The check asks
+  `go list -deps` what each binary links; a filesystem walk and a `depguard` block sit beside it —
+  and the split is not because a linter is incapable: several claims of that shape were made and
+  every one was false, which EDR-0042 retracts at length.
 - **A delegated row scope is a fence that aborts, never a rewrite.** Conjoining the predicate into the
   operator's `WHERE` is sound and silently narrows the statement, which produces a partially-applied
   change nobody reviewed. The pre-check, the post-assert and the row-count assert are three separate

@@ -3,8 +3,8 @@ id: 42
 title: "Give the control plane's store a schema, a migrator, and a driver rule that survives PostgreSQL"
 summary: "The store was already fixed to PostgreSQL. What M1 owed was the schema, a forward-only digest-checked migrator, and a replacement for EDR-0005's no-driver-linked rule, which PostgreSQL for Marque's own state makes unachievable."
 status: accepted
-implementation: none
-implementation_note: "Nothing stores anything. This is the decision M1 owed before it could write a line of storage code; the import rule it describes lands in the same change as the first package that opens a connection."
+implementation: partial
+implementation_note: "The schema, the migrator, the confinement test and the depguard block exist, in the same change as store.Open — the obligation this record set. CI runs the loader offline and the migrator against a real PostgreSQL behind a build tag. Nothing serves yet: no binary links the store."
 date: 2026-08-20
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
@@ -75,25 +75,119 @@ was amended on 2026-08-16 to say a compromised control plane retains a bounded, 
 read channel by relaying operator-signed reads, and overstating that is the error that amendment
 exists to correct. What changes is the mechanism, because the old one is not available.
 
-1. **Two packages, and only they import a driver.** `internal/harbourmaster/store` imports a
+1. **Two packages, and only they hold a PostgreSQL driver.** `internal/harbourmaster/store` imports a
    PostgreSQL driver for the control plane's own database. `internal/pilot/postgres` imports one to
    reach a target — the Pilot must, and any rule confining the driver repository-wide would be wrong
    about it. No other package imports either, and **no Harbourmaster package imports the Pilot
    adapter**, which is the boundary that carries the weight.
-2. **Enforced by `depguard`.** It is **not** in `.golangci.yml` today, and this record does not add
-   it — the rule lands with M1's first storage package, which is the change that first makes it
-   possible to violate. A
-   driver for a target engine Marque does not yet store its own state in — MySQL, when
-   [EDR-0026](./0026-a-second-engine-is-a-capability-matrix.md) arrives — stays wholly absent from
-   the control plane, with no exception at all. PostgreSQL is the single weakened case and it is
-   weakened only because EDR-0013 made it the control plane's own store.
+
+   Be exact about what enforces that last one: the **filesystem walk, alone**. The graph check treats
+   a permitted home as a sink, so it cannot see a Harbourmaster package importing the adapter — that
+   is the arrangement it exists to allow. And the walk matches **direct** imports, so an intermediate
+   package that is neither a Harbourmaster nor a Pilot package still links the adapter's driver
+   silently. That is one of the four defeats below, stated here rather than left to be found.
+2. **Enforced by asking the toolchain what each binary links**, with a filesystem walk as a
+   cross-check and a `depguard` block as the edit-time report.
+
+   The primary check runs `go list -deps` over `./cmd/...` and `-test ./...`, with and without the
+   integration tag, and states the rule as a graph property: **cut the permitted homes out of the
+   dependency graph, and no first-party package may still reach a driver.** That phrasing is what
+   makes a wrapper visible — a reviewer imported `github.com/jackc/pglogrepl`, by the same author as
+   pgx, which pulls in `pgx/v5/pgconn` without the first-party import naming a driver at all, and
+   direct-import matching reported nothing.
+
+   `depguard` reports a **wider** version of the same rule, and wider is worth naming: its exemptions
+   are directory globs rather than exact packages, so it permits a PostgreSQL driver anywhere under
+   `internal/pilot`, and it has no analogue of the Harbourmaster-to-Pilot check below.
+
+   **Three justifications have been given for that split. All three were capability claims about
+   tooling, and all three were false.** The sequence is kept rather than tidied away, because this
+   record is otherwise about exactly that failure:
+
+   - *"`depguard` cannot report blank imports."* A reviewer who had read `depguard`'s source said
+     blank and named imports are indistinguishable to it, and was overruled by a measurement. The
+     measurement was confounded: `revive`'s `blank-imports` rule reports at the *same file and line*,
+     and `golangci-lint`'s `--uniq-by-line` — on by default — discards the second issue at a line, so
+     `depguard`'s diagnostic never printed. The control on a standard-library package tripped the
+     same `revive` rule and so reproduced the artefact instead of isolating anything. **The reviewer
+     was right and the measurement was wrong**, which is a worse failure than the one it was
+     diagnosing. What unmasks `depguard` is the *justifying comment* this repository's driver import
+     carries, which silences the `revive` rule that was covering it — not the parenthesised block, as
+     an earlier draft of this paragraph said; a block without a comment still hides it.
+   - *"`golangci-lint` cannot read a file behind a build tag."* It reads one under `--build-tags`, and
+     under `run.build-tags` in the config with no flag at all. What is true is narrower and is about
+     this repository's *invocation*: `make lint` passed no tags, so M1's integration tests were
+     invisible to it. That was a setting, and `make lint` now runs a second time with the tag.
+   - *"`gen/` is excluded, and is compiled into every binary."* `gen/` is skipped by an anchored
+     `- ^gen/` in `.golangci.yml`'s `exclusions.paths` and, independently, by `exclusions.generated: lax` — two deletable settings, neither of which is inability — and it is in no
+     **shipped** binary's dependency graph at all: `go list -deps` over the three commands names
+     nothing under `marque/gen`. The test binaries link it, and so does `schemacheck`, which is a
+     build-time `package main`.
+
+   Each time, a defensible choice was made and then decorated with a capability claim nobody ran.
+   **The claim was the defect, not the choice**, and inventing a fourth would be the same mistake with
+   a different subject.
+
+   So the honest reason, which claims nothing about capability: **both mechanisms' coverage is
+   configuration, and neither's is a property of the tool.** The test's coverage is its walk and its
+   skip rule; the linter's is its invocation flags, its path exclusions, its generated-file heuristic
+   and `--uniq-by-line`; and `go list`'s is the patterns and tags it is given, which is why it is
+   given six combinations rather than one. Either can be narrowed by a commit that does not look like it touches a
+   security control — and the test's was, twice, in review: once by skipping directories by basename
+   anywhere in the tree, and once by skipping `bin/` and `dist/`, which `go build` compiles from
+   perfectly happily. A third time it did not descend a symlinked directory, and a Harbourmaster
+   package behind one linked a driver into the binary with the test green.
+
+   That is not a reason to prefer one mechanism. It is a reason to **probe both rather than assert
+   either**. The walk's skip list was itself rewritten to skip only what "the Go toolchain
+   never compiles" — see the fifth false claim below. It skips `.git` alone now, follows symlinks
+   rather than skipping them, and standing tests plant a driver import in each place that has escaped a check so far — `bin/`,
+   `dist/`, a nested `bin/`, `testdata/`, an underscore directory, a dotted directory, and behind two
+   symlink aliases named to sort either side of the real directory. That sentence was itself false
+   when first written, and a reviewer grepped for the tests and found none; the tests exist now.
+
+   **A fifth false claim belongs in this list, because it was made one round after the retraction
+   above.** The walk's skip rule was rewritten to skip only what "the Go toolchain itself never
+   compiles" — a directory beginning `.` or `_`, and `testdata` — and cited `cmd/go` for it. That
+   rule governs **wildcard expansion**, not import resolution. `go build ./internal/x/testdata/pg`
+   compiles a package there, and an explicit import of it links whatever it imports; two reviewers
+   and codex demonstrated it independently. The walk now skips `.git` alone, on stated performance
+   grounds rather than capability, and the primary check reads the dependency graph, where the
+   question does not arise.
+
 3. **The Harbourmaster holds no target connection parameters and no target credential.** EDR-0005
    already decides the credential half; where a target's *connection parameters* live it does not
    say, and this record does not settle it either — a role names a target, and what resolves that
    name to a host is undecided. Flagged rather than assumed:
    [issue #36](https://github.com/sixfathoms/marque/issues/36).
 
-**Say plainly what this is not.** `depguard` reads **imports**, not capability. `database/sql`
+### What this rule is for, and who it does not stop
+
+Stated because five rounds of review defeated the mechanism five times, and the sixth attempt would
+have succeeded too. **The rule catches a driver arriving by accident. It does not stop a committer
+who is trying.**
+
+That is not a hedge, it is the boundary the mechanism actually has, and it is worth being precise
+about because the two cases need different answers:
+
+- **The accident** — someone adds a query helper to a Harbourmaster package, reaches for `pgx`
+  because that is what is in `go.mod`, and nobody notices in review. This is the realistic case, it
+  is the one EDR-0005's original sentence caught for free, and it is the one this rule catches.
+- **The adversary with commit access** — this rule cannot help, and neither can any check that lives
+  in the same repository as the thing it checks. Demonstrated during review, each with the binary
+  linking a driver and every mechanism green: a package under `testdata/`, `_x/` or `.x/`; a
+  directory reached through a symlink alias; a wrapper module that imports a driver so the first-party
+  import names something else; and `#cgo LDFLAGS: -lpq` with no Go import at all. Not demonstrated
+  and not doubted: `go:linkname`, `-overlay`, `-toolexec`, a `go.work` pointing outside the
+  repository. **That list has no end**, which is the point. A committer who wants a driver in the
+  binary will get one, and the control that stops them is code review and commit signing, not a test.
+
+So the mechanism is chosen to make the accident loud and cheap to catch, and its residue is listed
+rather than argued away. A reviewer who defeats it with a deliberate construction has demonstrated
+something already written here, not found a new hole — the question worth asking of this record is
+whether every claim in it is true as stated, which is a finite question.
+
+**Say plainly what this is not.** The test reads **imports**, not capability. `database/sql`
 registration is process-wide, so once `internal/harbourmaster/store` registers a driver, any package
 in the binary can call `sql.Open("pgx", …)` without importing anything the linter would see. This is
 **import discipline**, which makes the capability arrive by a reviewed edit rather than by accident —
@@ -118,6 +212,10 @@ plane holds no target credential — is untouched.
 - **Numbered contiguously from 1**, with a gap refused. A gap means a migration was removed from the
   middle, which the digest check below would otherwise notice only once it had been applied
   somewhere.
+- **What `Verify` checks is the applied HISTORY, not the schema.** Drop a table by hand and `Verify`
+  still returns nil: it compares recorded migrations against embedded ones and never looks at
+  `pg_catalog`. That is inherent to a digest migrator and it is worth saying, because "refuses on any
+  mismatch" reads as though it inspects the database's shape. It does not.
 - **Each migration records the SHA-256 of its raw bytes**, and the applied set must be an exact
   prefix of the embedded set with matching digests. So an edit, a reordering or a removal **within
   applied history** is a refusal rather than a silent difference between two deployments. A migration
@@ -128,7 +226,7 @@ plane holds no target credential — is untouched.
 - **The record of a migration commits in the same transaction as its DDL.** PostgreSQL supports
   transactional DDL, which is why a half-applied migration is not a state this design has — and a
   migration containing an operation PostgreSQL forbids inside a transaction (`CREATE INDEX
-  CONCURRENTLY`, `VACUUM`, `ALTER TYPE … ADD VALUE` on older servers) is **rejected by the migrator**
+  CONCURRENTLY`, `VACUUM`, `REINDEX DATABASE`) is **refused at load time** by a denylist of spellings
   rather than run outside one.
 - **Serialised by a session-scoped advisory lock** — `pg_advisory_lock`, taken before verification
   and released explicitly when the run ends. Not a transaction-scoped one: that releases at commit,
@@ -148,7 +246,7 @@ plane holds no target credential — is untouched.
 
 Tenant-partitioned from the first migration, per EDR-0025: `tenant_id NOT NULL` on every domain
 table, leading every index that matters and present in every unique constraint. **A tenant column is
-not partitioning on its own** — every foreign key is composite and carries `tenant_id`, so a row
+not partitioning on its own** — every foreign key between domain tables is composite and carries `tenant_id`, so a row
 cannot reference a parent belonging to another tenant. M1 has no identity, so `tenant_id` comes from
 one configured development tenant, **never a request field**, which is the rule EDR-0025 exists to
 protect and which M4 makes real.
@@ -156,9 +254,9 @@ protect and which M4 makes real.
 | Table | Holds |
 |---|---|
 | `schema_migrations` | number, SHA-256 digest, applied-at |
-| `requests` | `req_…` reference, tenant, statement, target, role, submitter as a bare string, the operator's **reason**, state, `created_at` |
+| `requests` | `req_…` reference, tenant, statement, target, role, submitter as a bare string, the operator's **reason**, state, the caller's `idempotency_key`, `created_at` |
 | `approvals` | tenant, request, **stage**, approver, at |
-| `executions` | tenant, request, at, outcome, rows affected — **rows affected is M1's "result"**, and the plan's *"the result and the statement land in a table"* means exactly that and nothing richer |
+| `executions` | tenant, request, **nonce** (a report key, not EDR-0011's claim — see below), at, outcome, rows affected — **rows affected is M1's "result"**, and the plan's *"the result and the statement land in a table"* means exactly that and nothing richer |
 
 **`requests.state` carries all seven of [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)'s
 values** — `pending`, `verifying`, `approved`, `refused`, `expired`, `executed`, `indeterminate` —
@@ -200,7 +298,10 @@ Named individually, because a reader who sees only one will assume the rest is r
 3. **`executions` is a control-plane report, and is not
    [EDR-0011](./0011-execution-is-idempotent-and-fenced.md)'s ledger.** That ledger is Pilot-local,
    durable, claim-first, and carries an incarnation — it is the fence. Nothing here should grow a
-   nonce column; where the Pilot keeps its own state is undecided and is
+   nonce column *for EDR-0011's purpose*. M1's `executions` does carry one, with a unique
+   constraint, which is what makes a Pilot's retry of its report idempotent — a report key, not a
+   claim. The claim-before-run protocol, the incarnation and the budget are the ledger, and where the
+   Pilot keeps that is undecided and is
    [issue #34](https://github.com/sixfathoms/marque/issues/34), due before M5.
 
 ## Consequences
@@ -224,19 +325,34 @@ Named individually, because a reader who sees only one will assume the rest is r
   constraint on every relationship in the schema from here on, not a one-off cost. EDR-0025's "one
   column and one discipline" is honest about the column and quiet about the discipline.
 - **The control plane now needs a database of its own**, migrated before it will serve. M1 already
-  required a PostgreSQL for the *target* — the plan's exit is a testcontainers test against a real
+  required a PostgreSQL for the *target* — the plan's exit is an integration test against a real
   one — so the marginal cost is a database of its own and a migration step, not a first server. Not a
   role in the target's: the whole point of the boundary above is that the control plane never opens a
   connection to a target at all.
   `make test` stays offline because unit tests do not touch the store.
 - **EDR-0005's guarantee is weaker than it was on paper**, and the paper version was never
-  achievable. Import discipline is defeated four ways where absence was defeated by none: an
-  allowlist edit; a `sql.Open` by driver name in a package that imports nothing the linter sees; a
-  transitive dependency linking a driver the first-party rule never looks at; and **a file the
-  linter never parses** — `make lint` passes no build tags, so anything behind one is invisible,
-  which includes M1's own integration test, the file most certain to import a driver. It buys "the
-  capability arrives by a reviewed edit rather than by accident", and no more. Anyone touching that
-  `depguard` block is touching a security control.
+  achievable. Import discipline is defeated **four** ways where absence was defeated by none: an edit
+  to the permitted list; a `sql.Open` by driver name from a package importing no driver at all, since
+  `database/sql` registration is process-wide; a Harbourmaster package reaching a Pilot adapter through an intermediate
+  that is neither, which only the direct-import cross-check would see and it matches direct imports
+  only; and **a driver that is on neither list**, since both mechanisms name the drivers they
+  know — a reviewer imported `go-mssqldb`, `go-ora`, `modernc.org/sqlite` and `clickhouse-go` and
+  watched both stay silent. It buys "the capability arrives by a reviewed edit rather than by
+  accident", and no more. Anyone touching the confinement test's permitted list is touching a security
+  control.
+
+  One defeat an earlier draft listed is **gone**: a file behind a build tag, which the parser does not
+  care about. Another was never real — the claim that a lint rule cannot see a blank import, which a
+  confounded measurement produced and this record retracts above. The fourth was found by a reviewer
+  looking for what the list does not name, which is the question a denylist always owes.
+
+  One defeat this round **closed**: a transitive dependency. The graph check does look at those —
+  measured with a wrapper module importing the driver, which reached the binary while every previous
+  mechanism stayed green. What replaced it in the list above is narrower and still open.
+
+  Two mechanisms failed on the import shape they existed to police, both after being specified and
+  reviewed. That is the part worth remembering: neither failure was visible in review, and both were
+  visible on the first attempt to run them.
 - **A forward-only schema with no backup story is an irreversible deploy.** An explicit migrator
   means nobody applies one by accident, which is a smaller part of the answer than it sounds: once
   applied, a bad migration is repaired only by writing another, and a destructive one is not
@@ -245,8 +361,9 @@ Named individually, because a reader who sees only one will assume the rest is r
 
 **New obligations.**
 
-- **M1** lands the `depguard` rule in the same change as the first package that opens a connection.
-  A mechanism replaced and then not implemented is worse than the sentence it replaced.
+- **M1** landed the confinement test in the same change as `store.Open`, the first package that
+  opens a connection — discharged 2026-08-20. A mechanism replaced and then not implemented is worse
+  than the sentence it replaced.
 - **M5** needs the Pilot's own durable store decided — [issue #34](https://github.com/sixfathoms/marque/issues/34).
 - **M6** builds the logbook in this database and appends from the Harbourmaster
   ([EDR-0011](./0011-execution-is-idempotent-and-fenced.md) has the Pilot report and the Harbourmaster
@@ -269,3 +386,10 @@ Named individually, because a reader who sees only one will assume the rest is r
 ## Changelog
 
 - **2026-08-20**: Accepted.
+- **2026-08-20**: Amended when M1 built it. The rule was specified as a `depguard` block, replaced with a `go list -deps` graph test, and replaced again with a test that parses every `.go` file. **Each replacement was justified by a claim about what a tool cannot do, and all three claims were false** — `depguard` does report blank imports (`revive` reports at the same line and `--uniq-by-line` hid the second issue; a reviewer said so from the source and was overruled), `golangci-lint` does read a file behind a build tag under `--build-tags`, and `gen/` is skipped by a deletable exclusion and is in no shipped binary anyway. The parser is kept for a reason that claims nothing: both mechanisms' coverage is configuration rather than capability, so both are probed instead of asserted. The allowlist is now per driver and per package rather than per directory tree; a second check refuses a Harbourmaster package — `cmd/harbourmaster` included, which it had omitted — importing a Pilot adapter; the walk skips only what the Go toolchain never compiles and follows symlinks, both after a reviewer defeated an earlier skip list. Defeats are four: an edit to the permitted list, a `sql.Open` by driver name, a transitive dependency, and a driver on neither list. Also clarified that `executions` carrying a nonce is a report key rather than the beginning of EDR-0011's ledger, and that `rows_affected` is absent exactly when the outcome is `indeterminate`. The decision is unchanged.
+- **2026-08-20**: A **ninth**, and a MAJOR beside it, both from the same reviewer and both about sentences rather than mechanism. The ninth: matching the raw body was said to make under-refusal impossible by construction, and `SELECT E'x\'/*'; CREATE/*c*/DATABASE d;` gets past both passes, because the raw pass sees only a contiguous phrase and the stripped pass is what the escape string derails. It reduces; it does not eliminate, and the treadmill of chasing lexer fidelity is what three earlier attempts were on. The MAJOR: `ALTER DATABASE … SET TABLESPACE` was called absent because "no phrase distinguishes them without refusing the transactional ones", and `SET TABLESPACE` distinguishes them perfectly — measured, refusing none of the transactional `ALTER DATABASE … SET` forms. It is on the list. Its cost was then written as "only `ALTER TABLE … SET TABLESPACE`", which was the **tenth** false claim — `ALTER INDEX` and an `ALTER` of a materialised view take the same clause and are transactional, and bare `CLUSTER` likewise refuses the transactional `CLUSTER t USING i`. The general statement is the true one and needs no examples: **this matches a phrase, not a statement, and refuses every statement in which either pass sees one.** The last clause is load-bearing — the same line above records an input that gets past both passes — and leaving it out was the twelfth false claim, in the sentence written to stop making them. The conclusion could have been defended; the justification was simply false, which is this branch's whole subject.
+- **2026-08-20**: An **eighth** false claim, and the third in a row introduced by the commit correcting its predecessor. Two sentences said a migration containing an operation PostgreSQL forbids inside a transaction is *rejected* by the migrator, and that matching the raw body makes under-refusal *impossible*. A reviewer found `CLUSTER`, `DISCARD ALL`, `CREATE SUBSCRIPTION`, `REINDEX (VERBOSE) DATABASE` and `ALTER DATABASE … SET TABLESPACE` all accepted. The raw-body pass closes concealment of a *listed* phrase; it cannot close a gap in the list. Three of those are on the list now and `REINDEX` needed a pattern, because its non-transactional forms take an option list between the keyword and the target. `ALTER DATABASE … SET TABLESPACE` is knowingly absent: no phrase distinguishes it from the transactional `ALTER DATABASE … SET` forms. **This is a denylist of spellings, not a decision procedure**, and both sentences now say so — it reduces what fails as SQLSTATE 25001 at migration time rather than eliminating it. Every entry is tested individually, so an entry cannot be deleted without a test going red.
+- **2026-08-20**: A **seventh** false claim, introduced by the commit correcting the sixth and of exactly the same shape: the phrase list gained bare `REINDEX`, and `REINDEX TABLE` and `REINDEX INDEX` run inside a transaction perfectly well — only the `DATABASE`, `SCHEMA` and `SYSTEM` forms do not. Measured on 18, as the sixth should have been. Narrowed, and every entry on that list is now a measurement rather than a recollection. Separately, the comment stripper was still under-refusing — an escape string, a `$tag$` inside an unquoted identifier, a Unicode dollar tag, and a `DO $$ … EXECUTE 'VACUUM' … $$` block, which runs its dollar-quoted body as statements. Rather than pursue lexer fidelity the check now matches the **raw** body as well as the stripped one, which REDUCES under-refusal rather than eliminating it — an earlier version of this line said "impossible by construction", which was the ninth false claim, because the two passes' blind spots overlap: the raw pass sees only a *contiguous* phrase, and a comment splitting one is removed only by the stripped pass, which is exactly what a lexer derail disables — and over-refuses three ways it now names: a migration that merely mentions one of these words in a string or a comment, a bare identifier equal to one of them, and a concurrent `REFRESH` of a materialised view, which PostgreSQL runs inside a transaction perfectly well. For an accident-guard over files this repository writes that is the better trade, and it is stated rather than left to be discovered.
+- **2026-08-20**: A sixth false claim, and the same shape: this record said a migration containing `ALTER TYPE … ADD VALUE` is rejected by the migrator. It is not on the phrase list, and does not need to be — on a server in the supported range that statement runs inside a transaction perfectly well. Corrected to name what the list actually holds. Also: the comment stripper read into string literals, so an unterminated `/*` inside one discarded the rest of the file and hid whatever followed — wrong in the direction that under-refuses, which is the one that matters. Both found by reviewers running the code rather than reading it.
+- **2026-08-20**: The mechanism becomes `go list -deps` over each binary, with the filesystem walk demoted to a cross-check, after a fifth false capability claim and three more defeats. The claim: the walk skipped `.`, `_` and `testdata` citing `cmd/go`, whose rule about those names governs wildcard expansion rather than import resolution, so an explicitly imported package under `testdata/` compiled and linked with every check green. The defeats: that; a symlink alias, where a global visited set keyed on the resolved path made alphabetical order the only thing deciding whether the forbidden name was examined; and `#cgo LDFLAGS: -lpq`, which links the reference driver with no Go import for any import-based check to see. Cgo is now gated separately with an empty allowlist, which EDR-0039's `libpg_query` joins by a reviewed edit at M2. The rule is stated as a graph property — cut the permitted homes out and no first-party package may still reach a driver — which also catches a wrapper module that imports a driver so the first-party import names something else. The threat model this rule serves is now stated in the Decision: it catches accidents, and a committer who is trying defeats any check living in the same repository. The defeat count stays four; the constructions are instances of the third and fourth.
+- **2026-08-20**: The migrator's refusal of statements PostgreSQL will not run inside a transaction, promised here and implemented nowhere, is implemented — at load time, so CI catches it rather than SQLSTATE 25001 part-way through a production migration. `Verify`'s scope is stated: it checks applied history, not schema shape.

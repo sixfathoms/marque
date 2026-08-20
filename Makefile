@@ -165,12 +165,47 @@ build: ## Build every binary into ./bin
 test: ## Run the test suite
 	go test -race -count=1 ./...
 
+# A disposable PostgreSQL, the runtime role created BEFORE the first migration
+# because the schema grants unconditionally, and the DSN the tests read. The
+# container is removed on exit, including on failure.
+#
+# The host port is EPHEMERAL and read back from docker, not fixed. A fixed one
+# was already taken on this machine by an unrelated PostgreSQL, so the tests
+# connected to that instead and reported a missing database — while the health
+# check, which ran inside the container, passed. Readiness is checked from the
+# host, through the same address the tests use, for the same reason.
+PGIMAGE ?= postgres:18
+
+test-integration: ## Run the tests that need a real PostgreSQL
+	@docker rm -f marque-test-pg >/dev/null 2>&1 || true
+	@docker run -d --name marque-test-pg \
+		-e POSTGRES_PASSWORD=marque -e POSTGRES_DB=marque \
+		-p 127.0.0.1::5432 $(PGIMAGE) >/dev/null
+	@trap 'docker rm -f marque-test-pg >/dev/null 2>&1 || true' EXIT; \
+		port=$$(docker port marque-test-pg 5432 | head -1 | sed 's/.*://'); \
+		test -n "$$port" || { echo "no host port was published"; exit 1; }; \
+		dsn="host=127.0.0.1 port=$$port user=postgres password=marque dbname=marque sslmode=disable"; \
+		echo "PostgreSQL on 127.0.0.1:$$port"; \
+		for i in $$(seq 1 60); do \
+			docker exec marque-test-pg \
+				psql -qtA -U postgres -d marque -c 'SELECT 1' >/dev/null 2>&1 && break; \
+			sleep 1; \
+		done; \
+		docker exec marque-test-pg psql -q -U postgres -c \
+			"CREATE ROLE marque_runtime NOLOGIN" >/dev/null || exit 1; \
+		MARQUE_TEST_DSN="$$dsn" \
+			go test -tags integration -race -count=1 -timeout 10m ./internal/harbourmaster/store/
+
 lint: $(GOLANGCI) $(BUF) ## Check formatting, and lint the schema and the Go
 	$(BUF) format --diff --exit-code
 	$(BUF) lint
 	@$(MAKE) --no-print-directory schema-check
 	$(GOLANGCI) fmt --diff
 	$(GOLANGCI) run ./...
+	# Again with the tag, because golangci-lint evaluates build constraints and
+	# the default run does not read internal/harbourmaster/store's integration
+	# tests at all. Not a second opinion — a second set of files.
+	$(GOLANGCI) run --build-tags integration ./...
 
 generate: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO) ## Regenerate gen/ from proto/
 	$(BUF) generate
