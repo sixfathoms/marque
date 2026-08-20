@@ -509,15 +509,15 @@ func TestTheWalkReachesEveryPlaceThatHasEscapedIt(t *testing.T) {
 	// keyed on the resolved path would examine only the first alias to be read
 	// and silently drop the other — which is the bug this reproduces. Both
 	// names must be reported.
-	real := "zz_real"
-	plant(real)
+	target := "zz_real"
+	plant(target)
 	for _, alias := range []string{"aa_alias", "mm_alias"} {
-		if err := os.Symlink(filepath.Join(root, real), filepath.Join(root, alias)); err != nil {
+		if err := os.Symlink(filepath.Join(root, target), filepath.Join(root, alias)); err != nil {
 			t.Fatalf("linking %s: %v", alias, err)
 		}
 		want = append(want, alias+"/p.go")
 	}
-	want = append(want, real+"/p.go")
+	want = append(want, target+"/p.go")
 
 	got, problems := goFilesUnder(t, root)
 	if len(problems) != 0 {
