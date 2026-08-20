@@ -11,32 +11,35 @@ close now — the dependency arrives at M2, and a guard that lands after the fir
 
 ### Added
 
-- **`.github/dependabot.yml`, covering the four ecosystems that exist**: `gomod` at `/` and at
+- **`.github/dependabot.yml`, four update locations across three ecosystems**: `gomod` at `/` and at
   `/tools` — two module graphs on purpose, so the linter's dependencies stay out of the service's —
   `npm` at `/website`, and `github-actions` at `/`.
-- **Every ecosystem updates as one grouped pull request.** One per directory per dependency is the
-  pattern that produces a queue nobody reads, and an unread queue is a security problem rather than
-  an annoyance, because security updates arrive by the same path. The `/tools` graph is the reason
-  this is not optional: buf, golangci-lint and goreleaser between them pull in several hundred
-  indirect modules.
-- **`pg_query_go` is excluded from the Go group**, so its bump always arrives as its own pull request
+- **Each location groups its updates, and every group says what it applies to.** One pull request per
+  directory per dependency is the pattern that produces a queue nobody reads. The `/tools` graph is
+  why this is not optional: buf, golangci-lint and goreleaser carry 537 indirect requirements between
+  them.
+- **`pg_query_go` is excluded from the Go groups**, so its bump arrives as its own pull request
   rather than one line inside a batch. The dependency does not exist yet; the entry is written first
   deliberately.
 
-### Changed
+### Fixed
 
-- **Nothing about how actions are pinned.** They already carry a full-length commit SHA with a
-  version comment beside it, and Dependabot updates the two together — which is what makes those
-  comments load-bearing rather than decoration.
+- **A group with no `applies-to` covers version updates only.** The first draft of this file grouped
+  everything and then claimed in its own comments that security fixes therefore arrived consolidated
+  too. They would not have: security updates would have stayed ungrouped, and the `pg_query_go`
+  exclusion would not have held for them either — which is the one case where isolating it matters
+  most. Every group now declares `applies-to` explicitly, including where the value is the default,
+  and each location carries a parallel `security-updates` group.
 
-The `pg_query_go` rule is deliberately **not** an `ignore` entry. Ignoring major bumps would stop
-Dependabot proposing the upgrade that most needs a human to know it exists, including a
-security-motivated one — and a major is not the risky case anyway: EDR-0039's hazard is a newer
-grammar admitting statements the old one refused, and a minor does that just as well. The rule is
-that the bump is *reviewed*, not that it is invisible.
+Two limits are written into the file, because it reads stronger than it is.
 
-Worth stating plainly, because the configuration alone reads stronger than it is: **Dependabot cannot
-enforce "never auto-merge".** That is a repository setting, and the two have to agree. Today
-`allow_auto_merge` is false for the whole repository, so nothing merges itself and the exclusion is
-sufficient. If auto-merge is ever enabled, this file stops being enough and a branch-protection rule
-has to carry the weight.
+**The exclusion covers minor and patch bumps, not the major.** `pg_query_go` uses semantic import
+versioning: the module is `…/pg_query_go/v6`, and `/v7` is a *different module path*. Dependabot does
+not migrate Go imports across a major suffix, so it will never propose that upgrade at all — with or
+without an `ignore` entry, which is why there is not one. The upgrade EDR-0039 cares about most is
+therefore the one no tool will raise, and M2 inherits the obligation to watch releases by hand.
+
+**Dependabot cannot require review.** `allow_auto_merge` is false for this repository, which disables
+GitHub's native auto-merge — it does not stop an installed app or a workflow holding write permission
+from calling the merge API. The invariant *"a `pg_query_go` bump is read by a human"* needs a
+branch-protection rule with no automation bypass, and this file is not that rule.
