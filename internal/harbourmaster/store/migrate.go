@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	// The driver, imported for its side effect of registering with
 	// database/sql. EDR-0042 confines this import to this package.
@@ -119,7 +120,20 @@ func Verify(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	applied, err := appliedOn(ctx, db)
+	// In a transaction so SET LOCAL bounds the read's lock wait and dies with
+	// it rather than leaking onto the pooled connection. Unbounded, a startup
+	// check blocks behind anything holding AccessExclusiveLock on
+	// schema_migrations — and a process that hangs at startup looks like a
+	// process that is starting.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("beginning the verification read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '30s'`); err != nil {
+		return fmt.Errorf("bounding the verification read: %w", err)
+	}
+	applied, err := appliedOn(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -150,7 +164,7 @@ type querier interface {
 func appliedOn(ctx context.Context, q querier) ([]applied, error) {
 	var exists bool
 	err := q.QueryRowContext(ctx,
-		`SELECT to_regclass('public.schema_migrations') IS NOT NULL`).Scan(&exists)
+		`SELECT pg_catalog.to_regclass('public.schema_migrations') IS NOT NULL`).Scan(&exists)
 	if err != nil {
 		return nil, fmt.Errorf("looking for schema_migrations: %w", err)
 	}
@@ -248,39 +262,46 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	// Session-scoped deliberately: every statement on this connection needs it,
 	// and the connection is discarded at the end of the run rather than
 	// returned to the pool carrying it.
-	if _, err := conn.ExecContext(ctx, `SET search_path = public, pg_catalog`); err != nil {
+	//
+	// TO public, and NOT `public, pg_catalog`. When pg_catalog is not named it
+	// is searched implicitly FIRST; naming it explicitly last demotes it below
+	// public, so the pin written that way was strictly worse than no pin. A
+	// public.length(text) would then bind into every length CHECK at DDL time,
+	// and because a constraint holds the pg_proc OID the shadow cannot even be
+	// dropped afterwards. Measured on 18.3, in review, after it shipped to this
+	// branch.
+	if _, err := conn.ExecContext(ctx, `SET search_path TO public`); err != nil {
 		return fmt.Errorf("pinning search_path: %w", err)
 	}
-	// LOCAL, so it dies with the surrounding transaction rather than leaking
-	// onto the pooled connection — pgx's reset hook does not reset session
-	// GUCs, and a later borrower inheriting a 30-second lock failure would be a
-	// gift from a function it never called.
+	// Session-scoped for the same reason as search_path, and that reason is
+	// what an earlier draft got wrong: it set this LOCAL inside a throwaway
+	// transaction to keep it off the pool, which the connection discard already
+	// guarantees. The timeout then died at that transaction's commit and
+	// covered neither the CREATE TABLE below, nor the history read, nor the
+	// DDL. A reviewer held an AccessExclusiveLock on schema_migrations and
+	// watched Migrate wait out the full hold.
 	//
-	// pg_advisory_lock waits forever otherwise, and a CLI passing
-	// context.Background() would wait with it rather than saying another
-	// migrator holds the lock.
-	lockTx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("beginning the lock transaction: %w", err)
+	// Without it pg_advisory_lock waits forever, and a CLI passing
+	// context.Background() waits with it rather than saying another migrator
+	// holds the lock.
+	if _, err := conn.ExecContext(ctx, `SET lock_timeout = '30s'`); err != nil {
+		return fmt.Errorf("bounding the migration's lock waits: %w", err)
 	}
-	if _, err := lockTx.ExecContext(ctx, `SET LOCAL lock_timeout = '30s'`); err != nil {
-		_ = lockTx.Rollback()
-		return fmt.Errorf("setting lock_timeout: %w", err)
-	}
-	// A session lock taken inside a transaction outlives it, which is what is
-	// wanted: the timeout is transactional, the lock is not.
-	if _, err := lockTx.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
-		_ = lockTx.Rollback()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockKey); err != nil {
 		return fmt.Errorf("taking the migration lock (another migrator may hold it): %w", err)
 	}
-	if err := lockTx.Commit(); err != nil {
-		return fmt.Errorf("committing the lock transaction: %w", err)
-	}
+	// Registered immediately after the lock is taken, not after any later step.
+	// A session advisory lock survives the rollback of the transaction that
+	// took it, so any window between acquisition and this defer is a window
+	// where the lock is held and nothing is scheduled to release it.
 	defer func() {
 		// Explicit, because a session lock does not die when the connection is
 		// returned to the pool. WithoutCancel so a cancelled caller still
-		// releases it.
-		_, _ = conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, lockKey)
+		// releases it — bounded, so a stalled server cannot make this defer
+		// hang and prevent the discard that would release it anyway.
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_, _ = conn.ExecContext(unlockCtx, `SELECT pg_advisory_unlock($1)`, lockKey)
 	}()
 
 	if _, err := conn.ExecContext(ctx, `
@@ -322,12 +343,11 @@ func applyOne(ctx context.Context, conn *sql.Conn, m migration) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// The lock transaction's SET LOCAL died with it, so bound this one too:
-	// otherwise a migration taking an AccessExclusiveLock waits forever and
-	// queues every reader behind it.
-	if _, err := tx.ExecContext(ctx, `SET LOCAL lock_timeout = '30s'`); err != nil {
-		return fmt.Errorf("bounding %s: %w", m.name, err)
-	}
+	// No SET LOCAL here: lock_timeout is session-scoped on the connection this
+	// transaction runs on, so it already bounds this DDL's lock wait. It bounds
+	// the WAIT, not the statement's duration — statement_timeout is 0, and a
+	// migration that holds a lock for an hour once it has one is not something
+	// this bounds.
 	if _, err := tx.ExecContext(ctx, m.sql); err != nil {
 		return fmt.Errorf("applying %s: %w", m.name, err)
 	}
@@ -350,8 +370,10 @@ func applyOne(ctx context.Context, conn *sql.Conn, m migration) error {
 // the whole of EDR-0042's mechanism. It is registered with database/sql as a
 // side effect, which is process-wide — so this package being the only importer
 // does not stop another package calling sql.Open by name. That is stated in
-// EDR-0042 as one of the four ways the rule is defeated, and it is why this is
+// EDR-0042 as one of the three ways the rule is defeated, and it is why this is
 // import discipline rather than containment.
+//
+// The caller owns the returned *sql.DB and must Close it.
 func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -361,6 +383,11 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	// control plane under load turns into the target's max_connections.
 	db.SetMaxOpenConns(16)
 	db.SetMaxIdleConns(4)
+	// Connections do not live forever. An unbounded lifetime ages badly across
+	// a failover, a DNS change or a pooler in front, where the pool keeps
+	// handing out connections to somewhere that has moved.
+	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	// Verify positively rather than lazily. A pool that connects on first use
 	// hides broken authentication until an incident (EDR-0005).

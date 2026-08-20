@@ -1,11 +1,14 @@
 package store_test
 
 import (
+	"errors"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,67 +43,44 @@ const harbourmasterPrefix = "internal/harbourmaster"
 
 // TestDriverConfinement is EDR-0042's mechanism, in its third shape.
 //
-// A linter cannot do this job, for two reasons that are about tooling reach
-// rather than about what depguard understands:
+// Three justifications have been given for doing this here rather than in
+// depguard, and all three were capability claims about tooling that turned out
+// to be false — that depguard cannot report blank imports (it can; revive's
+// blank-imports rule reports at the same line and --uniq-by-line hid it), that
+// golangci-lint cannot read a file behind a build tag (it can, under
+// --build-tags), and that it cannot read gen/ (an anchored exclusion in
+// .golangci.yml, and gen/ is in no binary's dependency graph anyway). EDR-0042
+// records all three.
 //
-//   - golangci-lint evaluates build constraints — host GOOS, no tags — so a
-//     file behind `//go:build integration` is invisible to it, and that is
-//     where M1's own integration test lives.
-//   - `.golangci.yml` excludes `gen/`, which is compiled into every binary.
-//
-// An earlier version of this comment said depguard cannot see blank imports.
-// That was false: revive's blank-imports rule reports at the same line and
-// golangci-lint's --uniq-by-line shows only one issue per line, so the
-// measurement that produced the claim was measuring the wrong thing. A
-// reviewer said so from the source and was overruled. EDR-0042 records it.
-//
-// Parsing files directly has neither reach problem: build tags are irrelevant,
-// `_test.go` and `gen/` are included, and a file that cannot be parsed is a
-// failure rather than a skip.
+// So this claims nothing about capability. Both mechanisms' coverage is
+// configuration: this test's is its walk and skipDir, the linter's is its
+// invocation flags and exclusions. Neither is safe to assert, so both are
+// probed — see TestSkipDirMatchesTheGoToolchain and TestWalkReachesGeneratedCode
+// below, and the symlink refusal in firstPartyGoFiles.
 func TestDriverConfinement(t *testing.T) {
 	files := firstPartyGoFiles(t)
 	if len(files) < 5 {
 		t.Fatalf("found only %d Go files; the walk is not reaching the repository", len(files))
 	}
-	for rel, imports := range files {
-		dir := filepath.ToSlash(filepath.Dir(rel))
-		for _, imp := range imports {
-			if permittedHere(imp, dir) {
-				continue
-			}
-			home, _ := driverHome(imp)
-			t.Errorf(
-				"%s imports %q.\n"+
-					"  That driver belongs in %s and nowhere else (EDR-0042). It replaces\n"+
-					"  EDR-0005's \"no database driver for target engines linked in\", which\n"+
-					"  stopped being available when EDR-0013 fixed Marque's own state on\n"+
-					"  PostgreSQL.",
-				rel, imp, home)
-		}
+	for _, v := range violations(files) {
+		t.Errorf(
+			"%s (EDR-0042).\n"+
+				"  The rule replaces EDR-0005's \"no database driver for target engines\n"+
+				"  linked in\", which stopped being available when EDR-0013 fixed Marque's\n"+
+				"  own state on PostgreSQL.",
+			v)
 	}
 }
 
 // TestHarbourmasterDoesNotImportAPilotAdapter enforces the transitive half.
 func TestHarbourmasterDoesNotImportAPilotAdapter(t *testing.T) {
-	for rel, imports := range firstPartyGoFiles(t) {
-		dir := filepath.ToSlash(filepath.Dir(rel))
-		if !strings.HasPrefix(dir, harbourmasterPrefix) {
-			continue
-		}
-		for _, imp := range imports {
-			pkg, ok := strings.CutPrefix(imp, "github.com/sixfathoms/marque/")
-			if !ok {
-				continue
-			}
-			if pkg == "internal/pilot" || strings.HasPrefix(pkg, "internal/pilot/") {
-				t.Errorf(
-					"%s imports %q.\n"+
-						"  A Harbourmaster package importing a Pilot adapter links that adapter's\n"+
-						"  driver transitively, which no direct-import check can see. EDR-0042\n"+
-						"  calls this the boundary that carries the weight.",
-					rel, imp)
-			}
-		}
+	for _, v := range pilotImports(firstPartyGoFiles(t)) {
+		t.Errorf(
+			"%s.\n"+
+				"  A Harbourmaster package importing a Pilot adapter links that adapter's\n"+
+				"  driver transitively, which no direct-import check can see. EDR-0042\n"+
+				"  calls this the boundary that carries the weight.",
+			v)
 	}
 }
 
@@ -157,63 +137,149 @@ func driverHome(imp string) (string, bool) {
 // firstPartyGoFiles maps every repository-relative .go path to its imports.
 // `gen/` is NOT skipped: generated code is compiled into the binaries — the
 // schema package imports it — so a generated file importing a driver links one.
+// skipDir reports whether the Go toolchain itself never compiles from a
+// directory of this name, which is the only defensible basis for skipping one.
+// Two hand-curated lists have failed here already: the first skipped by
+// basename anywhere in the tree, so internal/anything/bin/ escaped; the second
+// skipped root-level bin/ and dist/, and `go build ./bin/probe/` compiles a
+// package there like any other. A rule tied to what the toolchain ignores has
+// no entries to get wrong.
+func skipDir(name string) bool {
+	// cmd/go: directories beginning with "." or "_" are ignored, as is
+	// "testdata", whose contents are never part of any build.
+	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata"
+}
+
+// violations reports every file in the set importing a driver it may not.
+// Factored out so it can be tested over a synthetic set: on this repository the
+// loop body never executes — no file violates the rule — so replacing the
+// failure with a no-op left the suite green.
+func violations(files map[string][]string) []string {
+	var out []string
+	for rel, imports := range files {
+		dir := filepath.ToSlash(filepath.Dir(rel))
+		for _, imp := range imports {
+			if permittedHere(imp, dir) {
+				continue
+			}
+			home, _ := driverHome(imp)
+			out = append(out, fmt.Sprintf("%s imports %q, which belongs in %s and nowhere else", rel, imp, home))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// pilotImports reports every Harbourmaster file importing a Pilot package.
+// Factored out for the same reason: internal/pilot does not exist yet, so on
+// this repository the check cannot fail and cannot be seen to work.
+func pilotImports(files map[string][]string) []string {
+	var out []string
+	for rel, imports := range files {
+		dir := filepath.ToSlash(filepath.Dir(rel))
+		if !strings.HasPrefix(dir, harbourmasterPrefix) {
+			continue
+		}
+		for _, imp := range imports {
+			pkg, ok := strings.CutPrefix(imp, "github.com/sixfathoms/marque/")
+			if !ok {
+				continue
+			}
+			if pkg == "internal/pilot" || strings.HasPrefix(pkg, "internal/pilot/") {
+				out = append(out, fmt.Sprintf("%s imports %q", rel, imp))
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func firstPartyGoFiles(t *testing.T) map[string][]string {
 	t.Helper()
 	root := repoRoot(t)
 	out := map[string][]string{}
 
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			// Root-relative, not by basename: skipping any directory called
-			// "bin" anywhere would let internal/anything/bin/x.go escape, and
-			// that path compiles like any other.
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			switch filepath.ToSlash(rel) {
-			case ".git", "bin", "dist", "website/node_modules":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		rel = filepath.ToSlash(rel)
+	// Symlinks are FOLLOWED, not skipped and not refused. filepath.WalkDir
+	// reports a symlinked directory as a non-directory entry and does not
+	// descend it, while `go build` follows it happily — a reviewer put a
+	// Harbourmaster package behind one, watched the binary link a driver
+	// through it, and watched this test stay green. Refusing outright was the
+	// first fix and it was wrong: pnpm builds node_modules out of symlinks, so
+	// refusing meant carving node_modules out, and a carve-out is what failed
+	// twice already. Following costs a visited set and nothing else.
+	visited := map[string]bool{}
 
-		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+	var walk func(dir, rel string)
+	walk = func(dir, rel string) {
+		real, err := filepath.EvalSymlinks(dir)
 		if err != nil {
-			// Not a skip. Unknown imports treated as permitted is the silent
-			// pass this exists to avoid. ImportsOnly stops after the import
-			// block, so a file broken below it still reads correctly; what
-			// fails here is a broken header, which would not compile either.
-			t.Errorf("%s could not be parsed, so its imports are unchecked: %v", rel, err)
-			return nil
+			t.Errorf("%s could not be resolved, so its contents are unchecked: %v", rel, err)
+			return
 		}
-		imports := make([]string, 0, len(f.Imports))
-		for _, spec := range f.Imports {
-			p, err := strconv.Unquote(spec.Path.Value)
+		if visited[real] {
+			return
+		}
+		visited[real] = true
+
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Errorf("%s could not be read, so its contents are unchecked: %v", rel, err)
+			return
+		}
+		for _, e := range entries {
+			path := filepath.Join(dir, e.Name())
+			childRel := filepath.ToSlash(filepath.Join(rel, e.Name()))
+
+			// Stat, not the dirent's own type: a symlink's type says
+			// "symlink", and what matters is what it points at.
+			info, err := os.Stat(path)
 			if err != nil {
-				t.Errorf("%s has an import path that is not a quoted string: %s", rel, spec.Path.Value)
+				// A dangling symlink points at nothing, so nothing escapes.
+				if errors.Is(err, fs.ErrNotExist) {
+					continue
+				}
+				t.Errorf("%s could not be inspected, so it is unchecked: %v", childRel, err)
 				continue
 			}
-			imports = append(imports, p)
+			if info.IsDir() {
+				if !skipDir(e.Name()) {
+					walk(path, childRel)
+				}
+				continue
+			}
+			if !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			out[childRel] = fileImports(t, path, childRel)
 		}
-		out[rel] = imports
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walking the repository: %v", err)
 	}
+	walk(root, "")
+
 	return out
+}
+
+// fileImports reads one file's import paths. A file that cannot be parsed is a
+// failure, not a skip: unknown imports treated as permitted is the silent pass
+// this whole test exists to avoid. ImportsOnly stops after the import block, so
+// a file broken below it still reads correctly; what fails here is a broken
+// header, which would not compile either.
+func fileImports(t *testing.T, path, rel string) []string {
+	t.Helper()
+	f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+	if err != nil {
+		t.Errorf("%s could not be parsed, so its imports are unchecked: %v", rel, err)
+		return nil
+	}
+	imports := make([]string, 0, len(f.Imports))
+	for _, spec := range f.Imports {
+		p, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			t.Errorf("%s has an import path that is not a quoted string: %s", rel, spec.Path.Value)
+			continue
+		}
+		imports = append(imports, p)
+	}
+	return imports
 }
 
 // The guard is only as good as its reach.
