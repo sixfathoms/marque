@@ -79,6 +79,13 @@ updates:
   # setting rather than by review. Dependabot updates a pinned SHA and the
   # version comment beside it together, which is why those comments are not
   # decoration.
+  #
+  # There is NO security-updates group here, and its absence is the decision:
+  # Dependabot does not raise alerts for an action pinned to a SHA, and a
+  # security update is driven by an alert. So SHA pinning — enabled
+  # deliberately, and the right call — costs Dependabot-driven security updates
+  # for this ecosystem. A group would have been inert while reading as coverage.
+  # What remains is the weekly version update, which does move the pin.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -87,9 +94,6 @@ updates:
     groups:
       actions:
         applies-to: version-updates
-        patterns: ["*"]
-      actions-security:
-        applies-to: security-updates
         patterns: ["*"]
 
 # Two limits, stated because the file reads stronger than it is.

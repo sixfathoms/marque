@@ -29,7 +29,14 @@ close now — the dependency arrives at M2, and a guard that lands after the fir
   too. They would not have: security updates would have stayed ungrouped, and the `pg_query_go`
   exclusion would not have held for them either — which is the one case where isolating it matters
   most. Every group now declares `applies-to` explicitly, including where the value is the default,
-  and each location carries a parallel `security-updates` group.
+  and the three Go and npm locations carry a parallel `security-updates` group.
+
+**Actions deliberately have no security group, and that is a cost of SHA pinning.** Dependabot does
+not raise alerts for an action pinned to a commit SHA, and a security update is driven by an alert —
+so the pinning enabled for [#8](https://github.com/sixfathoms/marque/issues/8), which is the right
+call and stays, means this ecosystem gets weekly version updates and no Dependabot security updates.
+A fourth group would have been inert while reading as coverage. Nobody had written that trade down;
+it is written down now.
 
 Two limits are written into the file, because it reads stronger than it is.
 
