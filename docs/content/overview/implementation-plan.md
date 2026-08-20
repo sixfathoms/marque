@@ -121,8 +121,17 @@ This milestone deliberately builds something insecure, so it is contained by con
 - **M5 deletes the flag**, and a test asserts no such path exists in the binary. That test is written
   now, skipped with a reason, and un-skipped in M5.
 
+Three things arrive with the store
+([EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md)): the tenant-partitioned schema
+and its first migration; a migrator that is an explicit command, refuses a divergent history, and
+records each migration's content digest in the transaction that applies it; and the `depguard` rule
+confining the PostgreSQL driver to `internal/store`, which lands in the **same change** as the first
+package that opens a connection.
+
 **Exit:** an integration test (testcontainers, real PostgreSQL) running the six steps and asserting
-the row changed. The first genuine end-to-end signal, available in week one rather than month three.
+the row changed; and the driver-containment rule **seen to fail**, by adding the import to a package
+outside `internal/store` and watching the lint refuse it — the rule replaces a mechanism EDR-0005
+lost, so a version of it that has never bitten is not a replacement. The first genuine end-to-end signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
 above.
 
@@ -285,7 +294,8 @@ drifts toward.
 Decisions that will have to be made during Phase 1 and do not have a record yet. Each becomes one
 before the milestone that needs it closes.
 
-- **The control-plane storage schema and its migration tooling** — M1.
+- ~~The control-plane storage schema and its migration tooling — M1.~~ Settled by
+  [EDR-0042](../../edrs/0042-the-control-plane-keeps-its-own-store.md).
 - **The Go module and package layout**, specifically where the engine-shaped boundary sits so a second
   engine is an implementation rather than a fork — M2.
 - **The test-issuer and local-development story**, which is also the adopting team's first experience

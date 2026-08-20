@@ -4,7 +4,7 @@ title: "The control plane never holds a target credential"
 summary: "Target credentials live only where connections are made. The Harbourmaster stores a reference; the Pilot dereferences it at connect time using its own workload identity and never returns it."
 status: accepted
 implementation: none
-implementation_note: "cmd/harbourmaster and proto/marque/v1/harbourmaster.proto cite this record and link no database driver, which is true of a binary that prints its version and exits. Nothing stores a reference, dereferences one, or connects to anything."
+implementation_note: "cmd/harbourmaster and proto/marque/v1/harbourmaster.proto cite this record, and nothing stores a reference, dereferences one, or connects to anything — true of a binary that prints its version and exits. The Harbourmaster will link a PostgreSQL driver for its OWN store from M1, which is why the mechanism below is re-expressed by EDR-0042 as containment rather than absence."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"
@@ -137,3 +137,4 @@ the session's actual database user on the target — not the configuration's opi
   ([EDR-0034](./0034-the-pilot-api-has-one-authorisation-model.md)). This line was missing when the
   amendment was made, which is the corpus's own rule 1 broken in the one place it is most visible.
 - **2026-08-16**: Amended after the second panel's synthesis: extended the blast-radius bullet to name the read channel and the fast-path residual.
+- **2026-08-20**: Amended with a pointer. This record's driver sentence — "no database driver for target engines linked in" — became unachievable when [EDR-0013](./0013-async-work-rides-the-wal.md) fixed Marque's own state on PostgreSQL, since PostgreSQL is also a target engine and one driver serves both. It went unchallenged only while the Harbourmaster had no storage code and so no drivers at all. [EDR-0042](./0042-the-control-plane-keeps-its-own-store.md) replaces the mechanism with containment — the driver confined to `internal/store` by a lint rule — and keeps the property this record protects, which is that the control plane holds no target credential and no target connection parameters. The decision is unchanged; the sentence that implemented it is not available.
