@@ -14,6 +14,7 @@ linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
   enable:
     - bodyclose
+    - depguard
     - errorlint
     - exhaustive
     - gosec
@@ -28,6 +29,44 @@ linters:
     - usetesting
 
   settings:
+    # EDR-0042. EDR-0005 originally said the Harbourmaster "has no database
+    # driver for target engines linked in" — a mechanism that stopped being
+    # available when EDR-0013 fixed Marque's own state on PostgreSQL, since
+    # PostgreSQL is also a target engine and one driver serves both.
+    #
+    # This is the replacement, and it is WEAKER. A linter reads imports, not
+    # capability: database/sql registration is process-wide, so a package that
+    # imports nothing listed here can still call sql.Open by driver name. It is
+    # defeated by an allowlist edit, by a transitive dependency, and by any file
+    # golangci-lint does not parse — `make lint` passes no build tags, so an
+    # integration test behind one is invisible to it. What it buys is that the
+    # capability arrives by a reviewed edit rather than by accident.
+    #
+    # Editing this block is editing a security control.
+    depguard:
+      rules:
+        # Two packages may hold a target-engine driver: the Harbourmaster's own
+        # store, and the Pilot's adapter, which must have one to reach a target.
+        control-plane-driver:
+          files:
+            - "$all"
+            - "!**/internal/harbourmaster/store/**"
+            - "!**/internal/pilot/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
+            - pkg: github.com/lib/pq
+              desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
+        # An engine Marque does not store its own state in has no exception at
+        # all: EDR-0013 forced the PostgreSQL one, and nothing forces this.
+        no-other-target-engine:
+          files:
+            - "**/internal/**"
+            - "**/cmd/**"
+            - "!**/internal/pilot/**"
+          deny:
+            - pkg: github.com/go-sql-driver/mysql
+              desc: a MySQL driver is a target driver only; the control plane stores no state in MySQL (EDR-0042)
     misspell:
       # British spelling is a house rule for prose (CONTRIBUTING.md), and
       # comments are prose. This is the rule enforced rather than remembered.

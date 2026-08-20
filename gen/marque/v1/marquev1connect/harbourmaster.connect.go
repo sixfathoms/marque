@@ -36,6 +36,18 @@ const (
 	// HarbourmasterServiceGetVersionProcedure is the fully-qualified name of the HarbourmasterService's
 	// GetVersion RPC.
 	HarbourmasterServiceGetVersionProcedure = "/marque.v1.HarbourmasterService/GetVersion"
+	// HarbourmasterServiceSubmitProcedure is the fully-qualified name of the HarbourmasterService's
+	// Submit RPC.
+	HarbourmasterServiceSubmitProcedure = "/marque.v1.HarbourmasterService/Submit"
+	// HarbourmasterServiceGetRequestProcedure is the fully-qualified name of the HarbourmasterService's
+	// GetRequest RPC.
+	HarbourmasterServiceGetRequestProcedure = "/marque.v1.HarbourmasterService/GetRequest"
+	// HarbourmasterServiceApproveProcedure is the fully-qualified name of the HarbourmasterService's
+	// Approve RPC.
+	HarbourmasterServiceApproveProcedure = "/marque.v1.HarbourmasterService/Approve"
+	// HarbourmasterServiceRecordExecutionProcedure is the fully-qualified name of the
+	// HarbourmasterService's RecordExecution RPC.
+	HarbourmasterServiceRecordExecutionProcedure = "/marque.v1.HarbourmasterService/RecordExecution"
 )
 
 // HarbourmasterServiceClient is a client for the marque.v1.HarbourmasterService service.
@@ -43,6 +55,28 @@ type HarbourmasterServiceClient interface {
 	// GetVersion reports the software the control plane is running, so a client
 	// can say what it was talking to.
 	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	// Submit records a statement an operator wants to run. It decides nothing:
+	// the statement is not parsed, not scoped and not rehearsed at M1, and the
+	// reply carries the request's reference so the operator can watch it
+	// (EDR-0038).
+	Submit(context.Context, *connect.Request[v1.SubmitRequest]) (*connect.Response[v1.SubmitResponse], error)
+	// GetRequest returns one request by reference. A reference is an identifier
+	// and not a capability, so resolving one still requires entitlement and a
+	// caller who may not see it gets not-found rather than permission-denied —
+	// which is M4's work, since M1 has no identity to check (EDR-0038).
+	GetRequest(context.Context, *connect.Request[v1.GetRequestRequest]) (*connect.Response[v1.GetRequestResponse], error)
+	// Approve records that a named human approved a request at a stage.
+	//
+	// At M1 this writes a row and nothing more. It is not an approval in the
+	// sense the rest of the design means: an approval is a signature over a
+	// payload, verifiable offline by a Pilot that can call nobody back
+	// (EDR-0004), and M3 replaces this method's effect with one. The name is
+	// plain on purpose so nothing here reads as an early marque.
+	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
+	// RecordExecution stores what a Pilot reported about an attempt. The Pilot
+	// records the outcome in its own ledger first — that is the fence — and then
+	// reports it here, retried until acknowledged (EDR-0011).
+	RecordExecution(context.Context, *connect.Request[v1.RecordExecutionRequest]) (*connect.Response[v1.RecordExecutionResponse], error)
 }
 
 // NewHarbourmasterServiceClient constructs a client for the marque.v1.HarbourmasterService service.
@@ -63,12 +97,41 @@ func NewHarbourmasterServiceClient(httpClient connect.HTTPClient, baseURL string
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		submit: connect.NewClient[v1.SubmitRequest, v1.SubmitResponse](
+			httpClient,
+			baseURL+HarbourmasterServiceSubmitProcedure,
+			connect.WithSchema(harbourmasterServiceMethods.ByName("Submit")),
+			connect.WithClientOptions(opts...),
+		),
+		getRequest: connect.NewClient[v1.GetRequestRequest, v1.GetRequestResponse](
+			httpClient,
+			baseURL+HarbourmasterServiceGetRequestProcedure,
+			connect.WithSchema(harbourmasterServiceMethods.ByName("GetRequest")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		approve: connect.NewClient[v1.ApproveRequest, v1.ApproveResponse](
+			httpClient,
+			baseURL+HarbourmasterServiceApproveProcedure,
+			connect.WithSchema(harbourmasterServiceMethods.ByName("Approve")),
+			connect.WithClientOptions(opts...),
+		),
+		recordExecution: connect.NewClient[v1.RecordExecutionRequest, v1.RecordExecutionResponse](
+			httpClient,
+			baseURL+HarbourmasterServiceRecordExecutionProcedure,
+			connect.WithSchema(harbourmasterServiceMethods.ByName("RecordExecution")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // harbourmasterServiceClient implements HarbourmasterServiceClient.
 type harbourmasterServiceClient struct {
-	getVersion *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
+	getVersion      *connect.Client[v1.GetVersionRequest, v1.GetVersionResponse]
+	submit          *connect.Client[v1.SubmitRequest, v1.SubmitResponse]
+	getRequest      *connect.Client[v1.GetRequestRequest, v1.GetRequestResponse]
+	approve         *connect.Client[v1.ApproveRequest, v1.ApproveResponse]
+	recordExecution *connect.Client[v1.RecordExecutionRequest, v1.RecordExecutionResponse]
 }
 
 // GetVersion calls marque.v1.HarbourmasterService.GetVersion.
@@ -76,11 +139,53 @@ func (c *harbourmasterServiceClient) GetVersion(ctx context.Context, req *connec
 	return c.getVersion.CallUnary(ctx, req)
 }
 
+// Submit calls marque.v1.HarbourmasterService.Submit.
+func (c *harbourmasterServiceClient) Submit(ctx context.Context, req *connect.Request[v1.SubmitRequest]) (*connect.Response[v1.SubmitResponse], error) {
+	return c.submit.CallUnary(ctx, req)
+}
+
+// GetRequest calls marque.v1.HarbourmasterService.GetRequest.
+func (c *harbourmasterServiceClient) GetRequest(ctx context.Context, req *connect.Request[v1.GetRequestRequest]) (*connect.Response[v1.GetRequestResponse], error) {
+	return c.getRequest.CallUnary(ctx, req)
+}
+
+// Approve calls marque.v1.HarbourmasterService.Approve.
+func (c *harbourmasterServiceClient) Approve(ctx context.Context, req *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error) {
+	return c.approve.CallUnary(ctx, req)
+}
+
+// RecordExecution calls marque.v1.HarbourmasterService.RecordExecution.
+func (c *harbourmasterServiceClient) RecordExecution(ctx context.Context, req *connect.Request[v1.RecordExecutionRequest]) (*connect.Response[v1.RecordExecutionResponse], error) {
+	return c.recordExecution.CallUnary(ctx, req)
+}
+
 // HarbourmasterServiceHandler is an implementation of the marque.v1.HarbourmasterService service.
 type HarbourmasterServiceHandler interface {
 	// GetVersion reports the software the control plane is running, so a client
 	// can say what it was talking to.
 	GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error)
+	// Submit records a statement an operator wants to run. It decides nothing:
+	// the statement is not parsed, not scoped and not rehearsed at M1, and the
+	// reply carries the request's reference so the operator can watch it
+	// (EDR-0038).
+	Submit(context.Context, *connect.Request[v1.SubmitRequest]) (*connect.Response[v1.SubmitResponse], error)
+	// GetRequest returns one request by reference. A reference is an identifier
+	// and not a capability, so resolving one still requires entitlement and a
+	// caller who may not see it gets not-found rather than permission-denied —
+	// which is M4's work, since M1 has no identity to check (EDR-0038).
+	GetRequest(context.Context, *connect.Request[v1.GetRequestRequest]) (*connect.Response[v1.GetRequestResponse], error)
+	// Approve records that a named human approved a request at a stage.
+	//
+	// At M1 this writes a row and nothing more. It is not an approval in the
+	// sense the rest of the design means: an approval is a signature over a
+	// payload, verifiable offline by a Pilot that can call nobody back
+	// (EDR-0004), and M3 replaces this method's effect with one. The name is
+	// plain on purpose so nothing here reads as an early marque.
+	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
+	// RecordExecution stores what a Pilot reported about an attempt. The Pilot
+	// records the outcome in its own ledger first — that is the fence — and then
+	// reports it here, retried until acknowledged (EDR-0011).
+	RecordExecution(context.Context, *connect.Request[v1.RecordExecutionRequest]) (*connect.Response[v1.RecordExecutionResponse], error)
 }
 
 // NewHarbourmasterServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -97,10 +202,43 @@ func NewHarbourmasterServiceHandler(svc HarbourmasterServiceHandler, opts ...con
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
+	harbourmasterServiceSubmitHandler := connect.NewUnaryHandler(
+		HarbourmasterServiceSubmitProcedure,
+		svc.Submit,
+		connect.WithSchema(harbourmasterServiceMethods.ByName("Submit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	harbourmasterServiceGetRequestHandler := connect.NewUnaryHandler(
+		HarbourmasterServiceGetRequestProcedure,
+		svc.GetRequest,
+		connect.WithSchema(harbourmasterServiceMethods.ByName("GetRequest")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	harbourmasterServiceApproveHandler := connect.NewUnaryHandler(
+		HarbourmasterServiceApproveProcedure,
+		svc.Approve,
+		connect.WithSchema(harbourmasterServiceMethods.ByName("Approve")),
+		connect.WithHandlerOptions(opts...),
+	)
+	harbourmasterServiceRecordExecutionHandler := connect.NewUnaryHandler(
+		HarbourmasterServiceRecordExecutionProcedure,
+		svc.RecordExecution,
+		connect.WithSchema(harbourmasterServiceMethods.ByName("RecordExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/marque.v1.HarbourmasterService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case HarbourmasterServiceGetVersionProcedure:
 			harbourmasterServiceGetVersionHandler.ServeHTTP(w, r)
+		case HarbourmasterServiceSubmitProcedure:
+			harbourmasterServiceSubmitHandler.ServeHTTP(w, r)
+		case HarbourmasterServiceGetRequestProcedure:
+			harbourmasterServiceGetRequestHandler.ServeHTTP(w, r)
+		case HarbourmasterServiceApproveProcedure:
+			harbourmasterServiceApproveHandler.ServeHTTP(w, r)
+		case HarbourmasterServiceRecordExecutionProcedure:
+			harbourmasterServiceRecordExecutionHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -112,4 +250,20 @@ type UnimplementedHarbourmasterServiceHandler struct{}
 
 func (UnimplementedHarbourmasterServiceHandler) GetVersion(context.Context, *connect.Request[v1.GetVersionRequest]) (*connect.Response[v1.GetVersionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("marque.v1.HarbourmasterService.GetVersion is not implemented"))
+}
+
+func (UnimplementedHarbourmasterServiceHandler) Submit(context.Context, *connect.Request[v1.SubmitRequest]) (*connect.Response[v1.SubmitResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("marque.v1.HarbourmasterService.Submit is not implemented"))
+}
+
+func (UnimplementedHarbourmasterServiceHandler) GetRequest(context.Context, *connect.Request[v1.GetRequestRequest]) (*connect.Response[v1.GetRequestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("marque.v1.HarbourmasterService.GetRequest is not implemented"))
+}
+
+func (UnimplementedHarbourmasterServiceHandler) Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("marque.v1.HarbourmasterService.Approve is not implemented"))
+}
+
+func (UnimplementedHarbourmasterServiceHandler) RecordExecution(context.Context, *connect.Request[v1.RecordExecutionRequest]) (*connect.Response[v1.RecordExecutionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("marque.v1.HarbourmasterService.RecordExecution is not implemented"))
 }

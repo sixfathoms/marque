@@ -230,13 +230,16 @@ Named individually, because a reader who sees only one will assume the rest is r
   connection to a target at all.
   `make test` stays offline because unit tests do not touch the store.
 - **EDR-0005's guarantee is weaker than it was on paper**, and the paper version was never
-  achievable. Import discipline is defeated four ways where absence was defeated by none: an
-  allowlist edit; a `sql.Open` by driver name in a package that imports nothing the linter sees; a
-  transitive dependency linking a driver the first-party rule never looks at; and **a file the
-  linter never parses** — `make lint` passes no build tags, so anything behind one is invisible,
-  which includes M1's own integration test, the file most certain to import a driver. It buys "the
-  capability arrives by a reviewed edit rather than by accident", and no more. Anyone touching that
-  `depguard` block is touching a security control.
+  achievable. Import discipline is defeated three ways where absence was defeated by none: an edit to
+  the permitted list; a `sql.Open` by driver name from a package importing no driver at all, since
+  `database/sql` registration is process-wide; and a transitive dependency, which a first-party check
+  does not look at. It buys "the capability arrives by a reviewed edit rather than by accident", and
+  no more. Anyone touching the permitted list is touching a security control.
+
+  Two defeats an earlier draft listed are **gone**, because the mechanism changed under review: a
+  lint rule could see neither a blank import nor a file behind a build tag, and a dependency-graph
+  test sees both. That the first mechanism failed on exactly the import shape it existed to police —
+  after being specified, reviewed and accepted — is the part worth remembering.
 - **A forward-only schema with no backup story is an irreversible deploy.** An explicit migrator
   means nobody applies one by accident, which is a smaller part of the answer than it sounds: once
   applied, a bad migration is repaired only by writing another, and a destructive one is not
