@@ -139,18 +139,40 @@ func loadMigrationsFrom(fsys fs.FS) ([]migration, error) {
 // the people who write these migrations, not a security control; nothing stops
 // someone determined from spelling a statement in a way it does not match.
 func rejectNonTransactional(name, body string) error {
+	// BOTH forms. The stripped one so a keyword split by a comment is still
+	// found; the raw one so a keyword this lexer wrongly believes is inside a
+	// string or a dollar-quoted body is found anyway.
+	//
+	// That second pass exists because the lexer kept under-refusing — an escape
+	// string, a $tag$ inside an unquoted identifier, a Unicode dollar tag, each
+	// found by a reviewer, each letting a statement PostgreSQL refuses reach a
+	// production migration. Matching the raw body too makes that impossible by
+	// construction rather than by getting a SQL lexer right, at the cost of
+	// refusing a migration that merely mentions one of these words in a string
+	// or a comment. For an accident-guard over files this repository writes,
+	// over-refusing with a clear message is the right trade, and the shipped
+	// migration contains none of these words.
 	stripped := collapseSpace(stripSQLComments(body))
+	raw := collapseSpace(body)
 	for _, s := range []string{
+		// Every entry measured on PostgreSQL 18, not assumed. Bare REINDEX was
+		// on this list and should not have been: REINDEX TABLE and REINDEX
+		// INDEX run inside a transaction perfectly well, and only the DATABASE,
+		// SCHEMA and SYSTEM forms do not. ALTER TYPE … ADD VALUE likewise runs
+		// inside one on a supported server — this list never held it, and the
+		// record claimed it did.
 		"CONCURRENTLY",
 		"VACUUM",
-		"REINDEX",
+		"REINDEX DATABASE",
+		"REINDEX SCHEMA",
+		"REINDEX SYSTEM",
 		"CREATE DATABASE",
 		"DROP DATABASE",
 		"CREATE TABLESPACE",
 		"DROP TABLESPACE",
 		"ALTER SYSTEM",
 	} {
-		if !containsPhrase(stripped, s) {
+		if !containsPhrase(stripped, s) && !containsPhrase(raw, s) {
 			continue
 		}
 		return fmt.Errorf(
@@ -296,6 +318,8 @@ func containsPhrase(body, phrase string) bool {
 		}
 		s := i + j
 		e := s + len(phrase)
+		// Both ends. Only checking the end would let `log_vacuum` match, which
+		// is the mirror of the `vacuum_log` case that motivated this.
 		beforeOK := s == 0 || !isIdent(upper[s-1])
 		afterOK := e == len(upper) || !isIdent(upper[e])
 		if beforeOK && afterOK {

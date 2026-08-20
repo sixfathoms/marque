@@ -227,7 +227,6 @@ func TestNonTransactionalStatementsAreRefused(t *testing.T) {
 		"CREATE INDEX CONCURRENTLY": "CREATE INDEX CONCURRENTLY x ON t (c);",
 		"lowercase concurrently":    "create index concurrently x on t (c);",
 		"VACUUM":                    "VACUUM FULL t;",
-		"REINDEX":                   "REINDEX TABLE t;",
 		"ALTER SYSTEM":              "ALTER SYSTEM SET work_mem = '1GB';",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -267,6 +266,14 @@ func TestNonTransactionalDetectionReadsSQLNotSubstrings(t *testing.T) {
 		"CREATE TABLESPACE":                  "CREATE TABLESPACE ts LOCATION '/x';",
 		"DROP DATABASE":                      "DROP DATABASE probe;",
 		"CREATE DATABASE":                    "CREATE DATABASE probe;",
+		"REINDEX DATABASE":                   "REINDEX DATABASE x;",
+		"REINDEX SCHEMA":                     "REINDEX SCHEMA public;",
+		// The lexer under-refused on each of these — an escape string, a $tag$
+		// inside an unquoted identifier, a Unicode dollar tag. The raw-body
+		// pass refuses them whatever the lexer makes of them.
+		"an escape-string quote":       `SELECT E'x\'/*'; VACUUM;`,
+		"a $tag$ inside an identifier": "CREATE TABLE foo$tag$ (id integer); VACUUM;",
+		"a Unicode dollar tag":         "SELECT $\u00e9$/*$\u00e9$; VACUUM;",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := load(body); err == nil {
@@ -278,15 +285,21 @@ func TestNonTransactionalDetectionReadsSQLNotSubstrings(t *testing.T) {
 	// And the known coarseness, asserted so it is a decision rather than a
 	// surprise: a bare identifier equal to one of the words is refused, because
 	// there the word stands alone exactly as it does in the statement.
-	t.Run("a column named reindex is refused, which is the accepted cost", func(t *testing.T) {
-		if err := load("CREATE TABLE t (reindex boolean);"); err == nil {
+	t.Run("a column named vacuum is refused, which is the accepted cost", func(t *testing.T) {
+		if err := load("CREATE TABLE t (vacuum boolean);"); err == nil {
 			t.Error("expected a refusal; if there is none, the comment in migrate.go is stale")
 		}
 	})
 
 	for name, body := range map[string]string{
 		"an identifier containing VACUUM":       "CREATE TABLE vacuum_log (id integer);",
+		"an identifier ENDING in VACUUM":        "CREATE TABLE log_vacuum (id integer);",
 		"an identifier containing CONCURRENTLY": "CREATE TABLE concurrently_applied (id integer);",
+		// Measured on 18: each of these runs inside a transaction perfectly
+		// well, and the list said otherwise until a reviewer ran them.
+		"REINDEX TABLE, which is transactional": "REINDEX TABLE t;",
+		"REINDEX INDEX, which is transactional": "REINDEX INDEX i;",
+		"ALTER TYPE ADD VALUE, likewise":        "ALTER TYPE mood ADD VALUE 'ecstatic';",
 		"an ordinary migration":                 "CREATE TABLE t (id integer);",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -312,5 +325,81 @@ func TestDuplicateNumbersAreRefusedByName(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the message should contain %q; got %q", want, err)
 		}
+	}
+}
+
+// stripSQLComments is tested directly, on its output, because every branch of
+// it could be deleted with the loader tests still green — the raw-body pass in
+// rejectNonTransactional refuses those inputs whatever the lexer does, which is
+// the point of that pass and also why it hides the lexer's own regressions.
+func TestStripSQLComments(t *testing.T) {
+	for name, c := range map[string]struct{ in, want string }{
+		"a line comment": {
+			"SELECT 1; -- and a note\nSELECT 2;",
+			"SELECT 1; \nSELECT 2;",
+		},
+		"a block comment becomes a space": {
+			"CREATE/* split */TABLE t (id int);",
+			"CREATE TABLE t (id int);",
+		},
+		"block comments nest, as PostgreSQL nests them": {
+			"a /* outer /* inner */ still outer */ b",
+			"a   b",
+		},
+		"a marker inside a string literal is not a comment": {
+			"INSERT INTO t VALUES ('/*'); SELECT 2;",
+			"INSERT INTO t VALUES ('/*'); SELECT 2;",
+		},
+		"a line marker inside a string literal is not a comment": {
+			"INSERT INTO t VALUES ('a -- b'); SELECT 2;",
+			"INSERT INTO t VALUES ('a -- b'); SELECT 2;",
+		},
+		"a doubled quote does not end the literal": {
+			"INSERT INTO t VALUES ('it''s /*'); SELECT 2;",
+			"INSERT INTO t VALUES ('it''s /*'); SELECT 2;",
+		},
+		"a quoted identifier is not a comment either": {
+			`CREATE TABLE "od--d" (id int);`,
+			`CREATE TABLE "od--d" (id int);`,
+		},
+		"a dollar-quoted body is replaced by a space": {
+			"CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; -- x $$ LANGUAGE sql;",
+			"CREATE FUNCTION f() RETURNS int AS   LANGUAGE sql;",
+		},
+		"a tagged dollar quote too": {
+			"AS $body$ anything /* at all $body$ END",
+			"AS   END",
+		},
+		"an unterminated block comment eats the rest": {
+			"SELECT 1; /* and then nothing",
+			"SELECT 1;  ",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := stripSQLComments(c.in); got != c.want {
+				t.Errorf("stripSQLComments(%q)\n = %q\nwant %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// The under-refusal the raw-body pass exists for, kept as a named regression:
+// a DO block runs its dollar-quoted body as statements, so dropping that body
+// is right for reading SQL and wrong for this question.
+func TestADOBlockExecutingAForbiddenStatementIsRefused(t *testing.T) {
+	for name, body := range map[string]string{
+		"DO ... EXECUTE 'VACUUM'": `DO $$ BEGIN EXECUTE 'VACUUM t'; END $$;`,
+		"DO ... EXECUTE CONCURRENTLY": `
+			DO $$ BEGIN EXECUTE 'CREATE INDEX CONCURRENTLY i ON t(c)'; END $$;`,
+		"an unterminated tag truncating the file": "ALTER TABLE a$b$c ADD COLUMN x int;\nVACUUM t;",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := loadMigrationsFrom(fstest.MapFS{
+				"migrations/0001_a.sql": &fstest.MapFile{Data: []byte(body)},
+			})
+			if err == nil {
+				t.Errorf("%s was accepted; PostgreSQL refuses it at run time", name)
+			}
+		})
 	}
 }

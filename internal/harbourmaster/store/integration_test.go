@@ -480,11 +480,16 @@ func TestTheGrantsLandAndTheRuntimeRoleOwnsNothing(t *testing.T) {
 		// EDR-0012's shape: nothing the runtime role holds lets it erase.
 		add(table, "DELETE", false)
 		add(table, "TRUNCATE", false)
+		// REFERENCES lets a role point a foreign key at the table, and TRIGGER
+		// lets it attach code that runs on every write. "Every privilege" named
+		// five of seven until a reviewer counted.
+		add(table, "REFERENCES", false)
+		add(table, "TRIGGER", false)
+	}
+	for _, priv := range []string{"INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"} {
+		add("public.schema_migrations", priv, false)
 	}
 	add("public.schema_migrations", "SELECT", true)
-	add("public.schema_migrations", "INSERT", false)
-	add("public.schema_migrations", "UPDATE", false)
-	add("public.schema_migrations", "DELETE", false)
 
 	for _, c := range cases {
 		var got bool
@@ -729,7 +734,7 @@ func TestTheSchemaRefusesWhatItSaysItRefuses(t *testing.T) {
 				VALUES ('development', 'req_ok', 'n4', 'probably', 1)`)
 			return err
 		},
-		"an over-long nonce, which is an index-row error if unbounded": func() error {
+		"an over-long nonce": func() error {
 			_, err := db.ExecContext(ctx, `
 				INSERT INTO executions (tenant_id, reference, nonce, outcome, rows_affected)
 				VALUES ('development', 'req_ok', repeat('n', 4000), 'committed', 1)`)

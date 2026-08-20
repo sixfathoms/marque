@@ -139,6 +139,13 @@ func TestDriverHomesAreExactPackages(t *testing.T) {
 		{"github.com/jackc/pgx/v5/stdlib", "internal/harbourmaster/api", false},
 		{"github.com/go-sql-driver/mysql", "internal/harbourmaster/store", false},
 		{"github.com/go-sql-driver/mysql", "internal/pilot/mysql", true},
+		// One refusing row per driver root, so deleting an entry from
+		// driverHomes is visible. Three of the six had no row at all and
+		// deleted green.
+		{"github.com/lib/pq", "internal/harbourmaster/api", false},
+		{"github.com/jackc/pgconn", "internal/harbourmaster/api", false},
+		{"github.com/jackc/pgproto3", "internal/harbourmaster/api", false},
+		{"github.com/ziutek/mymysql", "internal/harbourmaster/store", false},
 		{"github.com/go-sql-driver/mysql", "internal/pilot/postgres", false},
 		{"github.com/ziutek/mymysql/godrv", "internal/harbourmaster/store", false},
 		{"github.com/lib/pq", "internal/harbourmaster/store", true},
@@ -604,6 +611,37 @@ func TestTheWalkTerminatesOnASymlinkLoop(t *testing.T) {
 // silent pass this package exists to prevent. Turning the refusal into a no-op
 // left the whole suite green until this test existed.
 func TestAnUnreadableFileIsAProblemNotASkip(t *testing.T) {
+	t.Run("a directory that cannot be read", func(t *testing.T) {
+		root := t.TempDir()
+		dir := filepath.Join(root, "unreadable")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("building the tree: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "p.go"), []byte("package p\n"), 0o644); err != nil {
+			t.Fatalf("building the tree: %v", err)
+		}
+		if err := os.Chmod(dir, 0o000); err != nil {
+			t.Fatalf("removing permissions: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+		if _, problems := goFilesUnder(t, root); len(problems) == 0 {
+			t.Error("an unreadable directory was skipped silently, so its contents are unchecked")
+		}
+	})
+
+	t.Run("a symlink that resolves to nothing readable", func(t *testing.T) {
+		root := t.TempDir()
+		// A self-referential symlink: EvalSymlinks refuses it, and the walk
+		// must say so rather than move on.
+		if err := os.Symlink(filepath.Join(root, "loop"), filepath.Join(root, "loop")); err != nil {
+			t.Skipf("this platform will not create the link: %v", err)
+		}
+		if _, problems := goFilesUnder(t, root); len(problems) == 0 {
+			t.Error("an unresolvable symlink was skipped silently")
+		}
+	})
+
 	root := t.TempDir()
 	for name, body := range map[string]string{
 		"truncated.go": "package p\n\nimport (\n\t_ \"github.com/jackc/pgx/v5/stdlib\"\n",

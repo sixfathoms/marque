@@ -84,8 +84,10 @@ func goList(t *testing.T, c buildConfig) []listedPackage {
 	cmd.Dir = repoRoot(t)
 	// Explicit, because Go defaults CGO_ENABLED to 0 when no C compiler is on
 	// PATH, and with it off `go list` reports a cgo file under IgnoredGoFiles
-	// with CgoFiles and CgoLDFLAGS empty — so TestCgoIsConfined below would
-	// pass having examined nothing.
+	// with CgoFiles empty. CgoLDFLAGS is NOT empty — a reviewer measured it,
+	// correcting an earlier version of this comment that said it was — so the
+	// -lpq half of TestCgoIsConfined would still fire. The CgoFiles half would
+	// not, which is reason enough to force it.
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	out, err := cmd.Output()
 	if err != nil {
@@ -149,18 +151,28 @@ func normalise(path string) string {
 // vacuity this package found in violations() a round earlier and then
 // reproduced here.
 func reachesDriver(imports map[string][]string, path string, seen map[string]bool) string {
+	return reachesDriverFrom(imports, path, path, seen)
+}
+
+// origin is the first-party package the traversal started from, and it is what
+// permission is judged against. Judging against the package holding the import
+// meant a permitted home reaching a driver through a third-party wrapper was
+// reported — the wrapper is not first-party, so nothing could permit it —
+// although the home may hold that driver directly. Safe, but wrong, and the
+// stated rule says the home is cut out.
+func reachesDriverFrom(imports map[string][]string, origin, path string, seen map[string]bool) string {
 	if seen[path] {
 		return ""
 	}
 	seen[path] = true
-	dir := strings.TrimPrefix(path, modulePath+"/")
+	dir := strings.TrimPrefix(origin, modulePath+"/")
 	for _, imp := range imports[path] {
 		if home, ok := driverHome(imp); ok {
 			// Permission is PER DRIVER, via permittedHere. Asking only whether
 			// the importer is some home let internal/pilot/mysql hold pgx with
 			// this check green while the walk refused it — the two mechanisms
 			// disagreeing, with the designated one weaker.
-			if isFirstParty(path) && permittedHere(imp, dir) {
+			if isFirstParty(origin) && permittedHere(imp, dir) {
 				continue
 			}
 			return fmt.Sprintf("%s (whose home is %s)", imp, home)
@@ -170,7 +182,7 @@ func reachesDriver(imports map[string][]string, path string, seen map[string]boo
 			// hold, and reaching one is how every binary is meant to.
 			continue
 		}
-		if via := reachesDriver(imports, imp, seen); via != "" {
+		if via := reachesDriverFrom(imports, origin, imp, seen); via != "" {
 			return fmt.Sprintf("%s, through %s", via, imp)
 		}
 	}
@@ -254,6 +266,20 @@ func TestReachesDriverOverASyntheticGraph(t *testing.T) {
 			},
 			me + "internal/harbourmaster/wal", true,
 		},
+		"a permitted home reaching its own driver through a wrapper": {
+			map[string][]string{
+				me + "internal/harbourmaster/store": {"github.com/jackc/pglogrepl"},
+				"github.com/jackc/pglogrepl":        {"github.com/jackc/pgx/v5/pgconn"},
+			},
+			me + "internal/harbourmaster/store", false,
+		},
+		"but the Pilot's MySQL home reaching a PostgreSQL driver that way is not": {
+			map[string][]string{
+				me + "internal/pilot/mysql":  {"github.com/jackc/pglogrepl"},
+				"github.com/jackc/pglogrepl": {"github.com/jackc/pgx/v5/pgconn"},
+			},
+			me + "internal/pilot/mysql", true,
+		},
 		"a cycle terminates": {
 			map[string][]string{
 				me + "internal/a": {me + "internal/b"},
@@ -288,6 +314,10 @@ func TestNoBinaryLinksADriverOutsideItsHome(t *testing.T) {
 				// roots makes the answer depend on map iteration order, which
 				// is the order-dependence that defeated the walk's global
 				// visited set one round ago.
+				// UNPINNED, like the two named in driver_confinement_test.go:
+				// turning this t.Errorf into a t.Logf leaves the suite green,
+				// because a test cannot observe its own reporting. What it
+				// reports — reachesDriver — is pinned over synthetic graphs.
 				if via := reachesDriver(imports, path, map[string]bool{}); via != "" {
 					t.Errorf(
 						"%s reaches %s.\n"+
@@ -335,6 +365,16 @@ func TestTheGraphContainsTheDriverEdge(t *testing.T) {
 	}
 	if !seenIt {
 		t.Errorf("no configuration in buildConfigs lists %s importing a driver, so the check above is not looking at this repository", store)
+	}
+
+	// And that the listing reaches THIRD-PARTY edges, which is what -deps buys.
+	// Without it `go list -json ./...` names ten packages and no driver at all,
+	// so the wrapper defeat this mechanism exists to close reopens silently —
+	// a reviewer deleted -deps and the suite stayed green.
+	imports := graphOf(t, buildConfig{"every package", "./...", "", false})
+	const driver = "github.com/jackc/pgx/v5/stdlib"
+	if len(imports[driver]) == 0 {
+		t.Errorf("the listing has no imports for %s, so it is not following dependencies and a wrapper would be invisible", driver)
 	}
 }
 
