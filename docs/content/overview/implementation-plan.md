@@ -152,6 +152,14 @@ differently per architecture is a soundness bug the build-and-smoke tier cannot 
 version is recorded on extracted scopes; widening the allowlist by one node type shows up as a
 corpus diff.
 
+**And an obligation M2 acquires by adding the dependency.** `pg_query_go` uses semantic import
+versioning, so `/v6` and `/v7` are different module paths and **Dependabot will never propose that
+upgrade** — `.github/dependabot.yml` isolates its minor and patch bumps and can do nothing about the
+major. Watching for a new major is therefore a human job that starts the day this dependency lands,
+and it is not a dependency bump when it arrives: a newer grammar parses statements the previous one
+refused, so the conformance corpus is re-run and any changed verdict bumps the subset version
+([EDR-0039](../../edrs/0039-the-grammar-is-parsed-by-postgresqls-own-parser.md)).
+
 ### M3 — Marques
 
 The heart of the security argument
