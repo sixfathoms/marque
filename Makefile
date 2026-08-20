@@ -329,8 +329,8 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 # first of several — on Linux a foreign-arch binary produces no stdout at all,
 # so the coverage would shrink without anything failing.
 snapshot-check: platform-check build snapshot ## Fail if make and goreleaser disagree about a build
-	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*(\(.*\)) go.*/\1/'); \
-	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
+	@mine=$$(./$(BIN_DIR)/marque version | sed 's/.*(\(.*\)) go.*/\1/'); \
+	theirs=$$(find dist -type f -name marque -exec {} version \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
 	if [ -z "$$theirs" ]; then \
 		echo "the snapshot binary produced no version line — it is missing, or it did not run"; \
 		exit 1; \
