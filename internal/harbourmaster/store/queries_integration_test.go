@@ -233,15 +233,24 @@ func TestRepeatingANonceReturnsTheStoredOutcome(t *testing.T) {
 		t.Fatalf("recording: %v", err)
 	}
 
-	// A different outcome under the same nonce.
+	// The same report again — a Pilot retrying after a timeout. It learns what
+	// is recorded.
 	second, err := s.RecordExecution(ctx, devTenant, ref, Execution{
-		Nonce: "same", Outcome: OutcomeIndeterminate, RowsAffected: nil,
+		Nonce: "same", Outcome: OutcomeCommitted, RowsAffected: &rows,
 	})
 	if err != nil {
 		t.Fatalf("recording again: %v", err)
 	}
 	if second.Outcome != first.Outcome {
 		t.Errorf("the retry returned %s; the stored outcome is %s", second.Outcome, first.Outcome)
+	}
+
+	// A CONTRADICTING report under the same nonce is a second attempt wearing
+	// the first one's identity, and is refused rather than acknowledged.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "same", Outcome: OutcomeIndeterminate,
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("a nonce reported with a different outcome: want ErrWrongState, got %v", err)
 	}
 
 	var count int
@@ -345,16 +354,25 @@ func TestAFreshNonceIsRefusedAfterTheRequestIsTerminal(t *testing.T) {
 		t.Errorf("%d executions recorded; the second was refused and must not have landed", n)
 	}
 
-	// The recorded nonce may still be repeated: that is an acknowledgement,
-	// and it is what makes a Pilot's retry of the REPORT safe.
+	// The recorded nonce may still be repeated with the SAME report: that is
+	// an acknowledgement, and it is what makes a Pilot's retry of the REPORT
+	// safe.
 	again, err := s.RecordExecution(ctx, devTenant, ref, Execution{
-		Nonce: "first", Outcome: OutcomeIndeterminate,
+		Nonce: "first", Outcome: OutcomeCommitted, RowsAffected: &rows,
 	})
 	if err != nil {
 		t.Fatalf("repeating a recorded nonce: %v", err)
 	}
 	if again.Outcome != OutcomeCommitted {
 		t.Errorf("the repeat returned %s; committed is what was stored", again.Outcome)
+	}
+
+	// Repeating it with a DIFFERENT report is a second attempt wearing the
+	// first one's identity.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "first", Outcome: OutcomeIndeterminate,
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("a contradicting repeat was accepted: %v", err)
 	}
 }
 
@@ -691,7 +709,7 @@ func TestARecordedNonceMayBeRepeatedAfterEitherTerminalState(t *testing.T) {
 			}
 
 			again, err := s.RecordExecution(ctx, devTenant, ref, Execution{
-				Nonce: "n", Outcome: OutcomeRolledBack, RowsAffected: ptr(0),
+				Nonce: "n", Outcome: outcome, RowsAffected: rows,
 			})
 			if err != nil {
 				t.Fatalf("repeating a recorded nonce: %v", err)
@@ -727,5 +745,68 @@ func TestReferencesCarryEntropy(t *testing.T) {
 		if len(seen) == 1 {
 			t.Errorf("character %d is the same in all sixteen references; this is not random", pos)
 		}
+	}
+}
+
+// The hazard that moving clean failures back to `approved` opened, and the
+// guard for it.
+//
+// A re-run under the SAME nonce is not a retry of the report — it is a second
+// attempt. Without this, the re-run committed, reported `committed`, and got
+// back the first attempt's `aborted_not_applied` with zero rows: the statement
+// ran, rows changed, and the control plane recorded that nothing happened.
+func TestAReRunUnderTheSameNonceIsRefused(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+	ref, err := s.Submit(ctx, devTenant, aRequest("k"))
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+
+	// Attempt one fails cleanly, so the request stays runnable.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n1", Outcome: OutcomeAbortedNotApplied, RowsAffected: ptr(0),
+	}); err != nil {
+		t.Fatalf("recording the first attempt: %v", err)
+	}
+	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateApproved {
+		t.Fatalf("a clean abort left the request %s", got.State)
+	}
+
+	// Attempt two succeeds — and reuses the nonce.
+	_, err = s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n1", Outcome: OutcomeCommitted, RowsAffected: ptr(3),
+	})
+	if !errors.Is(err, ErrWrongState) {
+		t.Fatalf("a re-run reusing the nonce was accepted: %v", err)
+	}
+	if !strings.Contains(err.Error(), "a re-run needs a new one") {
+		t.Errorf("the refusal does not say what to do: %v", err)
+	}
+
+	// The same OUTCOME with a different row count is also a second attempt.
+	// Two runs can both commit and touch different numbers of rows, and
+	// comparing the outcome alone would accept the second silently.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n1", Outcome: OutcomeAbortedNotApplied, RowsAffected: ptr(7),
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("the same outcome with a different row count was accepted: %v", err)
+	}
+
+	// A NEW nonce is the right way, and it works.
+	stored, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n2", Outcome: OutcomeCommitted, RowsAffected: ptr(3),
+	})
+	if err != nil {
+		t.Fatalf("the re-run with a fresh nonce was refused: %v", err)
+	}
+	if stored.Outcome != OutcomeCommitted || *stored.RowsAffected != 3 {
+		t.Errorf("the re-run recorded %s/%v", stored.Outcome, stored.RowsAffected)
+	}
+	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateExecuted {
+		t.Errorf("the request is %s after a committed re-run", got.State)
 	}
 }

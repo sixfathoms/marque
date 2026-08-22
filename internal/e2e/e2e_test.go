@@ -310,9 +310,11 @@ func TestARetriedReportLearnsTheStoredOutcome(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("reporting: %v", err)
 	}
+	// The same report again — which is what a Pilot retrying after a timeout
+	// sends. It learns what was recorded and writes nothing new.
 	retried, err := w.client.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
-		Reference: reference, Nonce: "one",
-		Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_INDETERMINATE,
+		Reference: reference, Nonce: "one", RowsAffected: result.RowsAffected,
+		Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED,
 	}))
 	if err != nil {
 		t.Fatalf("retrying the report: %v", err)
@@ -320,6 +322,15 @@ func TestARetriedReportLearnsTheStoredOutcome(t *testing.T) {
 	if retried.Msg.GetExecution().GetOutcome() != v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED {
 		t.Errorf("the retry was told %s; committed is what was stored",
 			retried.Msg.GetExecution().GetOutcome())
+	}
+
+	// A CONTRADICTING report under the same nonce is a second attempt wearing
+	// the first one's identity, and is refused over the wire too.
+	if _, err := w.client.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
+		Reference: reference, Nonce: "one",
+		Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_INDETERMINATE,
+	})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Errorf("a contradicting repeat: code is %v, want FailedPrecondition", connect.CodeOf(err))
 	}
 
 	// The statement ran once, so every tier went up by exactly one.

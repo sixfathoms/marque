@@ -179,9 +179,10 @@ message RecordExecutionResponse {
   // safe.
   //
   // It does NOT let the caller tell an accepted report from an acknowledged
-  // repeat: a well-behaved retry sends the same values, so both responses match
-  // in every field including `at`. Only a retry that contradicts itself is
-  // distinguishable, and that is the case a caller least wants to be in.
+  // repeat: a well-behaved retry sends the same values, so both responses are
+  // identical in all three fields. A retry that CONTRADICTS what is stored is
+  // refused outright rather than acknowledged — one nonce is one attempt, and
+  // two outcomes under it mean the caller reused it for a second.
   // Retrying the EXECUTION is a different thing again — EDR-0011's ledger is
   // what would make it safe, and M1 has no ledger.
   Execution execution = 2;

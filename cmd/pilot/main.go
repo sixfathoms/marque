@@ -12,12 +12,19 @@
 // that should first exist.
 //
 // The nonce makes the REPORT idempotent and not the execution, which is a
-// weaker thing than it sounds and is worth being exact about. Re-running this
-// command with a nonce already recorded is refused, because the request is
-// terminal by then. But if the FIRST report never landed — the process died
-// between the commit and the call — the request is still approved, and running
-// the command again executes the statement a second time before anything looks
-// at the nonce.
+// weaker thing than it sounds and is worth being exact about.
+//
+// Re-running this command with a nonce already recorded is refused — but by the
+// CONTROL PLANE, after the statement has already run. A clean failure leaves
+// the request approved on purpose, so it is runnable again; give the re-run the
+// old nonce and the statement executes, then the report is refused because one
+// nonce is one attempt. The database changed and nothing recorded it. **Use a
+// fresh nonce for a re-run.**
+//
+// And if the first report never landed at all — the process died between the
+// commit and the call — the request is still approved, so running the command
+// again executes the statement a second time before anything looks at the
+// nonce.
 //
 // That is exactly what EDR-0011's ledger prevents, by claiming the nonce
 // BEFORE the statement runs and letting a crash lose the attempt rather than
@@ -124,6 +131,11 @@ func execute(args []string, stdout io.Writer) error {
 		return fmt.Errorf("the execution produced outcome %q, which is not one of the four (EDR-0042)", result.Outcome)
 	}
 	// A context that a signal does NOT cancel, bounded on its own.
+	//
+	// UNPINNED: reverting this to ctx leaves both suites green, because no test
+	// sends a real signal to a running execute. Labelled rather than left
+	// looking covered — it is one of the two blockers this round fixed, and it
+	// can regress silently.
 	//
 	// The report used the same signal context the execution did, so any SIGINT
 	// or SIGTERM after the statement had run made the report fail with

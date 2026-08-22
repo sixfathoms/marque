@@ -58,18 +58,24 @@ The first version of that classification said "the server sent a message, so it 
 test took the connection away and watched it call a dead backend `rolled_back`: terminating a
 backend sends `57P01`, which **is** a server message. A refusal is now an error the server chose to
 return, judged by **severity alone** — a first attempt also excluded SQLSTATE classes, and a
-deferred constraint trigger that raises at commit produces `XX000` while rolling the transaction
-back, so the class carried no such meaning.
+deferred constraint trigger that raises at commit rolls the transaction back while returning a
+SQLSTATE the trigger itself chooses — `P0001` by default — so the class carried no such meaning.
 
 ### Two bugs worth the telling
 
 **Idempotency lost a race no sequential test could see.** `Submit` and `RecordExecution` are keyed —
 on the caller's key and on the attempt's nonce — and both were written as
-`INSERT … ON CONFLICT DO NOTHING` followed by a read-back. That returns *nothing*: `DO NOTHING`
-yields no row, and the read-back cannot see a concurrent submitter's row until it commits. Eight
-goroutines on one key, five of them got `sql: no rows in result set`. Both are now `DO UPDATE` with
-a no-op `SET`, which takes the row lock, waits, and returns the surviving row whichever way the race
-went.
+`INSERT … ON CONFLICT DO NOTHING` with the reference read back in the same statement. That returns
+*nothing*: eight goroutines on one key, five of them got `sql: no rows in result set`. Both are now
+`DO UPDATE` with a no-op `SET`, which takes the row lock, waits, and returns the surviving row
+whichever way the race went.
+
+The *reason* is worth getting right, because the first version of this entry got it wrong and said
+the concurrent row "cannot be seen until it commits". `DO NOTHING` does wait — measured at two
+seconds — and a **later** statement sees the committed row without trouble. The fallback `SELECT`
+was part of the *same* statement, and a statement runs on one snapshot taken before the wait began.
+The bug was using two snapshots, not a visibility rule, and the wrong diagnosis would have sent
+someone to add a retry.
 
 **A `CHECK` constraint cannot be `DEFERRABLE`.** Only `UNIQUE`, `PRIMARY KEY`, `FOREIGN KEY` and
 `EXCLUDE` can. Assumed while writing a test, then measured — which is this project's recurring
@@ -79,7 +85,7 @@ lesson and the reason the previous entry exists.
 
 Everything the milestone said it would not. No statement is parsed, so `DROP TABLE` and
 `UPDATE … WHERE id = 1` are the same to it. No approval is verified, no scope is applied, no
-rehearsal is run, and nothing is signed. The tenant and the submitter come from configuration
-because there is no identity to take them from
+rehearsal is run, and nothing is signed. The tenant comes from configuration and the submitter is the
+fixed string `unauthenticated`, because there is no identity to take either from
 ([EDR-0025](/edrs/0025-tenants-are-partitioned-from-day-one/)), and every request records its
 submitter as `unauthenticated`, which is the truth.

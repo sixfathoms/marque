@@ -7,6 +7,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -116,12 +117,18 @@ func (s *Store) Submit(ctx context.Context, tenant string, r Request) (string, e
 
 	// DO UPDATE with a no-op SET, not DO NOTHING.
 	//
-	// DO NOTHING returns no row on conflict, so the reference has to be read
-	// back — and a concurrent submitter's row is not visible until it commits,
-	// so that read finds nothing either and the whole statement returns no
-	// rows. Measured: eight goroutines on one key, five of them got
-	// "sql: no rows in result set". The concurrency test found it, the
-	// sequential one could not have.
+	// DO NOTHING returns no row on conflict, so the reference had to be read
+	// back in the same statement — and that is where it failed: eight
+	// goroutines on one key, five of them got "sql: no rows in result set".
+	//
+	// The reason is a snapshot, not a lock. DO NOTHING does WAIT for the
+	// conflicting transaction — measured: two seconds, and a LATER statement
+	// then sees the committed row perfectly well. But the fallback SELECT was
+	// part of the same statement, and a statement runs on one snapshot taken
+	// before the wait began, so it looked at a moment when the other row did
+	// not yet exist. An earlier version of this comment said the row "is not
+	// visible until it commits", which is wrong in a way that matters: it would
+	// send someone to add a retry rather than to stop using two snapshots.
 	//
 	// DO UPDATE takes the row lock, waits for the other transaction, and
 	// RETURNING then yields the surviving row whichever way the race went.
@@ -293,8 +300,7 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 		}
 	}
 
-	// DO UPDATE for the same reason as Submit: DO NOTHING returns nothing, and
-	// the read-back cannot see a concurrent uncommitted row.
+	// DO UPDATE for the same reason as Submit.
 	var stored Execution
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO executions (tenant_id, reference, nonce, outcome, rows_affected)
@@ -306,6 +312,30 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 	).Scan(&stored.Nonce, &stored.Outcome, &stored.RowsAffected, &stored.At)
 	if err != nil {
 		return Execution{}, fmt.Errorf("recording the execution: %w", err)
+	}
+
+	// A repeat that CONTRADICTS what is stored is refused, rather than silently
+	// acknowledged.
+	//
+	// Returning the stored row is right for a Pilot retrying the same report
+	// after a timeout — it learns what was recorded. It is wrong when the
+	// second call is describing a DIFFERENT attempt, and moving clean failures
+	// back to `approved` made that reachable: a re-run under the same nonce
+	// commits, reports `committed`, and this handed back the first attempt's
+	// `aborted_not_applied` with zero rows. The statement ran, three rows
+	// changed, the control plane recorded that nothing happened, and the
+	// command exited 0. A reviewer walked it end to end.
+	//
+	// A nonce identifies ONE attempt (EDR-0011). Two different outcomes under
+	// one nonce means the caller has reused it for a second attempt, and the
+	// honest answer is to refuse and say so.
+	if stored.Outcome != e.Outcome || !sameRows(stored.RowsAffected, e.RowsAffected) {
+		return Execution{}, fmt.Errorf(
+			"%w: nonce %q is recorded as %s (rows %s) and was reported as %s (rows %s); "+
+				"a nonce identifies one attempt, so a re-run needs a new one",
+			ErrWrongState, e.Nonce,
+			stored.Outcome, rowsText(stored.RowsAffected),
+			e.Outcome, rowsText(e.RowsAffected))
 	}
 
 	// The request's state follows the STORED outcome, not the argument, so a
@@ -350,4 +380,18 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 		return Execution{}, fmt.Errorf("committing the report: %w", err)
 	}
 	return stored, nil
+}
+
+func sameRows(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func rowsText(n *int64) string {
+	if n == nil {
+		return "absent"
+	}
+	return strconv.FormatInt(*n, 10)
 }

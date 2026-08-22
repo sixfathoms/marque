@@ -85,7 +85,8 @@ func CommitWasRefused(err error) bool {
 	// So: a refusal is an ERROR the server chose to return. The SQLSTATE class is
 	// deliberately NOT consulted — an earlier version excluded classes 08, 57, 58
 	// and XX, and a deferred CONSTRAINT TRIGGER that RAISEs at commit produces
-	// ERROR XX000 while rolling the transaction back, so the class carried no such
+	// an ERROR while rolling the transaction back, in a SQLSTATE the trigger
+	// itself chooses, so the class carried no such
 	// meaning.
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
@@ -101,7 +102,8 @@ func CommitWasRefused(err error) bool {
 	// An earlier version also excluded SQLSTATE classes 08, 57, 58 and XX on
 	// the theory that those mean "the transaction's fate is unsettled". That
 	// was wrong, and a reviewer showed it: a deferred CONSTRAINT TRIGGER that
-	// RAISEs at commit produces ERROR XX000, PostgreSQL rolls the transaction
+	// RAISEs at commit returns a SQLSTATE it chooses — P0001 by default, or
+	// whatever ERRCODE names — PostgreSQL rolls the transaction
 	// back and leaves zero rows, and this called it indeterminate — sending a
 	// human to inspect a database that is provably unchanged. Application code
 	// chooses that SQLSTATE, so the class cannot carry the meaning the class
@@ -190,19 +192,25 @@ func RunOne(ctx context.Context, db *sql.DB, statement string) (int64, error) {
 
 		tag, execErr := pg.ExecParams(ctx, statement, nil, nil, nil, nil).Close()
 		if execErr != nil {
+			// UNPINNED: deleting this ROLLBACK leaves both suites green,
+			// because pgx discards a connection whose TxStatus is not 'I'. It
+			// earns its place anyway — measured, without it the pooled
+			// connection sits `idle in transaction (aborted)` against the
+			// server, holding its snapshot, until the next borrow or the
+			// five-minute lifetime bound retires it.
 			if _, rbErr := pg.ExecParams(ctx, "ROLLBACK", nil, nil, nil, nil).Close(); rbErr != nil {
-				// The connection's transaction state is now unknown, so it
-				// must not go back to the pool: pgx's stdlib ResetSession is a
-				// ping, not a DISCARD, so a later borrower would inherit an
-				// open or aborted transaction. Wrapping driver.ErrBadConn is
-				// what makes database/sql close it — the same technique the
-				// migrator uses, and for the same reason.
+				// The connection's transaction state is now unknown, so say
+				// so explicitly rather than rely on the pool noticing.
 				//
-				// This is the path where the discard genuinely matters: a
-				// rollback can fail while the connection is still alive. No
-				// test reaches it, because making ROLLBACK fail on a live
-				// connection is not something a local server will do on
-				// request.
+				// BELT, and an earlier comment here overstated it: pgx
+				// v5.10.0's ResetSession already returns driver.ErrBadConn when
+				// TxStatus is not 'I', so a connection left in or aborted from
+				// a transaction is discarded anyway — measured, a new backend
+				// pid each time. Wrapping driver.ErrBadConn makes the intent
+				// local and legible instead of depending on a driver detail
+				// that a version bump could change. No test reaches this path;
+				// making ROLLBACK fail on a live connection is not something a
+				// local server does on request.
 				return fmt.Errorf("%w: %w (and the statement failed: %w): %w",
 					ErrRollback, rbErr, execErr, driver.ErrBadConn)
 			}

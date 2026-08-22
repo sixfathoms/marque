@@ -54,9 +54,13 @@ type Result struct {
 //     rollback of a failed statement itself failed — indeterminate, because it
 //     may have been applied and the acknowledgement lost.
 //
-// run and commitRefused are parameters because both mean touching a driver's
-// types, and EDR-0042 confines those to the adapter. internal/pilot/postgres
-// has the one implementation of each.
+// run and commitRefused are parameters, and the honest reason is smaller than
+// the one that was here first: this package already imports the adapter for its
+// phase sentinels, so calling into it directly would confine nothing further.
+// They are parameters so this function is about CLASSIFYING an outcome rather
+// than about producing one, and so a second engine implements two small
+// functions rather than editing this switch. Nothing substitutes a fake today;
+// all twelve call sites pass postgres.RunOne and postgres.CommitWasRefused.
 func Execute(
 	ctx context.Context,
 	db *sql.DB,
@@ -75,6 +79,9 @@ func Execute(
 		// rolled back. Either way it is provably not applied.
 		return Result{Outcome: OutcomeAbortedNotApplied, RowsAffected: zero()}, err
 
+	// UNPINNED, and behaviourally the same as default: below, so deleting
+	// either leaves both suites green. Kept separate because the two mean
+	// different things and the next engine will want to tell them apart.
 	case errors.Is(err, postgres.ErrRollback):
 		// The statement failed AND the rollback failed. The statement is not
 		// applied — the server aborts the transaction regardless — but the
@@ -97,8 +104,11 @@ func Execute(
 		return Result{Outcome: OutcomeIndeterminate}, err
 
 	default:
-		// A failure the runner did not label. Reporting it as anything
-		// definite would be inventing knowledge.
+		// A failure the runner did not label — a pool that could not hand out a
+		// connection, a panic in the callback. UNPINNED: mutating this to
+		// return committed leaves both suites green, because nothing today
+		// produces an unlabelled error. Reporting it as anything definite would
+		// be inventing knowledge.
 		return Result{Outcome: OutcomeIndeterminate}, err
 	}
 }
