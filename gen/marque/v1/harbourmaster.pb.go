@@ -562,7 +562,9 @@ type RecordExecutionResponse struct {
 	Request *Request               `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
 	// execution is what was stored for this nonce. A repeat returns the recorded
 	// attempt rather than recording a second one, which makes retrying the REPORT
-	// safe.
+	// safe — and a repeat is only ever an acknowledgement: it never moves the
+	// request's state, because a late duplicate of an older attempt would
+	// otherwise un-execute a request a later attempt had already committed.
 	//
 	// It does NOT let the caller tell an accepted report from an acknowledged
 	// repeat: a well-behaved retry sends the same values, so both responses are

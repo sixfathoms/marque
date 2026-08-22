@@ -796,6 +796,17 @@ func TestAReRunUnderTheSameNonceIsRefused(t *testing.T) {
 		t.Errorf("the same outcome with a different row count was accepted: %v", err)
 	}
 
+	// And a different OUTCOME with the SAME row count, which pins the other
+	// half of the comparison: every other contradiction case here varies the
+	// count too, so `sameRows` alone caught them all and the outcome check
+	// could be deleted green. Both are reachable — pilot.Execute reports zero
+	// rows for every clean failure.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n1", Outcome: OutcomeRolledBack, RowsAffected: ptr(0),
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("a different outcome with the same row count was accepted: %v", err)
+	}
+
 	// A NEW nonce is the right way, and it works.
 	stored, err := s.RecordExecution(ctx, devTenant, ref, Execution{
 		Nonce: "n2", Outcome: OutcomeCommitted, RowsAffected: ptr(3),
@@ -808,5 +819,67 @@ func TestAReRunUnderTheSameNonceIsRefused(t *testing.T) {
 	}
 	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateExecuted {
 		t.Errorf("the request is %s after a committed re-run", got.State)
+	}
+}
+
+// A late duplicate of an OLDER attempt must not un-execute the request.
+//
+// The two fixes above combined to allow it: clean failures return to
+// `approved`, and an agreeing repeat is an acknowledgement — so acknowledging
+// attempt one, after attempt two committed, put the request back to `approved`
+// and let the statement run a second time. The contradiction guard cannot catch
+// it, because the duplicate agrees with what is stored.
+func TestALateDuplicateDoesNotUnExecuteARequest(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+	ref, err := s.Submit(ctx, devTenant, aRequest("k"))
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+
+	// Attempt one fails cleanly; the request stays runnable.
+	first := Execution{Nonce: "n1", Outcome: OutcomeAbortedNotApplied, RowsAffected: ptr(0)}
+	if _, err := s.RecordExecution(ctx, devTenant, ref, first); err != nil {
+		t.Fatalf("recording the first attempt: %v", err)
+	}
+	// Attempt two commits.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n2", Outcome: OutcomeCommitted, RowsAffected: ptr(3),
+	}); err != nil {
+		t.Fatalf("recording the second attempt: %v", err)
+	}
+	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateExecuted {
+		t.Fatalf("the request is %s after a committed attempt", got.State)
+	}
+
+	// Now a duplicate of attempt one arrives late, agreeing with itself.
+	again, err := s.RecordExecution(ctx, devTenant, ref, first)
+	if err != nil {
+		t.Fatalf("acknowledging the first attempt: %v", err)
+	}
+	if again.Outcome != OutcomeAbortedNotApplied {
+		t.Errorf("the acknowledgement returned %s", again.Outcome)
+	}
+	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateExecuted {
+		t.Fatalf("a late duplicate moved the request to %s; it was executed", got.State)
+	}
+
+	// And the request stays closed: a fresh nonce is still refused.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "n3", Outcome: OutcomeCommitted, RowsAffected: ptr(3),
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("a fresh nonce was accepted after the duplicate: %v", err)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM executions WHERE tenant_id = $1 AND reference = $2`,
+		devTenant, ref).Scan(&n); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("%d executions recorded; the duplicate should have added none", n)
 	}
 }

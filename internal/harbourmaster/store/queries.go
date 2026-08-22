@@ -338,8 +338,11 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 			e.Outcome, rowsText(e.RowsAffected))
 	}
 
-	// The request's state follows the STORED outcome, not the argument, so a
-	// retry with a different outcome cannot move it.
+	// The request's state follows the STORED outcome, and only moves while the
+	// request is still approved — the guard below. A retry cannot move it in
+	// either direction: a contradicting one is refused above, and an agreeing
+	// one against a terminal request is acknowledged without touching the
+	// state.
 	//
 	// Four outcomes, three destinations. `committed` is the only one that
 	// executed anything, and `indeterminate` is the truthful terminal state a
@@ -371,6 +374,28 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 		return Execution{}, fmt.Errorf(
 			"stored outcome %q has no request state; the four EDR-0042 decides all do", stored.Outcome)
 	}
+	// ONLY a request still approved may be moved.
+	//
+	// A repeat against a terminal request acknowledges an OLD attempt, and
+	// applying its outcome un-executes a request a later attempt already
+	// committed. The two fixes above combined to open exactly that: clean
+	// failures return to `approved`, and an agreeing repeat is blessed as an
+	// acknowledgement, so
+	//
+	//	n1 aborted_not_applied/0  → approved
+	//	n2 committed/3            → executed, three rows changed
+	//	n1 again, identical       → approved   ← un-executed
+	//	n3 committed/3            → executed, the SAME three rows changed again
+	//
+	// walked over the wire by a reviewer. The contradiction guard cannot catch
+	// it, because the duplicate agrees with what is stored; what is wrong is
+	// the ordering, and the state is the thing that must not move.
+	if state != StateApproved {
+		if err := tx.Commit(); err != nil {
+			return Execution{}, fmt.Errorf("committing the acknowledgement: %w", err)
+		}
+		return stored, nil
+	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE requests SET state = $3 WHERE tenant_id = $1 AND reference = $2`,
 		tenant, reference, next); err != nil {
@@ -382,6 +407,13 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 	return stored, nil
 }
 
+// sameRows compares two optional counts.
+//
+// UNPINNED, and unreachable: the nil-mismatch branch would need one report with
+// a count and another without under one nonce, and rows-absent-iff-indeterminate
+// is enforced by the schema's CHECK and by the API. Mutating it to `return true`
+// leaves both suites green. Labelled rather than tested, per the convention in
+// this package.
 func sameRows(a, b *int64) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
