@@ -15,8 +15,8 @@ or fixtures. Worked examples use a neutral fictional schema (`accounts`, `settin
 
 **Status: M1, the walking skeleton, runs.** `docs/edrs/` remains the source of truth for the design.
 M1's six steps execute against a real PostgreSQL — submit, store, approve, run, record — and the
-binaries refuse to start without `MARQUE_INSECURE_SKELETON=1`, because M1 has no signing, no grammar,
-no identity and no fence. What exists is a skeleton with the shape of the real thing and none of its
+binaries refuse to start without `MARQUE_INSECURE_SKELETON=1` — every command but `version` —
+because M1 has no signing, no grammar, no identity and no fence. What exists is a skeleton with the shape of the real thing and none of its
 guarantees; treat any claim that it enforces something as false unless a test says otherwise.
 
 ## Layout

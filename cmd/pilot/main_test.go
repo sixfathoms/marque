@@ -65,17 +65,23 @@ func TestExecuteRequiresEveryFlag(t *testing.T) {
 // a real execution unreportable, which is the worst outcome available: the
 // statement ran and the control plane never hears.
 func TestEveryPilotOutcomeHasAWireValue(t *testing.T) {
-	for _, o := range []string{
-		pilot.OutcomeCommitted, pilot.OutcomeRolledBack,
-		pilot.OutcomeAbortedNotApplied, pilot.OutcomeIndeterminate,
+	// EXACT pairs. Asserting only that each maps to something non-zero let
+	// committed and rolled_back be swapped with the test still green, and that
+	// is the one mistake in this map that matters: a committed statement
+	// reported as rolled back tells an operator nothing happened.
+	for outcome, want := range map[string]v1.ExecutionOutcome{
+		pilot.OutcomeCommitted:         v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED,
+		pilot.OutcomeRolledBack:        v1.ExecutionOutcome_EXECUTION_OUTCOME_ROLLED_BACK,
+		pilot.OutcomeAbortedNotApplied: v1.ExecutionOutcome_EXECUTION_OUTCOME_ABORTED_NOT_APPLIED,
+		pilot.OutcomeIndeterminate:     v1.ExecutionOutcome_EXECUTION_OUTCOME_INDETERMINATE,
 	} {
-		got, ok := outcomes[o]
+		got, ok := outcomes[outcome]
 		if !ok {
-			t.Errorf("the Pilot can produce %q and it has no wire value", o)
+			t.Errorf("the Pilot can produce %q and it has no wire value", outcome)
 			continue
 		}
-		if got == v1.ExecutionOutcome_EXECUTION_OUTCOME_UNSPECIFIED {
-			t.Errorf("%q maps to UNSPECIFIED", o)
+		if got != want {
+			t.Errorf("%q maps to %s, want %s", outcome, got, want)
 		}
 	}
 	if len(outcomes) != 4 {

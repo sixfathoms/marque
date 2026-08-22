@@ -72,7 +72,7 @@ func execute(args []string, stdout io.Writer) error {
 	addr := fs.String("harbourmaster", "http://127.0.0.1:8080", "base URL of the control plane")
 	reference := fs.String("reference", "", "the req_… to execute")
 	dsn := fs.String("target-dsn", "", "connection string for the TARGET database; the control plane never sees this (EDR-0005)")
-	nonce := fs.String("nonce", "", "identifies this attempt to the control plane; it makes the REPORT idempotent, not the execution — see below")
+	nonce := fs.String("nonce", "", "identifies this attempt to the control plane; it makes the REPORT idempotent and NOT the execution — if the first report never lands, running this again executes the statement again (issue #34)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

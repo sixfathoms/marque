@@ -53,6 +53,23 @@ func TestCommitWasRefused(t *testing.T) {
 		"a plain error":     {errors.New("something"), false},
 		"a wrapped PgError": {fmt.Errorf("committing: %w", pg("ERROR", "23505")), true},
 		"nothing":           {nil, false},
+
+		// A non-English server: Severity is translated and SeverityUnlocalized
+		// is not. Reading the localised field would call this a refusal, and it
+		// is a session ending.
+		"a localised FATAL": {&pgconn.PgError{
+			Severity: "SCHWERWIEGEND", SeverityUnlocalized: "FATAL",
+			Code: "57P01", Message: "constructed",
+		}, false},
+		"a localised ERROR": {&pgconn.PgError{
+			Severity: "FEHLER", SeverityUnlocalized: "ERROR",
+			Code: "23505", Message: "constructed",
+		}, true},
+		// A server too old to send the unlocalized field: the localised one is
+		// all there is, and the fallback reads it.
+		"an old server sending only Severity": {&pgconn.PgError{
+			Severity: "FATAL", Code: "57P01", Message: "constructed",
+		}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := CommitWasRefused(c.err); got != c.want {

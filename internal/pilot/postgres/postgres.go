@@ -81,13 +81,16 @@ func CommitWasRefused(err error) bool {
 	// stopped answering with a message attached. Found by writing the test that
 	// takes the connection away and watching this call it rolled_back.
 	//
-	// So: a refusal is an ERROR the server chose to return, in a class that is
-	// about the statement rather than about the connection or the server.
+	// So: a refusal is an ERROR the server chose to return. The SQLSTATE class is
+	// deliberately NOT consulted — an earlier version excluded classes 08, 57, 58
+	// and XX, and a deferred CONSTRAINT TRIGGER that RAISEs at commit produces
+	// ERROR XX000 while rolling the transaction back, so the class carried no such
+	// meaning.
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
 		return false
 	}
-	// SEVERITY, and severity alone.
+	// SEVERITY, and severity alone — read from the UNLOCALISED field.
 	//
 	// An ERROR response is the server having processed the COMMIT and declined
 	// it: the transaction is rolled back and nothing was applied, whatever the
@@ -102,5 +105,17 @@ func CommitWasRefused(err error) bool {
 	// human to inspect a database that is provably unchanged. Application code
 	// chooses that SQLSTATE, so the class cannot carry the meaning the class
 	// list assumed.
-	return pgErr.Severity != "FATAL" && pgErr.Severity != "PANIC"
+	//
+	// PgError.Severity is LOCALISED: a server with lc_messages set to anything
+	// but English returns a translated word, so comparing it against "FATAL"
+	// fails open — a dying session would be classified as a refusal, and a
+	// statement whose fate is unknown reported as definitely rolled back. A
+	// reviewer constructed exactly that. SeverityUnlocalized is the English
+	// one, and is empty against a server too old to send it, which is what the
+	// fallback is for.
+	severity := pgErr.SeverityUnlocalized
+	if severity == "" {
+		severity = pgErr.Severity
+	}
+	return severity != "FATAL" && severity != "PANIC"
 }

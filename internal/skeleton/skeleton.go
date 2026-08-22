@@ -8,8 +8,10 @@
 // proving before anything is deep, and it is dangerous, because the shape of
 // the thing looks like the real one.
 //
-// So every binary refuses to start without MARQUE_INSECURE_SKELETON=1 and says
-// on stderr what it is missing. The implementation plan commits M5 to deleting
+// So every command that touches anything refuses to start without
+// MARQUE_INSECURE_SKELETON=1 and says on stderr what it is missing. `version`
+// is the exception and is meant to be: inspecting a binary should not require
+// agreeing to what it would do if you ran it. The implementation plan commits M5 to deleting
 // this package outright; TestTheSkeletonGateIsGone in this package asserts that
 // and is skipped until then.
 package skeleton

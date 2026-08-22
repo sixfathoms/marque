@@ -21,8 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// RequestState is EDR-0038's vocabulary, whole. M1 produces only PENDING,
-// APPROVED and EXECUTED; the rest exist from the first migration because a
+// RequestState is EDR-0038's vocabulary, whole. M1 produces PENDING, APPROVED,
+// EXECUTED and INDETERMINATE; the rest exist from the first migration because a
 // forward-only schema makes widening a constrained column an unnecessary
 // migration, and the vocabulary is not this milestone's to shorten (EDR-0042).
 type RequestState int32
@@ -562,8 +562,9 @@ type RecordExecutionResponse struct {
 	Request *Request               `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
 	// execution is what was stored for this nonce. A repeat returns the recorded
 	// attempt rather than recording a second one, so the caller can tell an
-	// accepted report from an acknowledged repeat — which is what makes the
-	// Pilot's retry safe (EDR-0011).
+	// accepted report from an acknowledged repeat — which makes retrying the
+	// REPORT safe. Retrying the execution is a different thing and EDR-0011's
+	// ledger is what would make it safe; M1 has no ledger.
 	Execution     *Execution `protobuf:"bytes,2,opt,name=execution,proto3" json:"execution,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

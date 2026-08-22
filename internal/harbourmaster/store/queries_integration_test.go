@@ -357,3 +357,43 @@ func TestAFreshNonceIsRefusedAfterTheRequestIsTerminal(t *testing.T) {
 		t.Errorf("the repeat returned %s; committed is what was stored", again.Outcome)
 	}
 }
+
+// The symmetric case. The test above pins executed → fresh nonce, and a
+// mutation permitting fresh nonces only after `indeterminate` survived it —
+// so the reverse direction was described as covered and was not.
+func TestAFreshNonceIsRefusedAfterAnIndeterminateToo(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+	ref, err := s.Submit(ctx, devTenant, aRequest("k"))
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "first", Outcome: OutcomeIndeterminate,
+	}); err != nil {
+		t.Fatalf("recording: %v", err)
+	}
+
+	rows := int64(1)
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "second", Outcome: OutcomeCommitted, RowsAffected: &rows,
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("a fresh nonce against an indeterminate request: want ErrWrongState, got %v", err)
+	}
+	got, _ := s.Request(ctx, devTenant, ref)
+	if got.State != StateIndeterminate {
+		t.Errorf("state moved to %s; a refused report must change nothing", got.State)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM executions WHERE tenant_id = $1 AND reference = $2`,
+		devTenant, ref).Scan(&n); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("%d executions recorded; the second was refused and must not have landed", n)
+	}
+}

@@ -11,8 +11,9 @@ that runs those six steps and asserts the row changed — because every step can
 the database does not change, and only the last assertion knows the difference.
 
 **It is not secure, and it says so on every start.** M1 has no signing, no grammar, no identity and
-no fence, which means an approval is a name the caller typed. Every binary refuses to run without
-`MARQUE_INSECURE_SKELETON=1` and prints a banner naming each of those absences, because a banner
+no fence, which means an approval is a name the caller typed. Every command that touches anything
+refuses to run without `MARQUE_INSECURE_SKELETON=1` — `version` is the deliberate exception, because
+inspecting a binary should not require agreeing to what it would do and prints a banner naming each of those absences, because a banner
 that says "not secure" and stops is one people learn to skip. M5 deletes the flag; the test that
 asserts it is gone is written now, skipped with that reason, and greps the built binaries rather
 than the source.
@@ -55,7 +56,9 @@ failover applies a statement outside the accounting that was supposed to bound i
 The first version of that classification said "the server sent a message, so it refused". Then a
 test took the connection away and watched it call a dead backend `rolled_back`: terminating a
 backend sends `57P01`, which **is** a server message. A refusal is now an error the server chose to
-return, in a class about the statement rather than about the connection.
+return, judged by **severity alone** — a first attempt also excluded SQLSTATE classes, and a
+deferred constraint trigger that raises at commit produces `XX000` while rolling the transaction
+back, so the class carried no such meaning.
 
 ### Two bugs worth the telling
 
