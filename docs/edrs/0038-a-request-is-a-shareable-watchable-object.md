@@ -4,7 +4,7 @@ title: "A request is a shareable, watchable object with a live status"
 summary: "Every request has a reference an operator can paste into chat, a status block naming the chain and who is being waited on, and a queue command that lists pending and approved work so it can be run without hunting."
 status: accepted
 implementation: partial
-implementation_note: "The reference column, all seven states as a CHECK and as the proto's RequestState, and the partial index that serves pending and approved together are in the first migration (EDR-0042). There is no status block, no chain, no `marque requests`, no watch and no notification; and the 404-not-403 entitlement rule has nothing to enforce it against, because M1 has no identity."
+implementation_note: "The `req_…` reference exists, is randomly generated so it cannot be enumerated, and resolves through GetRequest — where an unknown one and another tenant's are the same NotFound, never a PermissionDenied that would confirm it. All seven states are in the schema and the proto, and M1 produces four of them. There is no status block, no chain, no watch and no notification; and the entitlement the 404 rule protects has nothing to enforce it against, because M1 has no identity."
 date: 2026-08-16
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

@@ -73,9 +73,13 @@ type HarbourmasterServiceClient interface {
 	// (EDR-0004), and M3 replaces this method's effect with one. The name is
 	// plain on purpose so nothing here reads as an early marque.
 	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
-	// RecordExecution stores what a Pilot reported about an attempt. The Pilot
-	// records the outcome in its own ledger first — that is the fence — and then
-	// reports it here, retried until acknowledged (EDR-0011).
+	// RecordExecution stores what a Pilot reported about an attempt.
+	//
+	// EDR-0011 has the Pilot record the outcome in its own ledger first — that is
+	// the fence — and then report it here, retried until acknowledged. **M1 has
+	// no such ledger**, so the sequence is the other way round: the statement
+	// runs and then this is called, and a Pilot that dies in between leaves a
+	// request that is still approved. Issue #34 is where the ledger should live.
 	RecordExecution(context.Context, *connect.Request[v1.RecordExecutionRequest]) (*connect.Response[v1.RecordExecutionResponse], error)
 }
 
@@ -182,9 +186,13 @@ type HarbourmasterServiceHandler interface {
 	// (EDR-0004), and M3 replaces this method's effect with one. The name is
 	// plain on purpose so nothing here reads as an early marque.
 	Approve(context.Context, *connect.Request[v1.ApproveRequest]) (*connect.Response[v1.ApproveResponse], error)
-	// RecordExecution stores what a Pilot reported about an attempt. The Pilot
-	// records the outcome in its own ledger first — that is the fence — and then
-	// reports it here, retried until acknowledged (EDR-0011).
+	// RecordExecution stores what a Pilot reported about an attempt.
+	//
+	// EDR-0011 has the Pilot record the outcome in its own ledger first — that is
+	// the fence — and then report it here, retried until acknowledged. **M1 has
+	// no such ledger**, so the sequence is the other way round: the statement
+	// runs and then this is called, and a Pilot that dies in between leaves a
+	// request that is still approved. Issue #34 is where the ledger should live.
 	RecordExecution(context.Context, *connect.Request[v1.RecordExecutionRequest]) (*connect.Response[v1.RecordExecutionResponse], error)
 }
 

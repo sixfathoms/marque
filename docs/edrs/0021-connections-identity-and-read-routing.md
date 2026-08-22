@@ -3,7 +3,8 @@ id: 21
 title: "Connect as the operator where the database can, and never let a driver retry a write"
 summary: "Pilots use pooled, dynamically-credentialled connections. Where the engine allows, a session authenticates as the individual operator via IAM so the database's own audit names them; reads may route to replicas."
 status: accepted
-implementation: none
+implementation: partial
+implementation_note: "One rule of this record is built and tested: transparent retry is OFF for writes, so a commit whose answer never arrives is reported as indeterminate rather than replayed — internal/pilot, with the classification that tells a refused commit from a lost one. Nothing else is: no connection identity, no read routing, no pooling policy, and no session settings pinned on a target."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

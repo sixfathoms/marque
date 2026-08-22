@@ -194,7 +194,7 @@ test-integration: ## Run the tests that need a real PostgreSQL
 		docker exec marque-test-pg psql -q -U postgres -c \
 			"CREATE ROLE marque_runtime NOLOGIN" >/dev/null || exit 1; \
 		MARQUE_TEST_DSN="$$dsn" \
-			go test -tags integration -race -count=1 -timeout 10m ./internal/harbourmaster/store/
+			go test -tags integration -race -count=1 -timeout 10m ./...
 
 lint: $(GOLANGCI) $(BUF) ## Check formatting, and lint the schema and the Go
 	$(BUF) format --diff --exit-code
@@ -329,8 +329,8 @@ snapshot: $(GORELEASER) ## Build a release snapshot for this platform; publishes
 # first of several — on Linux a foreign-arch binary produces no stdout at all,
 # so the coverage would shrink without anything failing.
 snapshot-check: platform-check build snapshot ## Fail if make and goreleaser disagree about a build
-	@mine=$$(./$(BIN_DIR)/marque | sed 's/.*(\(.*\)) go.*/\1/'); \
-	theirs=$$(find dist -type f -name marque -exec {} \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
+	@mine=$$(./$(BIN_DIR)/marque version | sed 's/.*(\(.*\)) go.*/\1/'); \
+	theirs=$$(find dist -type f -name marque -exec {} version \; | head -1 | sed 's/.*(\(.*\)) go.*/\1/'); \
 	if [ -z "$$theirs" ]; then \
 		echo "the snapshot binary produced no version line — it is missing, or it did not run"; \
 		exit 1; \

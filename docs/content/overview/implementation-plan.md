@@ -107,17 +107,24 @@ The rework-preventing milestone. Everything here is cheap now and expensive to r
 **Exit:** the build-and-smoke and test tiers green — the integration tier has no job until M1, and a
 criterion that cannot fail is not one; `buf breaking` rejects a deliberately-broken schema change.
 
-### M1 — Walking skeleton
+### M1 — Walking skeleton — **done**
 
 The thinnest path that touches every component, so integration is proved before anything is deep.
+
+Its exit criterion is met: `internal/e2e` runs the six steps against a real PostgreSQL and asserts
+the row changed, and the import rule has been seen to refuse a driver in each place that has ever
+escaped it. What follows describes what was built; the
+[changelog entry](/changelog/) has what it does not do.
 
 Submit a statement → it is stored → approve it → run it against a local PostgreSQL → the result and
 the statement land in a table. **No signing, no grammar, no identity, no fence.**
 
 This milestone deliberately builds something insecure, so it is contained by construction:
 
-- Every binary refuses to start without `MARQUE_INSECURE_SKELETON=1`, and prints a banner naming this
-  milestone and the record-free state of what it is doing.
+- Every command that touches anything refuses to start without `MARQUE_INSECURE_SKELETON=1`, and
+  prints a banner naming this milestone and the record-free state of what it is doing. `version` is
+  the exception and is meant to be: inspecting a binary should not require acknowledging what it
+  would do if you ran it.
 - **M5 deletes the flag**, and a test asserts no such path exists in the binary. That test is written
   now, skipped with a reason, and un-skipped in M5.
 

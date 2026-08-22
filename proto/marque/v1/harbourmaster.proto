@@ -10,7 +10,7 @@ option go_package = "github.com/sixfathoms/marque/gen/marque/v1;marquev1";
 // the logbook. It never touches a target database and never holds a target
 // credential (EDR-0001, EDR-0005). From M1 the Harbourmaster's store package
 // connects to one database, its own, through the single package EDR-0042
-// confines the driver to. No binary links it yet.
+// confines the driver to.
 service HarbourmasterService {
   // GetVersion reports the software the control plane is running, so a client
   // can say what it was talking to.
@@ -78,15 +78,21 @@ service HarbourmasterService {
     option (marque.v1.behaviour) = {idempotency: IDEMPOTENCY_NATURAL};
   }
 
-  // RecordExecution stores what a Pilot reported about an attempt. The Pilot
-  // records the outcome in its own ledger first — that is the fence — and then
-  // reports it here, retried until acknowledged (EDR-0011).
+  // RecordExecution stores what a Pilot reported about an attempt.
+  //
+  // EDR-0011 has the Pilot record the outcome in its own ledger first — that is
+  // the fence — and then report it here, retried until acknowledged. **M1 has
+  // no such ledger**, so the sequence is the other way round: the statement
+  // runs and then this is called, and a Pilot that dies in between leaves a
+  // request that is still approved. Issue #34 is where the ledger should live.
   rpc RecordExecution(RecordExecutionRequest) returns (RecordExecutionResponse) {
-    // KEYED on the attempt's nonce, which is what makes the Pilot's retry
-    // idempotent. M1 enforces this with a unique constraint and nothing else:
-    // the claim-before-run protocol, the incarnation and the budget are M5's,
-    // and a repeat here returns the stored outcome rather than recording a
-    // second attempt.
+    // KEYED on the attempt's nonce, which is what makes the REPORT idempotent
+    // — not the execution. A repeat returns the stored outcome rather than
+    // recording a second attempt, and once the request is terminal a nonce
+    // that was never recorded is refused outright. What that does NOT do is
+    // stop the statement running twice: the claim-before-run protocol, the
+    // incarnation and the budget are M5's, and without them a lost report
+    // leaves the request approved and the next attempt runs it again.
     option (marque.v1.behaviour) = {
       idempotency: IDEMPOTENCY_KEYED
       idempotency_field: "nonce"
@@ -170,8 +176,9 @@ message RecordExecutionResponse {
 
   // execution is what was stored for this nonce. A repeat returns the recorded
   // attempt rather than recording a second one, so the caller can tell an
-  // accepted report from an acknowledged repeat — which is what makes the
-  // Pilot's retry safe (EDR-0011).
+  // accepted report from an acknowledged repeat — which makes retrying the
+  // REPORT safe. Retrying the execution is a different thing and EDR-0011's
+  // ledger is what would make it safe; M1 has no ledger.
   Execution execution = 2;
 }
 
@@ -195,8 +202,8 @@ message Request {
   RequestState state = 7;
 }
 
-// RequestState is EDR-0038's vocabulary, whole. M1 produces only PENDING,
-// APPROVED and EXECUTED; the rest exist from the first migration because a
+// RequestState is EDR-0038's vocabulary, whole. M1 produces PENDING, APPROVED,
+// EXECUTED and INDETERMINATE; the rest exist from the first migration because a
 // forward-only schema makes widening a constrained column an unnecessary
 // migration, and the vocabulary is not this milestone's to shorten (EDR-0042).
 enum RequestState {
