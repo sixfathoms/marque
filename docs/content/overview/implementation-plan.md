@@ -151,7 +151,8 @@ signal, available in week one rather than month three.
 It runs on linux/amd64 only, and behind a build tag so `make test` stays offline — see the tiers
 above. `make test-integration` starts a disposable PostgreSQL in Docker on an ephemeral port,
 creates the runtime role before the first migration because the schema grants unconditionally, and
-removes the container on exit. No testcontainers dependency: a library that drives Docker is a
+removes the container on exit — or, with `MARQUE_TEST_DSN` already set, uses that server and starts
+no container, because the suite needs a PostgreSQL rather than Docker specifically. No testcontainers dependency: a library that drives Docker is a
 large dependency graph in the module the control plane ships from, and a Makefile target and a CI
 job do the same job here. The DSN comes from the environment, and its absence is a **failure**
 rather than a skip — a build-tagged suite that skips itself when unconfigured reports success

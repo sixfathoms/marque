@@ -176,7 +176,17 @@ test: ## Run the test suite
 # host, through the same address the tests use, for the same reason.
 PGIMAGE ?= postgres:18
 
+# MARQUE_TEST_DSN in the environment means "use that server", and the container
+# is not started at all. The suite needs a PostgreSQL, not Docker specifically,
+# and tying it to Docker made it unrunnable for a day when the local daemon
+# wedged — while an `initdb` cluster in a temp directory was sitting there
+# working. The server needs a marque_runtime role, which the container path
+# creates and this path expects to exist.
 test-integration: ## Run the tests that need a real PostgreSQL
+ifdef MARQUE_TEST_DSN
+	@echo "using MARQUE_TEST_DSN; not starting a container"
+	@go test -tags integration -race -count=1 -timeout 10m ./...
+else
 	@docker rm -f marque-test-pg >/dev/null 2>&1 || true
 	@docker run -d --name marque-test-pg \
 		-e POSTGRES_PASSWORD=marque -e POSTGRES_DB=marque \
@@ -195,6 +205,7 @@ test-integration: ## Run the tests that need a real PostgreSQL
 			"CREATE ROLE marque_runtime NOLOGIN" >/dev/null || exit 1; \
 		MARQUE_TEST_DSN="$$dsn" \
 			go test -tags integration -race -count=1 -timeout 10m ./...
+endif
 
 lint: $(GOLANGCI) $(BUF) ## Check formatting, and lint the schema and the Go
 	$(BUF) format --diff --exit-code
