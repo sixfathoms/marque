@@ -11,7 +11,8 @@
 // retracts at length.
 //
 // M1 is the walking skeleton and is not secure: see internal/skeleton, and the
-// banner every start prints.
+// banner printed by every command that touches anything. `version` prints no
+// banner and needs no acknowledgement, deliberately.
 package main
 
 import (

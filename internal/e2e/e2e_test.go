@@ -201,9 +201,12 @@ func TestTheSixSteps(t *testing.T) {
 	}
 }
 
-// A retried Pilot must not run the statement twice, and must learn what was
-// recorded the first time.
-func TestARetriedReportDoesNotRunAnythingTwice(t *testing.T) {
+// A retried REPORT learns what was recorded the first time, and writes nothing
+// new. Note what this does not show: it retries the report, not the execution.
+// A Pilot whose first report never landed would find the request still approved
+// and run the statement again — EDR-0011's ledger is what would stop that, and
+// M1 has none (issue #34).
+func TestARetriedReportLearnsTheStoredOutcome(t *testing.T) {
 	w := setUp(t)
 	ctx := t.Context()
 

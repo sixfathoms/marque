@@ -113,9 +113,17 @@ func CommitWasRefused(err error) bool {
 	// reviewer constructed exactly that. SeverityUnlocalized is the English
 	// one, and is empty against a server too old to send it, which is what the
 	// fallback is for.
+	// POSITIVELY "ERROR", not "not FATAL and not PANIC".
+	//
+	// SeverityUnlocalized exists only from PostgreSQL 9.6, so the fallback can
+	// be reading a TRANSLATED word — and a negative check treats "SCHWERWIEGEND"
+	// as a refusal, reporting a commit whose fate is unknown as definitely
+	// rolled back. Checking positively fails the other way: an old server in
+	// another language yields indeterminate, which sends a human to look at a
+	// database instead of telling them there is nothing to look at.
 	severity := pgErr.SeverityUnlocalized
 	if severity == "" {
 		severity = pgErr.Severity
 	}
-	return severity != "FATAL" && severity != "PANIC"
+	return severity == "ERROR"
 }

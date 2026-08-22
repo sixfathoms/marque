@@ -221,8 +221,13 @@ type Execution struct {
 // RecordExecution stores one attempt and returns what is stored.
 //
 // Keyed on the nonce, per the proto: repeating a nonce returns the stored
-// outcome rather than recording a second attempt, which is what makes a Pilot's
-// retry safe. The return value is the STORED row, not the argument, so a caller
+// outcome rather than recording a second attempt, which is what makes retrying
+// the REPORT safe. It does not make retrying the EXECUTION safe: if the first
+// report never lands the request is still approved, and the next attempt runs
+// the statement again. EDR-0011's ledger is what would prevent that, by
+// claiming the nonce before the statement runs; M1 has none (issue #34).
+//
+// The return value is the STORED row, not the argument, so a caller
 // that retries with a different outcome learns what was actually recorded
 // instead of believing its own second answer.
 func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e Execution) (Execution, error) {

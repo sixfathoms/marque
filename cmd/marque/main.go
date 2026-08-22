@@ -2,8 +2,9 @@
 //
 // It submits a statement, approves one, and asks what happened. At M1 it does
 // all three over plain HTTP with no identity behind any of them: an approval is
-// a name the caller typed. That is the walking skeleton, and every invocation
-// says so.
+// a name the caller typed. That is the walking skeleton, and every command that
+// does any of it says so — `version` is the exception, because inspecting a
+// binary should not require acknowledging what it would do if you ran it.
 package main
 
 import (

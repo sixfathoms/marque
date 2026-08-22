@@ -70,6 +70,19 @@ func TestCommitWasRefused(t *testing.T) {
 		"an old server sending only Severity": {&pgconn.PgError{
 			Severity: "FATAL", Code: "57P01", Message: "constructed",
 		}, false},
+		// The cross-product the two cases above miss: an old server AND
+		// another language, so the only severity field there is is
+		// translated. A negative check calls this a refusal.
+		"an old non-English server": {&pgconn.PgError{
+			Severity: "SCHWERWIEGEND", Code: "57P01", Message: "constructed",
+		}, false},
+		// And its mirror: a translated ERROR on an old server is also not
+		// recognised, which is the cost of checking positively and is the safe
+		// direction — a human looks at a database that turns out to be
+		// unchanged, rather than being told nothing happened when it may have.
+		"an old non-English server declining": {&pgconn.PgError{
+			Severity: "FEHLER", Code: "23505", Message: "constructed",
+		}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := CommitWasRefused(c.err); got != c.want {
