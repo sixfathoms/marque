@@ -72,8 +72,8 @@ func migrate(args []string, stdout io.Writer) error {
 	}
 	// Gated too. It opens the control plane's database and changes its schema,
 	// which is not a thing to do to an M1 deployment by accident — and the
-	// plan says every binary refuses to start, which was not true while this
-	// path did not ask.
+	// plan says every command that touches anything refuses to start, which was
+	// not true while this path did not ask.
 	if err := skeleton.FromEnv("harbourmaster"); err != nil {
 		return err
 	}

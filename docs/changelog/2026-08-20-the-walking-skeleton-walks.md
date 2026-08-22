@@ -10,7 +10,7 @@ against a target, and the result and the statement land in a table. The
 that runs those six steps and asserts the row changed — because every step can report success while
 the database does not change, and only the last assertion knows the difference.
 
-**It is not secure, and it says so on every start.** M1 has no signing, no grammar, no identity and
+**It is not secure, and it says so whenever it does anything.** M1 has no signing, no grammar, no identity and
 no fence, which means an approval is a name the caller typed. Every command that touches anything
 refuses to run without `MARQUE_INSECURE_SKELETON=1`, and prints a banner naming each of those
 absences — because a banner that says "not secure" and stops is one people learn to skip. `version`
