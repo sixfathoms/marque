@@ -128,9 +128,10 @@ Six properties the design gives other things up to keep:
 
 ## Status
 
-**Design; scaffolding underway.** The decision records are published and remain the source of truth.
-Implementation has begun at M0 of the [implementation plan](./implementation-plan.md) — the
-toolchain, the schema and the build — and nothing runs against a database yet. See
+**M1, the walking skeleton, runs.** The decision records are published and remain the source of
+truth. M1 of the [implementation plan](./implementation-plan.md) executes against a real PostgreSQL
+— submit, store, approve, run, record — and every command but `version` refuses to start without
+`MARQUE_INSECURE_SKELETON=1`, because M1 has no signing, no grammar, no identity and no fence. See
 [Scope](./scope.md) for what is in the first release and what is deliberately deferred.
 
 ## Using it

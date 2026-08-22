@@ -18,8 +18,13 @@ import (
 type Store struct {
 	db *sql.DB
 
-	// newReference is a field so a test can make references predictable. It is
-	// not configuration: nothing outside this package sets it.
+	// newReference is a field so a test can make references predictable.
+	//
+	// No test sets it today, which by this repository's own standard — stated
+	// in internal/pilot, "a seam in production code is a cost" — makes it a
+	// cost buying nothing yet. It is kept because the alternative is a package
+	// variable, and it is named here so the next person knows it is unused
+	// rather than assuming it is load-bearing.
 	newReference func() (string, error)
 }
 
@@ -211,6 +216,12 @@ func (s *Store) Approve(ctx context.Context, tenant, reference, approver string,
 		tenant, reference, StateApproved); err != nil {
 		return fmt.Errorf("approving %s: %w", reference, err)
 	}
+	// UNPINNED, stated rather than implied: replacing this with `_ = tx.Commit()`
+	// makes Approve report success having recorded nothing, and no test
+	// notices. Reaching it needs a commit that fails, which needs either a
+	// deferred constraint this schema does not have or a seam this function
+	// does not want. Named here so it is a known gap rather than an assumed
+	// guarantee.
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing the approval: %w", err)
 	}

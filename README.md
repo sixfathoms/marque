@@ -21,9 +21,11 @@ never holds a credential, can never approve anything, and gets no shortcut throu
 [Agents](https://sixfathoms.github.io/marque/concepts/agents/).
 
 > [!NOTE]
-> **Status: design; scaffolding underway.** The decision records are published and remain the source
-> of truth. Implementation has begun at the M0 scaffolding milestone — the toolchain, the schema and
-> the build. Nothing here runs against a database yet, in production or anywhere else.
+> **Status: M1, the walking skeleton, runs.** The decision records are published and remain the
+> source of truth. M1's steps execute against a real PostgreSQL — submit, store, approve, run,
+> record — and every command but `version` refuses to start without `MARQUE_INSECURE_SKELETON=1`,
+> because M1 has no signing, no grammar, no identity and no fence. Nothing here has run against a
+> production database, and nothing should.
 
 ## Why it is shaped this way
 

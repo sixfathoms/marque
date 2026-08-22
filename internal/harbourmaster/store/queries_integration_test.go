@@ -561,3 +561,171 @@ func TestTheRowLockSerialisesConcurrentWriters(t *testing.T) {
 		}
 	})
 }
+
+// What was submitted is what an approver judged, so resubmitting a key must
+// not change it. A one-token diff — `DO UPDATE SET statement =
+// EXCLUDED.statement` instead of the no-op — let an approved request's
+// statement be replaced by anyone who knew its idempotency key, and no test
+// noticed.
+func TestResubmittingCannotChangeWhatWasSubmitted(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+
+	first := aRequest("k")
+	ref, err := s.Submit(ctx, devTenant, first)
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+
+	// The same key, every other field different.
+	second := Request{
+		Statement:      "DROP TABLE accounts",
+		Target:         "somewhere-else",
+		Role:           "someone-else",
+		Submitter:      "mallory",
+		Reason:         "a different reason entirely",
+		IdempotencyKey: "k",
+	}
+	again, err := s.Submit(ctx, devTenant, second)
+	if err != nil {
+		t.Fatalf("resubmitting: %v", err)
+	}
+	if again != ref {
+		t.Fatalf("resubmitting one key made a second request: %s and %s", ref, again)
+	}
+
+	got, err := s.Request(ctx, devTenant, ref)
+	if err != nil {
+		t.Fatalf("reading: %v", err)
+	}
+	for name, pair := range map[string][2]string{
+		"statement": {got.Statement, first.Statement},
+		"target":    {got.Target, first.Target},
+		"role":      {got.Role, first.Role},
+		"reason":    {got.Reason, first.Reason},
+		"submitter": {got.Submitter, first.Submitter},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("%s became %q; it was %q when it was approved", name, pair[0], pair[1])
+		}
+	}
+	if got.State != StateApproved {
+		t.Errorf("resubmitting moved the state to %s", got.State)
+	}
+}
+
+// The nonce-already-recorded check is scoped to the REQUEST. Without that
+// scope, a nonce recorded for one request lets a second execution land on a
+// different terminal one — and nonces are caller-chosen, so no collision is
+// needed to arrange it.
+func TestARecordedNonceDoesNotUnlockAnotherRequest(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+
+	var refs [2]string
+	for i := range refs {
+		ref, err := s.Submit(ctx, devTenant, aRequest(string(rune('a'+i))))
+		if err != nil {
+			t.Fatalf("submitting: %v", err)
+		}
+		if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+			t.Fatalf("approving: %v", err)
+		}
+		if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+			Nonce: "shared", Outcome: OutcomeCommitted, RowsAffected: ptr(1),
+		}); err != nil {
+			t.Fatalf("recording: %v", err)
+		}
+		refs[i] = ref
+	}
+
+	// Both are terminal, each with its own row under the nonce "shared". A
+	// DIFFERENT nonce must still be refused on both.
+	for _, ref := range refs {
+		if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+			Nonce: "fresh", Outcome: OutcomeCommitted, RowsAffected: ptr(1),
+		}); !errors.Is(err, ErrWrongState) {
+			t.Errorf("%s accepted a fresh nonce: %v", ref, err)
+		}
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM executions WHERE tenant_id = $1`, devTenant).Scan(&n); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("%d executions recorded for two requests with one attempt each", n)
+	}
+}
+
+// A recorded nonce may be repeated after EITHER terminal state — that is the
+// acknowledgement path a Pilot actually retries on. The shipped tests covered
+// the fresh-nonce direction after both, and the repeat direction after
+// `executed` only.
+func TestARecordedNonceMayBeRepeatedAfterEitherTerminalState(t *testing.T) {
+	for name, outcome := range map[string]string{
+		"after executed":      OutcomeCommitted,
+		"after indeterminate": OutcomeIndeterminate,
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := migrated(t)
+			ctx := t.Context()
+			ref, err := s.Submit(ctx, devTenant, aRequest("k"))
+			if err != nil {
+				t.Fatalf("submitting: %v", err)
+			}
+			if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+				t.Fatalf("approving: %v", err)
+			}
+			var rows *int64
+			if outcome != OutcomeIndeterminate {
+				rows = ptr(2)
+			}
+			if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+				Nonce: "n", Outcome: outcome, RowsAffected: rows,
+			}); err != nil {
+				t.Fatalf("recording: %v", err)
+			}
+
+			again, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+				Nonce: "n", Outcome: OutcomeRolledBack, RowsAffected: ptr(0),
+			})
+			if err != nil {
+				t.Fatalf("repeating a recorded nonce: %v", err)
+			}
+			if again.Outcome != outcome {
+				t.Errorf("the repeat returned %s; %s is what was stored", again.Outcome, outcome)
+			}
+		})
+	}
+}
+
+// References are random, and a test that checks length and uniqueness checks
+// neither. Sixteen references share no character position, which a two-byte
+// generator or a counter would fail.
+func TestReferencesCarryEntropy(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+	var refs []string
+	for i := range 16 {
+		ref, err := s.Submit(ctx, devTenant, aRequest("e"+string(rune('a'+i))))
+		if err != nil {
+			t.Fatalf("submitting: %v", err)
+		}
+		refs = append(refs, strings.TrimPrefix(ref, "req_"))
+	}
+	// Every position must vary across the sixteen. A counter varies only its
+	// last characters; a two-byte generator varies only its first few.
+	for pos := range len(refs[0]) {
+		seen := map[byte]bool{}
+		for _, r := range refs {
+			seen[r[pos]] = true
+		}
+		if len(seen) == 1 {
+			t.Errorf("character %d is the same in all sixteen references; this is not random", pos)
+		}
+	}
+}

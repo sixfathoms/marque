@@ -34,6 +34,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -107,17 +108,33 @@ func execute(args []string, stdout io.Writer) error {
 	}
 	defer func() { _ = target.Close() }()
 
-	result, execErr := pilot.Execute(ctx, target, req.GetStatement(), postgres.CommitWasRefused)
+	result, execErr := pilot.Execute(ctx, target, req.GetStatement(), postgres.RunOne, postgres.CommitWasRefused)
 
 	// Reported whatever happened. A Pilot that runs a statement and then says
 	// nothing is the worst of the available outcomes: the control plane's
 	// record would show a request that was approved and never resolved, and
 	// nobody would know whether the database had changed.
+	// UNPINNED, and unreachable as things stand: TestEveryPilotOutcomeHasAWireValue
+	// asserts the map covers all four outcomes Execute can return, so this
+	// branch has nothing to catch. It is kept as the belt to that test's
+	// braces — a fifth outcome added without a wire value would reach it — and
+	// named here so nobody assumes a test proves it fires.
 	outcome, ok := outcomes[result.Outcome]
 	if !ok {
 		return fmt.Errorf("the execution produced outcome %q, which is not one of the four (EDR-0042)", result.Outcome)
 	}
-	reported, err := hm.RecordExecution(ctx, connect.NewRequest(&v1.RecordExecutionRequest{
+	// A context that a signal does NOT cancel, bounded on its own.
+	//
+	// The report used the same signal context the execution did, so any SIGINT
+	// or SIGTERM after the statement had run made the report fail with
+	// "context canceled" — the statement applied, the control plane never told,
+	// and the request left approved so the next run applies it again. Measured
+	// with a real SIGINT. That is precisely what the comment above says is the
+	// worst available outcome, so the code has to mean it.
+	reportCtx, doneReporting := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer doneReporting()
+
+	reported, err := hm.RecordExecution(reportCtx, connect.NewRequest(&v1.RecordExecutionRequest{
 		Reference:    *reference,
 		Nonce:        *nonce,
 		Outcome:      outcome,

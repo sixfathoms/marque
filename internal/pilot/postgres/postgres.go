@@ -24,7 +24,7 @@ import (
 	// The comment must stay ADJACENT to the import: it is what silences
 	// revive's blank-imports rule, and EDR-0042 records at length why that
 	// matters more than it looks.
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 // Open connects to a target. The caller owns the pool and must Close it.
@@ -126,4 +126,80 @@ func CommitWasRefused(err error) bool {
 		severity = pgErr.Severity
 	}
 	return severity == "ERROR"
+}
+
+// Phase sentinels, so a caller can tell WHERE a run failed without importing a
+// driver's error types. internal/pilot classifies the outcome from these.
+var (
+	// ErrBegin: no transaction was opened, so nothing ran.
+	ErrBegin = errors.New("beginning the transaction")
+	// ErrExec: the statement itself failed, inside a transaction that is being
+	// rolled back.
+	ErrExec = errors.New("running the statement")
+	// ErrCommit: the statement succeeded and the commit did not report success.
+	ErrCommit = errors.New("committing")
+	// ErrRollback: the statement failed AND the rollback failed, so the
+	// connection's state is unknown.
+	ErrRollback = errors.New("rolling back")
+)
+
+// RunOne executes exactly one statement inside one transaction and reports the
+// rows it affected.
+//
+// **The extended protocol, with zero parameters, and that is the whole point.**
+// pgx uses the SIMPLE protocol whenever a query has no arguments, and the
+// simple protocol accepts multi-command strings — so
+//
+//	UPDATE accounts SET tier = 2; COMMIT; UPDATE accounts SET tier = 3; SELECT 1/0
+//
+// ran all four commands, the embedded COMMIT ended the transaction, the final
+// error rolled back nothing, and Execute reported `aborted_not_applied` with
+// zero rows while five rows had permanently changed. The control plane recorded
+// that nothing happened. A reviewer found it; it is the worst failure this
+// package can have, because an outcome that lies is worse than no Pilot at all.
+//
+// ExecParams speaks the extended protocol whatever the argument count, and
+// PostgreSQL refuses a multi-command string there — `cannot insert multiple
+// commands into a prepared statement`, SQLSTATE 42601. That refusal arrives as
+// an ordinary statement error, which is exactly the right shape: nothing ran.
+//
+// It is NOT a substitute for parsing the statement. M1 has no grammar and this
+// does not give it one; it stops one statement from silently being four.
+//
+// The whole transaction runs inside one Raw callback because database/sql does
+// not permit the driver connection to outlive it.
+func RunOne(ctx context.Context, db *sql.DB, statement string) (int64, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %w", ErrBegin, err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var rows int64
+	rawErr := conn.Raw(func(driverConn any) error {
+		stdConn, ok := driverConn.(*stdlib.Conn)
+		if !ok {
+			return fmt.Errorf("%w: the target's connection is %T, not pgx's", ErrBegin, driverConn)
+		}
+		pg := stdConn.Conn().PgConn()
+
+		if _, err := pg.ExecParams(ctx, "BEGIN", nil, nil, nil, nil).Close(); err != nil {
+			return fmt.Errorf("%w: %w", ErrBegin, err)
+		}
+
+		tag, execErr := pg.ExecParams(ctx, statement, nil, nil, nil, nil).Close()
+		if execErr != nil {
+			if _, rbErr := pg.ExecParams(ctx, "ROLLBACK", nil, nil, nil, nil).Close(); rbErr != nil {
+				return fmt.Errorf("%w: %w (and the statement failed: %w)", ErrRollback, rbErr, execErr)
+			}
+			return fmt.Errorf("%w: %w", ErrExec, execErr)
+		}
+		rows = tag.RowsAffected()
+
+		if _, err := pg.ExecParams(ctx, "COMMIT", nil, nil, nil, nil).Close(); err != nil {
+			return fmt.Errorf("%w: %w", ErrCommit, err)
+		}
+		return nil
+	})
+	return rows, rawErr
 }

@@ -12,7 +12,7 @@
 // MARQUE_INSECURE_SKELETON=1 and says on stderr what it is missing. `version`
 // is the exception and is meant to be: inspecting a binary should not require
 // agreeing to what it would do if you ran it. The implementation plan commits M5 to deleting
-// this package outright; TestTheSkeletonGateIsGone in this package asserts that
+// the flag, and this package with it if nothing else needs one; TestTheSkeletonGateIsGone in this package asserts that
 // and is skipped until then.
 package skeleton
 

@@ -230,7 +230,7 @@ func TestTheSixSteps(t *testing.T) {
 	if after.Msg.GetRequest().GetState() != v1.RequestState_REQUEST_STATE_APPROVED {
 		t.Fatalf("state is %s after approval", after.Msg.GetRequest().GetState())
 	}
-	result, err := pilot.Execute(ctx, w.target, after.Msg.GetRequest().GetStatement(), postgres.CommitWasRefused)
+	result, err := pilot.Execute(ctx, w.target, after.Msg.GetRequest().GetStatement(), postgres.RunOne, postgres.CommitWasRefused)
 	if err != nil {
 		t.Fatalf("executing: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestARetriedReportLearnsTheStoredOutcome(t *testing.T) {
 		t.Fatalf("approving: %v", err)
 	}
 
-	result, err := pilot.Execute(ctx, w.target, `UPDATE `+w.table+` SET tier = tier + 1`, postgres.CommitWasRefused)
+	result, err := pilot.Execute(ctx, w.target, `UPDATE `+w.table+` SET tier = tier + 1`, postgres.RunOne, postgres.CommitWasRefused)
 	if err != nil {
 		t.Fatalf("executing: %v", err)
 	}

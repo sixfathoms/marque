@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -145,13 +146,25 @@ func serve(args []string, stdout io.Writer) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// Bind FIRST, then say so. Printing "listening on" before ListenAndServe
+	// meant a port already in use printed the success line and then exited 1 —
+	// so a script waiting on that line proceeded against a server that was
+	// never there.
+	// ListenConfig rather than net.Listen, so the bind itself honours the
+	// signal context.
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", *addr)
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", *addr, err)
+	}
+	if _, err := fmt.Fprintln(stdout, "harbourmaster listening on", listener.Addr()); err != nil {
+		_ = listener.Close()
+		return err
+	}
+
 	errs := make(chan error, 1)
 	go func() {
-		if _, err := fmt.Fprintln(stdout, "harbourmaster listening on", *addr); err != nil {
-			errs <- err
-			return
-		}
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 			return
 		}

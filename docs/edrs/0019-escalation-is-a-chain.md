@@ -4,7 +4,7 @@ title: "Escalation is a chain of named stages, and every stage is a person"
 summary: "A request outside its submitter's scope escalates to a defined sequence of approvers — an agent's human first, then whoever policy additionally requires — with each stage timed, notified, and recorded."
 status: accepted
 implementation: none
-implementation_note: "The only mention in code is .golangci.yml, alongside EDR-0018's, and it is about a lint path exclusion rather than about escalation. No chain, no stages, no timers."
+implementation_note: "A stage exists and is recorded: approvals is keyed on (tenant, request, stage, approver), and the service refuses any stage but 1 because M1 has no chain to define a second. The record's substance is absent — no chain, no per-stage thresholds, no timers, and nothing that treats a stage as escalation rather than as a column."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

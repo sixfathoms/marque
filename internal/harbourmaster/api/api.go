@@ -7,8 +7,12 @@
 // that the record says so; what makes it worth having written is that it proves
 // the six steps join up.
 //
-// EDR-0005's boundary shows in what is absent: no target driver, no target
-// credential, no connection to anything but the control plane's own database.
+// EDR-0005's boundary shows in what this package does not do: it opens no
+// target connection and holds no target credential. It DOES reach a PostgreSQL
+// driver, through the store — EDR-0013 fixed Marque's own state on PostgreSQL,
+// so the boundary is EDR-0042's import discipline rather than the driver's
+// absence, and saying otherwise would reinstate a claim that record retracts at
+// length.
 package api
 
 import (
@@ -175,9 +179,13 @@ func (s *Service) Approve(
 	if err := s.store.Approve(ctx, s.tenant, m.GetReference(), m.GetApprover(), m.GetStage()); err != nil {
 		return nil, asConnectError(err)
 	}
-	// The response carries the request, because the proto says it does. A
-	// caller that has to issue a second GetRequest to learn the new state is a
-	// caller racing anyone else who can change it.
+	// The response carries the request, because the proto says it does.
+	//
+	// Read back AFTER the transaction commits, so this narrows that race rather
+	// than closing it: a concurrent RecordExecution between the two can make a
+	// successful Approve return EXECUTED. Closing it means returning the row
+	// from inside the store's transaction, which is a change to that API and
+	// is worth making when a caller depends on it.
 	r, err := s.store.Request(ctx, s.tenant, m.GetReference())
 	if err != nil {
 		return nil, asConnectError(err)

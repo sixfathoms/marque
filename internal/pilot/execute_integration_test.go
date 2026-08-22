@@ -47,7 +47,7 @@ func table(_ *testing.T) string { return os.Getenv("PILOT_TEST_TABLE") }
 
 func TestACommittedStatementReportsItsRowCount(t *testing.T) {
 	db := target(t)
-	got, err := Execute(t.Context(), db, `UPDATE `+table(t)+` SET tier = 2 WHERE id <= 3`, postgres.CommitWasRefused)
+	got, err := Execute(t.Context(), db, `UPDATE `+table(t)+` SET tier = 2 WHERE id <= 3`, postgres.RunOne, postgres.CommitWasRefused)
 	if err != nil {
 		t.Fatalf("executing: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestACommittedStatementReportsItsRowCount(t *testing.T) {
 // that is provably unchanged.
 func TestAFailingStatementIsAbortedAndAppliesNothing(t *testing.T) {
 	db := target(t)
-	got, err := Execute(t.Context(), db, `UPDATE `+table(t)+` SET tier = 'not a number' WHERE id = 1`, postgres.CommitWasRefused)
+	got, err := Execute(t.Context(), db, `UPDATE `+table(t)+` SET tier = 'not a number' WHERE id = 1`, postgres.RunOne, postgres.CommitWasRefused)
 	if err == nil {
 		t.Fatal("a statement that cannot run reported no error")
 	}
@@ -101,7 +101,7 @@ func TestAFailingStatementIsAbortedAndAppliesNothing(t *testing.T) {
 // the commit.
 func TestAConstraintViolationIsAborted(t *testing.T) {
 	db := target(t)
-	got, _ := Execute(t.Context(), db, `INSERT INTO `+table(t)+` (id, tier) VALUES (1, 9)`, postgres.CommitWasRefused)
+	got, _ := Execute(t.Context(), db, `INSERT INTO `+table(t)+` (id, tier) VALUES (1, 9)`, postgres.RunOne, postgres.CommitWasRefused)
 	if got.Outcome != OutcomeAbortedNotApplied {
 		t.Errorf("outcome is %s, want %s", got.Outcome, OutcomeAbortedNotApplied)
 	}
@@ -132,7 +132,7 @@ func TestARefusedCommitIsRolledBack(t *testing.T) {
 
 	// Every row to the same slot: legal row by row, and a duplicate the moment
 	// the constraint is checked, which is at COMMIT.
-	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET slot = 99`, postgres.CommitWasRefused)
+	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET slot = 99`, postgres.RunOne, postgres.CommitWasRefused)
 	if err == nil {
 		t.Fatal("a commit the server refuses reported no error")
 	}
@@ -155,43 +155,80 @@ func TestARefusedCommitIsRolledBack(t *testing.T) {
 }
 
 // A commit whose answer never arrives is INDETERMINATE — the case EDR-0021
-// exists for. The connection is taken away between the statement and the
-// commit, deterministically, through the seam in Execute: doing it from outside
-// races with the statement, and a test that has to accept either outcome
-// cannot tell them apart.
+// exists for.
+//
+// A deferred CONSTRAINT TRIGGER that terminates its own backend reaches it with
+// no seam and no race: the trigger fires during COMMIT processing, so the
+// connection dies after the statement has run and before any answer arrives.
+// An earlier version of this test needed a hook in Execute for that, and a
+// reviewer showed the hook was never necessary — the trigger is also a better
+// simulation, because it kills *during* the commit rather than before it is
+// sent.
 func TestALostCommitIsIndeterminate(t *testing.T) {
 	db := target(t)
 	ctx := t.Context()
 
-	killer, err := postgres.Open(ctx, os.Getenv("MARQUE_TEST_DSN"))
-	if err != nil {
-		t.Fatalf("connecting the killer: %v", err)
+	if _, err := db.ExecContext(ctx, `
+		CREATE OR REPLACE FUNCTION `+table(t)+`_die() RETURNS trigger
+		LANGUAGE plpgsql AS $$ BEGIN
+			PERFORM pg_terminate_backend(pg_backend_pid());
+			RETURN NULL;
+		END $$;
+		CREATE CONSTRAINT TRIGGER die_at_commit
+			AFTER UPDATE ON `+table(t)+`
+			DEFERRABLE INITIALLY DEFERRED
+			FOR EACH ROW EXECUTE FUNCTION `+table(t)+`_die()`); err != nil {
+		t.Fatalf("creating the deferred trigger: %v", err)
 	}
-	defer func() { _ = killer.Close() }()
 
-	// The pool holds one connection, so this is the pid Execute will use.
-	var pid int
-	if err := db.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
-		t.Fatalf("reading the backend pid: %v", err)
-	}
-
-	afterExec = func() {
-		if _, err := killer.ExecContext(ctx, `SELECT pg_terminate_backend($1)`, pid); err != nil {
-			t.Errorf("terminating: %v", err)
-		}
-	}
-	t.Cleanup(func() { afterExec = nil })
-
-	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET tier = 4 WHERE id = 1`, postgres.CommitWasRefused)
+	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET tier = 4 WHERE id = 1`,
+		postgres.RunOne, postgres.CommitWasRefused)
 	if err == nil {
-		t.Fatal("the commit succeeded although the connection was terminated before it")
+		t.Fatal("the commit succeeded although the backend terminated during it")
 	}
 	if got.Outcome != OutcomeIndeterminate {
-		t.Errorf("outcome is %s, want %s — no answer arrived, so the server did not refuse it and it did not commit",
+		t.Errorf("outcome is %s, want %s — the connection died, so the server neither refused it nor confirmed it",
 			got.Outcome, OutcomeIndeterminate)
 	}
 	if got.RowsAffected != nil {
 		t.Errorf("an indeterminate outcome carries %v rows; nobody knows means nobody knows", *got.RowsAffected)
+	}
+}
+
+// One statement means ONE statement. pgx speaks the SIMPLE protocol whenever a
+// query has no arguments, and the simple protocol accepts multi-command
+// strings — so this ran all four commands, the embedded COMMIT ended the
+// transaction, the final error rolled back nothing, and Execute reported
+// `aborted_not_applied` with zero rows while five rows had permanently
+// changed. The control plane recorded that nothing happened.
+//
+// This is not "M1 has no grammar". A missing grammar means the statement is not
+// understood; this was the OUTCOME being false about what the statement did.
+func TestAMultiCommandStringIsRefusedRatherThanRun(t *testing.T) {
+	db := target(t)
+	ctx := t.Context()
+
+	got, err := Execute(ctx, db,
+		`UPDATE `+table(t)+` SET tier = 2; COMMIT; UPDATE `+table(t)+` SET tier = 3; SELECT 1/0`,
+		postgres.RunOne, postgres.CommitWasRefused)
+	if err == nil {
+		t.Fatal("a multi-command string was accepted")
+	}
+	if got.Outcome != OutcomeAbortedNotApplied {
+		t.Errorf("outcome is %s, want %s", got.Outcome, OutcomeAbortedNotApplied)
+	}
+
+	var changed int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM `+table(t)+` WHERE tier <> 1`).Scan(&changed); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if changed != 0 {
+		t.Errorf("%d rows changed while the outcome said nothing was applied", changed)
+	}
+	// And the refusal names the reason, so an operator is not left guessing.
+	if !strings.Contains(err.Error(), "multiple commands") {
+		t.Errorf("the refusal does not say why: %v", err)
 	}
 }
 
@@ -204,7 +241,7 @@ func TestEveryOutcomeCarriesACountExceptIndeterminate(t *testing.T) {
 		"aborted":   `UPDATE ` + table(t) + ` SET tier = 'x' WHERE id = 1`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, _ := Execute(t.Context(), db, statement, postgres.CommitWasRefused)
+			got, _ := Execute(t.Context(), db, statement, postgres.RunOne, postgres.CommitWasRefused)
 			if (got.Outcome == OutcomeIndeterminate) != (got.RowsAffected == nil) {
 				t.Errorf("outcome %s with rows %v breaks the biconditional", got.Outcome, got.RowsAffected)
 			}
@@ -232,7 +269,7 @@ func TestARaisedErrorAtCommitIsARefusal(t *testing.T) {
 		t.Fatalf("creating the deferred trigger: %v", err)
 	}
 
-	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET tier = 7 WHERE id = 1`, postgres.CommitWasRefused)
+	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET tier = 7 WHERE id = 1`, postgres.RunOne, postgres.CommitWasRefused)
 	if err == nil {
 		t.Fatal("a commit the trigger refuses reported no error")
 	}

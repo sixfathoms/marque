@@ -4,7 +4,7 @@ title: "Partition every tenant from day one, including its logbook chain and its
 summary: "Tenancy is in the model from the first migration: the tenant comes from the authenticated principal, never a request field, and each tenant gets its own hash chain and its own control-plane signing key."
 status: accepted
 implementation: partial
-implementation_note: "The schema half exists from migration one: a tenants table, tenant_id NOT NULL on every domain table, composite foreign keys so a row cannot reference another tenant's parent, and tenant_id leading both indexes (EDR-0042). The source does not: M1 has one configured development tenant and no identity, so nothing derives tenant_id from an authenticated principal and no query is scoped by one. Nothing structurally stops a query that forgets it — issue #43."
+implementation_note: "The schema half exists from migration one: a tenants table, tenant_id NOT NULL on every domain table, composite foreign keys so a row cannot reference another tenant's parent, and tenant_id leading both indexes (EDR-0042). Every query is tenant-scoped — but to a CONFIGURED CONSTANT rather than to anyone's identity, because M1 has none, and no request field can reach it. Nothing structurally stops a query that omits the scope: issue #43."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

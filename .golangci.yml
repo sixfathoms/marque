@@ -75,9 +75,11 @@ linters:
             - pkg: github.com/jackc/pgproto3
               desc: a PostgreSQL driver belongs in internal/harbourmaster/store or internal/pilot only (EDR-0042)
         # An engine Marque does not store its own state in has no CONTROL-PLANE
-        # exception: its only home is the Pilot's adapter, which is why the
-        # Pilot tree is excluded below. EDR-0013 forced the PostgreSQL one, and
-        # nothing forces this.
+        # exception. The exclusion below is the whole Pilot TREE, not just its
+        # adapter — so this block permits a PostgreSQL driver anywhere under
+        # internal/pilot, and the graph check is what refuses that. Deliberate:
+        # this is the wider, cheaper report and the test is the rule.
+        # EDR-0013 forced the PostgreSQL exception, and nothing forces this.
         no-other-target-engine:
           files:
             - "**/internal/**"

@@ -23,9 +23,10 @@
     <a class="btn-ghost" href="{{repo_url}}">GitHub</a>
   </div>
   <p class="hero-status">
-    <b>Status: design; scaffolding underway.</b> {{edr_count}} decision records are published, and
-    implementation has begun at the scaffolding milestone. Nothing here is running against a database
-    yet, in production or anywhere else.
+    <b>Status: M1, the walking skeleton, runs.</b> {{edr_count}} decision records are published, and
+    M1's steps execute against a real PostgreSQL. It has no signing, no grammar, no identity and no
+    fence, so every command but <code>version</code> refuses to start without an explicit
+    acknowledgement. Nothing here has run against a production database, and nothing should.
   </p>
 </section>
 

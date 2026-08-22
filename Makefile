@@ -185,6 +185,13 @@ PGIMAGE ?= postgres:18
 test-integration: ## Run the tests that need a real PostgreSQL
 ifdef MARQUE_TEST_DSN
 	@echo "using MARQUE_TEST_DSN; not starting a container"
+	@# The runtime role, as the container branch creates it. Without it every
+	@# migration fails with `role "marque_runtime" does not exist` and nothing
+	@# says why — the schema grants unconditionally, on purpose (EDR-0042).
+	@psql "$$MARQUE_TEST_DSN" -qtAc "SELECT 1 FROM pg_roles WHERE rolname = 'marque_runtime'" \
+		| grep -q 1 \
+		|| psql "$$MARQUE_TEST_DSN" -qc "CREATE ROLE marque_runtime NOLOGIN" \
+		|| { echo "could not reach the server, or could not create marque_runtime"; exit 1; }
 	@go test -tags integration -race -count=1 -timeout 10m ./...
 else
 	@docker rm -f marque-test-pg >/dev/null 2>&1 || true

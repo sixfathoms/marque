@@ -12,7 +12,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
+
+	"github.com/sixfathoms/marque/internal/pilot/postgres"
 )
 
 // The four outcomes EDR-0042 decides. Spelled here as strings rather than
@@ -45,89 +46,62 @@ type Result struct {
 //
 // The distinction that matters is WHERE it failed:
 //
-//   - the statement itself failed, so the transaction rolls back and nothing
-//     was applied — aborted_not_applied, zero rows;
+//   - nothing was opened, or the statement itself failed and rolled back —
+//     aborted_not_applied, zero rows;
 //   - the statement succeeded and the server REFUSED the commit — a deferred
 //     constraint, say — so it definitively rolled back: rolled_back, zero rows;
-//   - the statement succeeded and no answer to the commit arrived —
-//     indeterminate, because it may have been applied and the acknowledgement
-//     lost.
+//   - the statement succeeded and no answer to the commit arrived, or the
+//     rollback of a failed statement itself failed — indeterminate, because it
+//     may have been applied and the acknowledgement lost.
 //
-// The last two look identical from here and are not, which is why commitRefused
-// is a parameter: telling them apart means reading a driver's error types, and
-// EDR-0042 confines those to the adapter. postgres.CommitWasRefused is the one
-// implementation.
+// run and commitRefused are parameters because both mean touching a driver's
+// types, and EDR-0042 confines those to the adapter. internal/pilot/postgres
+// has the one implementation of each.
 func Execute(
-	ctx context.Context, db *sql.DB, statement string, commitRefused func(error) bool,
+	ctx context.Context,
+	db *sql.DB,
+	statement string,
+	run func(context.Context, *sql.DB, string) (int64, error),
+	commitRefused func(error) bool,
 ) (Result, error) {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		// No transaction was opened, so nothing ran. This is the one failure
-		// that is unambiguously "not applied".
-		return Result{Outcome: OutcomeAbortedNotApplied, RowsAffected: zero()},
-			fmt.Errorf("beginning the transaction: %w", err)
+	rows, err := run(ctx, db, statement)
+	if err == nil {
+		return Result{Outcome: OutcomeCommitted, RowsAffected: &rows}, nil
 	}
 
-	res, err := tx.ExecContext(ctx, statement)
-	if err != nil {
-		// Roll back explicitly and report what the rollback did, because a
-		// rollback that itself fails leaves the outcome unknown.
-		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
-			return Result{Outcome: OutcomeIndeterminate},
-				fmt.Errorf("the statement failed (%w) and so did the rollback (%w)", err, rbErr)
-		}
-		return Result{Outcome: OutcomeAbortedNotApplied, RowsAffected: zero()},
-			fmt.Errorf("the statement failed and was rolled back: %w", err)
-	}
+	switch {
+	case errors.Is(err, postgres.ErrBegin), errors.Is(err, postgres.ErrExec):
+		// Nothing was opened, or the statement failed and the transaction
+		// rolled back. Either way it is provably not applied.
+		return Result{Outcome: OutcomeAbortedNotApplied, RowsAffected: zero()}, err
 
-	// Read the count BEFORE committing: after a failed commit there is no
-	// result to ask, and asking a driver for one is undefined.
-	rows, err := res.RowsAffected()
-	if err != nil {
-		// The statement ran. Not knowing how many rows it touched is not the
-		// same as not knowing whether it ran — but M1's whole notion of a
-		// result IS the row count (EDR-0042), so a commit whose effect cannot
-		// be described is reported as indeterminate rather than as a success
-		// with a made-up number.
-		_ = tx.Rollback()
-		return Result{Outcome: OutcomeIndeterminate},
-			fmt.Errorf("the statement ran and its row count could not be read: %w", err)
-	}
+	case errors.Is(err, postgres.ErrRollback):
+		// The statement failed AND the rollback failed. The statement is not
+		// applied — the server aborts the transaction regardless — but the
+		// connection's state is unknown, and indeterminate is the conservative
+		// report rather than the accurate one.
+		return Result{Outcome: OutcomeIndeterminate}, err
 
-	if afterExec != nil {
-		afterExec()
-	}
-
-	if err := tx.Commit(); err != nil {
+	case errors.Is(err, postgres.ErrCommit):
 		if commitRefused(err) {
-			// The server processed the COMMIT and declined it. The transaction
-			// rolled back, and saying "nobody knows" would send a human to
-			// inspect a database that is provably unchanged.
-			return Result{Outcome: OutcomeRolledBack, RowsAffected: zero()},
-				fmt.Errorf("the server refused the commit: %w", err)
+			// The server processed the COMMIT and declined it. It rolled back,
+			// and saying "nobody knows" would send a human to inspect a
+			// database that is provably unchanged.
+			return Result{Outcome: OutcomeRolledBack, RowsAffected: zero()}, err
 		}
 		// No answer arrived. The commit may have been applied and the
 		// acknowledgement lost. EDR-0021 exists because the tempting things
 		// here — retry, or assume failure — are each wrong in a way that shows
 		// up once, in production, as a statement applied twice or a change
 		// reported as absent when it is not.
-		return Result{Outcome: OutcomeIndeterminate},
-			fmt.Errorf("the statement ran and no answer to the commit arrived: %w", err)
+		return Result{Outcome: OutcomeIndeterminate}, err
+
+	default:
+		// A failure the runner did not label. Reporting it as anything
+		// definite would be inventing knowledge.
+		return Result{Outcome: OutcomeIndeterminate}, err
 	}
-
-	return Result{Outcome: OutcomeCommitted, RowsAffected: &rows}, nil
 }
-
-// afterExec runs between the statement and the commit. It is nil in every
-// build that ships and a test sets it to take the connection away.
-//
-// A seam in production code is a cost, and this one buys the only deterministic
-// way to reach the lost-commit branch: terminating a backend from outside races
-// with the statement, so the test that tried it accepted either the aborted or
-// the indeterminate outcome — and could therefore not tell them apart, which is
-// exactly what that branch exists to do. A test accepting either answer is a
-// test asserting nothing.
-var afterExec func()
 
 func zero() *int64 {
 	var z int64
