@@ -163,9 +163,18 @@ func (s *Store) Request(ctx context.Context, tenant, reference string) (Request,
 // stage twice is one approval. M1 has no chain, so any approval is sufficient
 // — EDR-0030's per-stage thresholds arrive with signing at M3.
 //
-// The state change is conditional in SQL. Reading the state and then writing it
-// would let two approvals race, and would let an approval land on a request
-// that was executed in between.
+// The safety is the `FOR UPDATE` below, and naming it precisely matters because
+// an earlier version of this comment named something else. It said "the state
+// change is conditional in SQL", and it is not: the UPDATE has no state
+// predicate. What this does IS read-then-write — the thing that comment said
+// would be wrong — and it is safe only because the read takes a row lock, so
+// the second caller blocks until the first commits and then re-reads.
+//
+// Measured with the lock removed: an approval moved an already-executed request
+// back to approved in nineteen rounds of twenty, and four concurrent executions
+// landed against one approval in thirty-nine of forty. An UNBARRIERED
+// concurrency test passes against both, which is why the test that pins this
+// starts every goroutine from a barrier.
 func (s *Store) Approve(ctx context.Context, tenant, reference, approver string, stage uint32) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -290,9 +299,36 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 
 	// The request's state follows the STORED outcome, not the argument, so a
 	// retry with a different outcome cannot move it.
-	next := StateExecuted
-	if stored.Outcome == OutcomeIndeterminate {
+	//
+	// Four outcomes, three destinations. `committed` is the only one that
+	// executed anything, and `indeterminate` is the truthful terminal state a
+	// human resolves (EDR-0011). The other two are **provably not applied** —
+	// `aborted_not_applied` is an error received before COMMIT, `rolled_back` is
+	// the server refusing it — so the request goes back to being RUNNABLE
+	// rather than terminal.
+	//
+	// An earlier version sent all three of the non-indeterminate outcomes to
+	// `executed`. That made the control plane's record say a change had
+	// happened that provably had not, and left the request a dead end: it could
+	// not be approved again, and a fresh nonce was refused, so the real result
+	// of a re-run was discarded. A reviewer walked exactly that sequence.
+	//
+	// Note where this departs from EDR-0011: that record has a clean abort
+	// re-run under the SAME nonce, against a Pilot-local ledger with an attempt
+	// count. M1 has no ledger, and a repeat of a recorded nonce here returns
+	// the stored outcome — so an M1 re-run needs a new nonce, which staying
+	// approved is what permits. Issue #34 is where the ledger belongs.
+	next := ""
+	switch stored.Outcome {
+	case OutcomeCommitted:
+		next = StateExecuted
+	case OutcomeIndeterminate:
 		next = StateIndeterminate
+	case OutcomeAbortedNotApplied, OutcomeRolledBack:
+		next = StateApproved
+	default:
+		return Execution{}, fmt.Errorf(
+			"stored outcome %q has no request state; the four EDR-0042 decides all do", stored.Outcome)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE requests SET state = $3 WHERE tenant_id = $1 AND reference = $2`,

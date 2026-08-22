@@ -397,3 +397,167 @@ func TestAFreshNonceIsRefusedAfterAnIndeterminateToo(t *testing.T) {
 		t.Errorf("%d executions recorded; the second was refused and must not have landed", n)
 	}
 }
+
+// Four outcomes, three destinations. An earlier version sent everything but
+// `indeterminate` to `executed`, so a statement that provably did not run was
+// recorded as one that did — and the request became a dead end, refusing both a
+// fresh nonce and a second approval, which discarded the real result of the
+// re-run the design blesses.
+func TestTheRequestStateFollowsWhatTheOutcomeMeans(t *testing.T) {
+	for name, c := range map[string]struct {
+		outcome   string
+		rows      *int64
+		wantState string
+	}{
+		"committed is the only one that executed anything": {
+			OutcomeCommitted, ptr(3), StateExecuted,
+		},
+		"indeterminate is terminal and a human resolves it": {
+			OutcomeIndeterminate, nil, StateIndeterminate,
+		},
+		// Provably not applied, so the request stays runnable.
+		"a clean abort leaves it approved": {
+			OutcomeAbortedNotApplied, ptr(0), StateApproved,
+		},
+		"a refused commit leaves it approved": {
+			OutcomeRolledBack, ptr(0), StateApproved,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := migrated(t)
+			ctx := t.Context()
+			ref, err := s.Submit(ctx, devTenant, aRequest("k"))
+			if err != nil {
+				t.Fatalf("submitting: %v", err)
+			}
+			if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+				t.Fatalf("approving: %v", err)
+			}
+			if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+				Nonce: "n1", Outcome: c.outcome, RowsAffected: c.rows,
+			}); err != nil {
+				t.Fatalf("recording %s: %v", c.outcome, err)
+			}
+			got, err := s.Request(ctx, devTenant, ref)
+			if err != nil {
+				t.Fatalf("reading: %v", err)
+			}
+			if got.State != c.wantState {
+				t.Fatalf("%s left the request %s, want %s", c.outcome, got.State, c.wantState)
+			}
+
+			// And the consequence that matters: a request left approved can be
+			// run again under a new nonce, and one left terminal cannot.
+			_, err = s.RecordExecution(ctx, devTenant, ref, Execution{
+				Nonce: "n2", Outcome: OutcomeCommitted, RowsAffected: ptr(1),
+			})
+			if c.wantState == StateApproved {
+				if err != nil {
+					t.Errorf("a request left approved refused a second attempt: %v", err)
+				}
+				after, _ := s.Request(ctx, devTenant, ref)
+				if after.State != StateExecuted {
+					t.Errorf("the re-run committed and the request is %s", after.State)
+				}
+			} else if !errors.Is(err, ErrWrongState) {
+				t.Errorf("a terminal request accepted a fresh nonce: %v", err)
+			}
+		})
+	}
+}
+
+func ptr(n int64) *int64 { return &n }
+
+// The row lock, pinned. Both of these pass without `FOR UPDATE` if the
+// goroutines are merely started in a loop — the window is small and the loop is
+// slower than it. A barrier releases them together and the window opens.
+func TestTheRowLockSerialisesConcurrentWriters(t *testing.T) {
+	t.Run("an approval cannot overtake an execution", func(t *testing.T) {
+		s := migrated(t)
+		ctx := t.Context()
+		for i := range 20 {
+			ref, err := s.Submit(ctx, devTenant, aRequest("a"+string(rune('a'+i))))
+			if err != nil {
+				t.Fatalf("submitting: %v", err)
+			}
+			if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+				t.Fatalf("approving: %v", err)
+			}
+
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				<-start
+				_, _ = s.RecordExecution(ctx, devTenant, ref, Execution{
+					Nonce: "n", Outcome: OutcomeCommitted, RowsAffected: ptr(1),
+				})
+			}()
+			go func() {
+				defer wg.Done()
+				<-start
+				_ = s.Approve(ctx, devTenant, ref, "kim", 1)
+			}()
+			close(start)
+			wg.Wait()
+
+			got, err := s.Request(ctx, devTenant, ref)
+			if err != nil {
+				t.Fatalf("reading: %v", err)
+			}
+			// Whichever won, an executed request must not be sitting at
+			// approved: that would mean an approval overwrote a terminal state.
+			var executions int
+			if err := s.db.QueryRowContext(ctx,
+				`SELECT count(*) FROM executions WHERE tenant_id = $1 AND reference = $2`,
+				devTenant, ref).Scan(&executions); err != nil {
+				t.Fatalf("counting: %v", err)
+			}
+			if executions == 1 && got.State != StateExecuted {
+				t.Fatalf("round %d: an execution was recorded and the request is %s", i, got.State)
+			}
+		}
+	})
+
+	t.Run("one approval admits one execution", func(t *testing.T) {
+		s := migrated(t)
+		ctx := t.Context()
+		for i := range 20 {
+			ref, err := s.Submit(ctx, devTenant, aRequest("b"+string(rune('a'+i))))
+			if err != nil {
+				t.Fatalf("submitting: %v", err)
+			}
+			if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+				t.Fatalf("approving: %v", err)
+			}
+
+			// Four DIFFERENT nonces racing. Exactly one may land: the others
+			// arrive after the request has left `approved`.
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for n := range 4 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					_, _ = s.RecordExecution(ctx, devTenant, ref, Execution{
+						Nonce: string(rune('a' + n)), Outcome: OutcomeCommitted, RowsAffected: ptr(1),
+					})
+				}()
+			}
+			close(start)
+			wg.Wait()
+
+			var executions int
+			if err := s.db.QueryRowContext(ctx,
+				`SELECT count(*) FROM executions WHERE tenant_id = $1 AND reference = $2`,
+				devTenant, ref).Scan(&executions); err != nil {
+				t.Fatalf("counting: %v", err)
+			}
+			if executions != 1 {
+				t.Fatalf("round %d: %d executions recorded against one approval", i, executions)
+			}
+		}
+	})
+}

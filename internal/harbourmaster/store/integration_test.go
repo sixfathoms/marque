@@ -96,6 +96,14 @@ func currentUser(t *testing.T, db *sql.DB) string {
 }
 
 func replaceDBName(d, name string) string {
+	// Keyword/value only, and loudly. Given a URL this would append a dbname=
+	// token the URL parser ignores, every test would quietly share one
+	// database, and the isolation this exists for would be gone — a reviewer
+	// hit exactly that and got ten failures from one test's deliberate
+	// corruption leaking into the rest.
+	if strings.Contains(d, "://") {
+		panic("MARQUE_TEST_DSN must be a keyword/value DSN, not a URL: this rewrites dbname= and would silently share one database otherwise")
+	}
 	fields := strings.Fields(d)
 	out := make([]string, 0, len(fields)+1)
 	replaced := false

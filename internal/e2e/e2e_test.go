@@ -42,6 +42,71 @@ func dsn(t *testing.T) string {
 	return d
 }
 
+// freshControlPlane creates a database for one test and drops it afterwards.
+func freshControlPlane(t *testing.T) *sql.DB {
+	t.Helper()
+	ctx := t.Context()
+
+	admin, err := store.Open(ctx, dsn(t))
+	if err != nil {
+		t.Fatalf("connecting to the control plane's database: %v", err)
+	}
+	defer func() { _ = admin.Close() }()
+
+	name := "marque_e2e_" + strings.ToLower(strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	if len(name) > 60 {
+		name = name[:60]
+	}
+	if _, err := admin.ExecContext(ctx, `DROP DATABASE IF EXISTS "`+name+`" WITH (FORCE)`); err != nil {
+		t.Fatalf("dropping %s: %v", name, err)
+	}
+	if _, err := admin.ExecContext(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
+		t.Fatalf("creating %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		a, err := store.Open(context.WithoutCancel(ctx), dsn(t))
+		if err != nil {
+			return
+		}
+		defer func() { _ = a.Close() }()
+		_, _ = a.ExecContext(context.WithoutCancel(ctx), `DROP DATABASE IF EXISTS "`+name+`" WITH (FORCE)`)
+	})
+
+	db, err := store.Open(ctx, replaceDBName(dsn(t), name))
+	if err != nil {
+		t.Fatalf("connecting to %s: %v", name, err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// replaceDBName rewrites the dbname in a keyword/value DSN.
+//
+// It handles that form only, and says so: given a URL it would append a
+// dbname= token that the URL parser ignores, and every test would silently
+// share one database again — which is the failure this whole helper exists to
+// prevent, so it is refused rather than papered over.
+func replaceDBName(d, name string) string {
+	if strings.Contains(d, "://") {
+		panic("MARQUE_TEST_DSN must be a keyword/value DSN, not a URL: this rewrites dbname= and would silently share one database otherwise")
+	}
+	fields := strings.Fields(d)
+	out := make([]string, 0, len(fields)+1)
+	replaced := false
+	for _, f := range fields {
+		if strings.HasPrefix(f, "dbname=") {
+			out = append(out, "dbname="+name)
+			replaced = true
+			continue
+		}
+		out = append(out, f)
+	}
+	if !replaced {
+		out = append(out, "dbname="+name)
+	}
+	return strings.Join(out, " ")
+}
+
 // world is a migrated control plane, a served API, and a target table.
 type world struct {
 	client marquev1connect.HarbourmasterServiceClient
@@ -53,11 +118,16 @@ func setUp(t *testing.T) world {
 	t.Helper()
 	ctx := t.Context()
 
-	control, err := store.Open(ctx, dsn(t))
-	if err != nil {
-		t.Fatalf("connecting to the control plane's database: %v", err)
-	}
-	t.Cleanup(func() { _ = control.Close() })
+	// A control-plane database of this test's own.
+	//
+	// Sharing one made this suite green exactly once per database: the
+	// idempotency keys below are fixed, so a second run replayed the first
+	// run's requests and found them already executed. A reviewer ran it with
+	// -count=2 and watched it fail. CI never noticed because the Makefile hands
+	// it a brand-new container each time — which means the milestone's own exit
+	// criterion could not be re-run on a developer's own server, and that is
+	// exactly where someone would run it.
+	control := freshControlPlane(t)
 	if err := store.Migrate(ctx, control); err != nil {
 		t.Fatalf("migrating: %v", err)
 	}
