@@ -1,9 +1,14 @@
 // Command harbourmaster is Marque's control plane.
 //
 // It records what an operator asked for, records that someone approved it, and
-// records what the Pilot reported. It holds no target credential, links no
-// target driver, and opens no connection to anything but its own database
-// (EDR-0005).
+// records what the Pilot reported. It holds no target credential and opens no
+// connection to anything but its own database (EDR-0005).
+//
+// It DOES link a PostgreSQL driver — for that database. EDR-0013 fixed Marque's
+// own state on PostgreSQL, which is also a target engine, so "no target driver
+// linked in" stopped being achievable and EDR-0042 replaced it with import
+// discipline. Saying otherwise here would reinstate a claim that record
+// retracts at length.
 //
 // M1 is the walking skeleton and is not secure: see internal/skeleton, and the
 // banner every start prints.
@@ -14,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,7 +40,7 @@ func main() {
 	}
 }
 
-func run(args []string, stdout *os.File) error {
+func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("usage: harbourmaster <version|migrate|serve> [flags]")
 	}
@@ -54,7 +60,7 @@ func run(args []string, stdout *os.File) error {
 // migrate is an explicit command and never a side effect of starting.
 // Migrating implicitly at startup turns every deploy into a schema change
 // nobody chose to run (EDR-0042).
-func migrate(args []string, stdout *os.File) error {
+func migrate(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	dsn := fs.String("dsn", "", "connection string for the control plane's own database")
 	if err := fs.Parse(args); err != nil {
@@ -62,6 +68,13 @@ func migrate(args []string, stdout *os.File) error {
 	}
 	if *dsn == "" {
 		return errors.New("-dsn is required")
+	}
+	// Gated too. It opens the control plane's database and changes its schema,
+	// which is not a thing to do to an M1 deployment by accident — and the
+	// plan says every binary refuses to start, which was not true while this
+	// path did not ask.
+	if err := skeleton.FromEnv("harbourmaster"); err != nil {
+		return err
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -80,7 +93,7 @@ func migrate(args []string, stdout *os.File) error {
 	return err
 }
 
-func serve(args []string, stdout *os.File) error {
+func serve(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	dsn := fs.String("dsn", "", "connection string for the control plane's own database")
 	addr := fs.String("addr", "127.0.0.1:8080", "address to listen on")

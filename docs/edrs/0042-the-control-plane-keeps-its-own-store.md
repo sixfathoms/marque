@@ -260,7 +260,7 @@ protect and which M4 makes real.
 
 **`requests.state` carries all seven of [EDR-0038](./0038-a-request-is-a-shareable-watchable-object.md)'s
 values** — `pending`, `verifying`, `approved`, `refused`, `expired`, `executed`, `indeterminate` —
-even though M1 can only produce three of them. A forward-only schema makes widening a constrained
+even though M1 produces four of them — pending, approved, executed and indeterminate. A forward-only schema makes widening a constrained
 column an unnecessary migration, and a vocabulary that already exists in an accepted record is not
 this record's to shorten.
 

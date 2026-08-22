@@ -303,3 +303,57 @@ func TestReferencesAreNotSequential(t *testing.T) {
 		}
 	}
 }
+
+// Once a request is terminal, a NEW nonce is a second execution nobody
+// approved. A reviewer recorded a committed attempt, then reported a different
+// nonce as indeterminate, and watched the request move backwards — and the
+// reverse worked too, so the last report won.
+func TestAFreshNonceIsRefusedAfterTheRequestIsTerminal(t *testing.T) {
+	s := migrated(t)
+	ctx := t.Context()
+	ref, err := s.Submit(ctx, devTenant, aRequest("k"))
+	if err != nil {
+		t.Fatalf("submitting: %v", err)
+	}
+	if err := s.Approve(ctx, devTenant, ref, "sam", 1); err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+	rows := int64(1)
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "first", Outcome: OutcomeCommitted, RowsAffected: &rows,
+	}); err != nil {
+		t.Fatalf("recording: %v", err)
+	}
+
+	// A different nonce, after the fact.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "second", Outcome: OutcomeIndeterminate,
+	}); !errors.Is(err, ErrWrongState) {
+		t.Errorf("a fresh nonce against an executed request: want ErrWrongState, got %v", err)
+	}
+	got, _ := s.Request(ctx, devTenant, ref)
+	if got.State != StateExecuted {
+		t.Errorf("state moved to %s; a refused report must change nothing", got.State)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM executions WHERE tenant_id = $1 AND reference = $2`,
+		devTenant, ref).Scan(&n); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("%d executions recorded; the second was refused and must not have landed", n)
+	}
+
+	// The recorded nonce may still be repeated: that is an acknowledgement,
+	// and it is what makes a Pilot's retry of the REPORT safe.
+	again, err := s.RecordExecution(ctx, devTenant, ref, Execution{
+		Nonce: "first", Outcome: OutcomeIndeterminate,
+	})
+	if err != nil {
+		t.Fatalf("repeating a recorded nonce: %v", err)
+	}
+	if again.Outcome != OutcomeCommitted {
+		t.Errorf("the repeat returned %s; committed is what was stored", again.Outcome)
+	}
+}

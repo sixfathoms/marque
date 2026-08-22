@@ -25,8 +25,13 @@ func (f *fakeStore) Submit(_ context.Context, tenant string, r store.Request) (s
 	return "req_stub", f.err
 }
 
-func (f *fakeStore) Request(_ context.Context, tenant, _ string) (store.Request, error) {
+func (f *fakeStore) Request(_ context.Context, tenant, reference string) (store.Request, error) {
 	f.tenant = tenant
+	if f.request.State == "" && f.err == nil {
+		// A plausible stored row, so tests about OTHER things are not all
+		// about the state mapping. A test that cares sets f.request itself.
+		return store.Request{Reference: reference, State: store.StateApproved}, nil
+	}
 	return f.request, f.err
 }
 
@@ -206,5 +211,40 @@ func TestAnUnknownStoredStateIsInternalNotUnspecified(t *testing.T) {
 		connect.NewRequest(&v1.GetRequestRequest{Reference: "req_x"}))
 	if connect.CodeOf(err) != connect.CodeInternal {
 		t.Errorf("code is %v, want Internal", connect.CodeOf(err))
+	}
+}
+
+// The proto declares a request on both mutating responses, and leaving it nil
+// makes a caller issue a second GetRequest to learn the new state — which is a
+// caller racing anyone else who can change it.
+func TestMutatingResponsesCarryTheRequest(t *testing.T) {
+	f := &fakeStore{request: store.Request{Reference: "req_x", State: store.StateApproved}}
+	s := New(f, "development")
+
+	approved, err := s.Approve(t.Context(),
+		connect.NewRequest(&v1.ApproveRequest{Reference: "req_x", Approver: "sam", Stage: 1}))
+	if err != nil {
+		t.Fatalf("approving: %v", err)
+	}
+	if approved.Msg.GetRequest() == nil {
+		t.Error("ApproveResponse carries no request, although the proto declares one")
+	} else if approved.Msg.GetRequest().GetState() != v1.RequestState_REQUEST_STATE_APPROVED {
+		t.Errorf("ApproveResponse reports state %s", approved.Msg.GetRequest().GetState())
+	}
+
+	rows := int64(1)
+	recorded, err := s.RecordExecution(t.Context(),
+		connect.NewRequest(&v1.RecordExecutionRequest{
+			Reference: "req_x", Nonce: "n", RowsAffected: &rows,
+			Outcome: v1.ExecutionOutcome_EXECUTION_OUTCOME_COMMITTED,
+		}))
+	if err != nil {
+		t.Fatalf("recording: %v", err)
+	}
+	if recorded.Msg.GetRequest() == nil {
+		t.Error("RecordExecutionResponse carries no request, although the proto declares one")
+	}
+	if recorded.Msg.GetExecution() == nil {
+		t.Error("RecordExecutionResponse carries no execution")
 	}
 }

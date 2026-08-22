@@ -10,6 +10,18 @@
 // One statement per invocation, deliberately. A long-lived Pilot with a queue
 // is a thing that runs statements without anyone watching, and M1 is not where
 // that should first exist.
+//
+// The nonce makes the REPORT idempotent and not the execution, which is a
+// weaker thing than it sounds and is worth being exact about. Re-running this
+// command with a nonce already recorded is refused, because the request is
+// terminal by then. But if the FIRST report never landed — the process died
+// between the commit and the call — the request is still approved, and running
+// the command again executes the statement a second time before anything looks
+// at the nonce.
+//
+// That is exactly what EDR-0011's ledger prevents, by claiming the nonce
+// BEFORE the statement runs and letting a crash lose the attempt rather than
+// the count. M1 does not have it, and where it should live is issue #34.
 package main
 
 import (
@@ -60,7 +72,7 @@ func execute(args []string, stdout io.Writer) error {
 	addr := fs.String("harbourmaster", "http://127.0.0.1:8080", "base URL of the control plane")
 	reference := fs.String("reference", "", "the req_… to execute")
 	dsn := fs.String("target-dsn", "", "connection string for the TARGET database; the control plane never sees this (EDR-0005)")
-	nonce := fs.String("nonce", "", "identifies this attempt; repeating it returns the stored outcome instead of running again")
+	nonce := fs.String("nonce", "", "identifies this attempt to the control plane; it makes the REPORT idempotent, not the execution — see below")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

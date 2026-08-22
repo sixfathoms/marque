@@ -211,3 +211,42 @@ func TestEveryOutcomeCarriesACountExceptIndeterminate(t *testing.T) {
 		})
 	}
 }
+
+// A deferred CONSTRAINT TRIGGER that RAISEs at commit produces ERROR XX000 —
+// an SQLSTATE application code chooses. PostgreSQL rolls the transaction back
+// and leaves nothing applied, so this is a refusal, and an earlier classifier
+// that excluded the XX class called it indeterminate.
+func TestARaisedErrorAtCommitIsARefusal(t *testing.T) {
+	db := target(t)
+	ctx := t.Context()
+
+	if _, err := db.ExecContext(ctx, `
+		CREATE OR REPLACE FUNCTION `+table(t)+`_refuse() RETURNS trigger
+		LANGUAGE plpgsql AS $$ BEGIN
+			RAISE EXCEPTION 'refused at commit' USING ERRCODE = 'XX000';
+		END $$;
+		CREATE CONSTRAINT TRIGGER refuse_at_commit
+			AFTER UPDATE ON `+table(t)+`
+			DEFERRABLE INITIALLY DEFERRED
+			FOR EACH ROW EXECUTE FUNCTION `+table(t)+`_refuse()`); err != nil {
+		t.Fatalf("creating the deferred trigger: %v", err)
+	}
+
+	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET tier = 7 WHERE id = 1`, postgres.CommitWasRefused)
+	if err == nil {
+		t.Fatal("a commit the trigger refuses reported no error")
+	}
+	if got.Outcome != OutcomeRolledBack {
+		t.Errorf("outcome is %s, want %s — the server answered and rolled it back, so a human has nothing to inspect",
+			got.Outcome, OutcomeRolledBack)
+	}
+
+	var changed int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*) FROM `+table(t)+` WHERE tier = 7`).Scan(&changed); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if changed != 0 {
+		t.Errorf("%d rows survived a refused commit", changed)
+	}
+}

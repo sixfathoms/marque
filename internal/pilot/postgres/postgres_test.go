@@ -31,12 +31,17 @@ func TestCommitWasRefused(t *testing.T) {
 		// The server is going away, not declining. 57P01 is what terminating a
 		// backend produces, and it arrives as a PgError — which is why "the
 		// server sent a message" is not the test.
-		"admin shutdown":       {pg("FATAL", "57P01"), false},
-		"crash shutdown":       {pg("FATAL", "57P02"), false},
-		"cannot connect now":   {pg("FATAL", "57P03"), false},
-		"a connection failure": {pg("ERROR", "08006"), false},
-		"a system error":       {pg("ERROR", "58030"), false},
-		"an internal error":    {pg("ERROR", "XX000"), false},
+		"admin shutdown":     {pg("FATAL", "57P01"), false},
+		"crash shutdown":     {pg("FATAL", "57P02"), false},
+		"cannot connect now": {pg("FATAL", "57P03"), false},
+		// An ERROR in ANY class is the server declining: it processed the
+		// COMMIT and answered. A deferred constraint trigger that RAISEs
+		// produces XX000, and application code chooses that SQLSTATE — so
+		// excluding the class would call a definite rollback indeterminate.
+		"an ERROR in a connection class": {pg("ERROR", "08006"), true},
+		"an ERROR in a system class":     {pg("ERROR", "58030"), true},
+		"a raised internal error":        {pg("ERROR", "XX000"), true},
+		"a cancelled commit":             {pg("ERROR", "57014"), true},
 
 		// Severity alone settles it, whatever the class: a FATAL in an
 		// ordinary class is still the session ending.

@@ -62,8 +62,8 @@ that one of the corpus's mechanisms had been unachievable for five days without 
   check arrive with the services at M1 step 3.
 - **One vocabulary borrowed, one decided**, because a forward-only schema makes widening a column an
   unnecessary migration. `requests.state` takes all seven of
-  [EDR-0038](/edrs/0038-a-request-is-a-shareable-watchable-object/)'s values even though M1 can
-  produce three. `executions.outcome` could not be borrowed:
+  [EDR-0038](/edrs/0038-a-request-is-a-shareable-watchable-object/)'s values even though M1
+  produces four. `executions.outcome` could not be borrowed:
   [EDR-0011](/edrs/0011-execution-is-idempotent-and-fenced/) names three outcomes, closes no set and
   settles no success token, so the record decides that column and says so.
 

@@ -125,15 +125,25 @@ func (s *Service) GetRequest(
 	if err != nil {
 		return nil, asConnectError(err)
 	}
+	wire, err := asProto(r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1.GetRequestResponse{Request: wire}), nil
+}
+
+// asProto turns a stored request into its wire form.
+//
+// A state the database holds and this build does not know is Internal, not a
+// client error: the vocabulary is closed and both ends are supposed to have the
+// same one, so the honest answer is that this build is wrong.
+func asProto(r store.Request) (*v1.Request, error) {
 	state, ok := stateToProto[r.State]
 	if !ok {
-		// A state the database holds and this does not know is a fault here,
-		// not a client error: the vocabulary is closed and both ends are
-		// supposed to have the same one.
 		return nil, connect.NewError(connect.CodeInternal,
 			fmt.Errorf("stored state %q is not one this build knows", r.State))
 	}
-	return connect.NewResponse(&v1.GetRequestResponse{Request: &v1.Request{
+	return &v1.Request{
 		Reference: r.Reference,
 		Statement: r.Statement,
 		Target:    r.Target,
@@ -141,7 +151,7 @@ func (s *Service) GetRequest(
 		Submitter: r.Submitter,
 		Reason:    r.Reason,
 		State:     state,
-	}}), nil
+	}, nil
 }
 
 // Approve records that someone said they approved a request. At M1 that is an
@@ -165,7 +175,18 @@ func (s *Service) Approve(
 	if err := s.store.Approve(ctx, s.tenant, m.GetReference(), m.GetApprover(), m.GetStage()); err != nil {
 		return nil, asConnectError(err)
 	}
-	return connect.NewResponse(&v1.ApproveResponse{}), nil
+	// The response carries the request, because the proto says it does. A
+	// caller that has to issue a second GetRequest to learn the new state is a
+	// caller racing anyone else who can change it.
+	r, err := s.store.Request(ctx, s.tenant, m.GetReference())
+	if err != nil {
+		return nil, asConnectError(err)
+	}
+	wire, err := asProto(r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1.ApproveResponse{Request: wire}), nil
 }
 
 // RecordExecution stores one attempt's report and returns what is STORED,
@@ -207,11 +228,22 @@ func (s *Service) RecordExecution(
 		return nil, connect.NewError(connect.CodeInternal,
 			fmt.Errorf("stored outcome %q is not one this build knows", stored.Outcome))
 	}
-	return connect.NewResponse(&v1.RecordExecutionResponse{Execution: &v1.Execution{
-		Nonce:        stored.Nonce,
-		Outcome:      proto,
-		RowsAffected: stored.RowsAffected,
-	}}), nil
+	r, err := s.store.Request(ctx, s.tenant, m.GetReference())
+	if err != nil {
+		return nil, asConnectError(err)
+	}
+	wire, err := asProto(r)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1.RecordExecutionResponse{
+		Request: wire,
+		Execution: &v1.Execution{
+			Nonce:        stored.Nonce,
+			Outcome:      proto,
+			RowsAffected: stored.RowsAffected,
+		},
+	}), nil
 }
 
 // asConnectError maps the store's named errors onto codes a client can act on.

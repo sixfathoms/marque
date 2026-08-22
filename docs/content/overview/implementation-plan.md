@@ -121,8 +121,10 @@ the statement land in a table. **No signing, no grammar, no identity, no fence.*
 
 This milestone deliberately builds something insecure, so it is contained by construction:
 
-- Every binary refuses to start without `MARQUE_INSECURE_SKELETON=1`, and prints a banner naming this
-  milestone and the record-free state of what it is doing.
+- Every command that touches anything refuses to start without `MARQUE_INSECURE_SKELETON=1`, and
+  prints a banner naming this milestone and the record-free state of what it is doing. `version` is
+  the exception and is meant to be: inspecting a binary should not require acknowledging what it
+  would do if you ran it.
 - **M5 deletes the flag**, and a test asserts no such path exists in the binary. That test is written
   now, skipped with a reason, and un-skipped in M5.
 

@@ -84,9 +84,11 @@ const (
 // newReference makes the `req_…` an operator pastes into chat (EDR-0038).
 //
 // Random, not sequential: a sequential one leaks how many requests exist and
-// invites guessing the neighbours. Base32 without padding, upper case removed,
-// so it survives being pasted into a chat client that helpfully capitalises
-// things.
+// invites guessing the neighbours. Base32 without padding and lower-cased, for
+// looks rather than for safety — lookups are case-sensitive and normalise
+// nothing, so a client that capitalises a pasted reference gets a NotFound. An
+// earlier version of this comment claimed the lower-casing survived that, which
+// it does not.
 func newReference() (string, error) {
 	var b [10]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -242,8 +244,28 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 	}
 	// A statement nobody approved must not be reportable as executed: that
 	// would let the Pilot's report be the only record that anything happened.
-	if state != StateApproved && state != StateExecuted && state != StateIndeterminate {
-		return Execution{}, fmt.Errorf("%w: %s is %s", ErrWrongState, reference, state)
+	//
+	// And once a request is terminal, only a nonce ALREADY RECORDED may be
+	// reported again. Accepting a fresh one moved an executed request to
+	// indeterminate and back — a reviewer did exactly that, twice, and the last
+	// report won. A repeat is an acknowledgement of something recorded; a new
+	// attempt against a finished request is a second execution nobody approved.
+	if state != StateApproved {
+		if state != StateExecuted && state != StateIndeterminate {
+			return Execution{}, fmt.Errorf("%w: %s is %s", ErrWrongState, reference, state)
+		}
+		var known bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM executions
+				WHERE tenant_id = $1 AND reference = $2 AND nonce = $3)`,
+			tenant, reference, e.Nonce).Scan(&known); err != nil {
+			return Execution{}, fmt.Errorf("looking for nonce %s: %w", e.Nonce, err)
+		}
+		if !known {
+			return Execution{}, fmt.Errorf(
+				"%w: %s is %s, and nonce %q is not one of its recorded attempts",
+				ErrWrongState, reference, state, e.Nonce)
+		}
 	}
 
 	// DO UPDATE for the same reason as Submit: DO NOTHING returns nothing, and

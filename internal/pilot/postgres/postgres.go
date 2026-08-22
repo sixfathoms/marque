@@ -1,10 +1,11 @@
 // Package postgres is the Pilot's PostgreSQL adapter, and one of the two
 // packages EDR-0042 allows to import a driver.
 //
-// The Pilot is the only component that touches a target. The Harbourmaster
-// holds no target credential and links no target driver (EDR-0005), which is
-// the boundary the confinement check in internal/harbourmaster/store enforces —
-// and which this package is the other half of.
+// The Pilot is the only component that touches a target, and the only one that
+// holds a target credential (EDR-0005). The Harbourmaster links a PostgreSQL
+// driver too — for its own database, since EDR-0013 fixed Marque's state on
+// PostgreSQL — so the boundary is not the driver's absence but where a TARGET
+// connection may be opened, which is here. EDR-0042 has why.
 package postgres
 
 import (
@@ -86,19 +87,20 @@ func CommitWasRefused(err error) bool {
 	if !errors.As(err, &pgErr) {
 		return false
 	}
-	// FATAL and PANIC are the server ending the session, not declining a
-	// statement.
-	if pgErr.Severity == "FATAL" || pgErr.Severity == "PANIC" {
-		return false
-	}
-	// SQLSTATE classes where the transaction's fate is not settled by the
-	// message: 08 connection exception, 57 operator intervention, 58 system
-	// error, XX internal error. Everything else — 23 integrity constraint
-	// violation being the case this exists for — is the server declining.
-	switch class := pgErr.Code[:2]; class {
-	case "08", "57", "58", "XX":
-		return false
-	default:
-		return true
-	}
+	// SEVERITY, and severity alone.
+	//
+	// An ERROR response is the server having processed the COMMIT and declined
+	// it: the transaction is rolled back and nothing was applied, whatever the
+	// SQLSTATE says. FATAL and PANIC are the server ending the session, which
+	// is not a decision about this statement.
+	//
+	// An earlier version also excluded SQLSTATE classes 08, 57, 58 and XX on
+	// the theory that those mean "the transaction's fate is unsettled". That
+	// was wrong, and a reviewer showed it: a deferred CONSTRAINT TRIGGER that
+	// RAISEs at commit produces ERROR XX000, PostgreSQL rolls the transaction
+	// back and leaves zero rows, and this called it indeterminate — sending a
+	// human to inspect a database that is provably unchanged. Application code
+	// chooses that SQLSTATE, so the class cannot carry the meaning the class
+	// list assumed.
+	return pgErr.Severity != "FATAL" && pgErr.Severity != "PANIC"
 }

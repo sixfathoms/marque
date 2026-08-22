@@ -4,7 +4,7 @@ title: "Execution is idempotent, fenced, and budgeted"
 summary: "Every execution carries a caller-supplied nonce recorded before the statement runs. A repeat returns the first outcome instead of applying the change twice, and the marque's budget is consumed by the nonce, not by success."
 status: accepted
 implementation: none
-implementation_note: "M1's executions table, RecordExecution and cmd/pilot carry a nonce, but only as a report key: repeating it returns the stored outcome instead of running again. Nothing CLAIMS a nonce before running, accounts for a budget, or carries an incarnation, so a Pilot that dies mid-statement loses the attempt and the count alike — the ledger this record decides does not exist (issue #34). The Pilot does honour the no-transparent-retry rule and reports a lost commit as indeterminate."
+implementation_note: "M1's executions table, RecordExecution and cmd/pilot carry a nonce, and it makes the REPORT idempotent: repeating a recorded one returns the stored outcome instead of writing a second row, and a fresh one against a terminal request is refused. It does NOT make the execution idempotent — if the first report never lands, the request is still approved and running the Pilot again executes the statement before anything looks at the nonce. Nothing claims a nonce BEFORE running, accounts for a budget, or carries an incarnation, so a crash loses the attempt and the count alike; the ledger this record decides does not exist (issue #34). The Pilot does honour the no-transparent-retry rule and reports a lost commit as indeterminate."
 date: 2026-08-15
 authors:
   - "Theo Zourzouvillys <theo@sixfathoms.dev>"

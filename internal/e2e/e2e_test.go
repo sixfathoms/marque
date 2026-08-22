@@ -68,8 +68,11 @@ func setUp(t *testing.T) world {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	// The target is a separate connection with its own credential, which is
-	// the point of EDR-0005: the control plane above never sees this.
+	// A separate CONNECTION, opened through the Pilot's adapter — but the same
+	// DSN, so this does not demonstrate the credential separation EDR-0005 is
+	// about. What it does demonstrate is the code path: the control plane above
+	// never receives this string, and the Pilot is what opens it. Two
+	// credentials would need two roles and two grants, which is M4's.
 	target, err := postgres.Open(ctx, dsn(t))
 	if err != nil {
 		t.Fatalf("connecting to the target: %v", err)
