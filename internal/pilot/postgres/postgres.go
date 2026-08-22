@@ -11,6 +11,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"time"
@@ -190,14 +191,41 @@ func RunOne(ctx context.Context, db *sql.DB, statement string) (int64, error) {
 		tag, execErr := pg.ExecParams(ctx, statement, nil, nil, nil, nil).Close()
 		if execErr != nil {
 			if _, rbErr := pg.ExecParams(ctx, "ROLLBACK", nil, nil, nil, nil).Close(); rbErr != nil {
-				return fmt.Errorf("%w: %w (and the statement failed: %w)", ErrRollback, rbErr, execErr)
+				// The connection's transaction state is now unknown, so it
+				// must not go back to the pool: pgx's stdlib ResetSession is a
+				// ping, not a DISCARD, so a later borrower would inherit an
+				// open or aborted transaction. Wrapping driver.ErrBadConn is
+				// what makes database/sql close it — the same technique the
+				// migrator uses, and for the same reason.
+				//
+				// This is the path where the discard genuinely matters: a
+				// rollback can fail while the connection is still alive. No
+				// test reaches it, because making ROLLBACK fail on a live
+				// connection is not something a local server will do on
+				// request.
+				return fmt.Errorf("%w: %w (and the statement failed: %w): %w",
+					ErrRollback, rbErr, execErr, driver.ErrBadConn)
 			}
 			return fmt.Errorf("%w: %w", ErrExec, execErr)
 		}
 		rows = tag.RowsAffected()
 
 		if _, err := pg.ExecParams(ctx, "COMMIT", nil, nil, nil, nil).Close(); err != nil {
-			return fmt.Errorf("%w: %w", ErrCommit, err)
+			if CommitWasRefused(err) {
+				// The server answered: the transaction is over and the
+				// connection is clean.
+				return fmt.Errorf("%w: %w", ErrCommit, err)
+			}
+			// No answer arrived, so whether this connection is still in a
+			// transaction is exactly what nobody knows. Discard it.
+			//
+			// Belt, mostly: the usual way to get here is a connection that is
+			// already dead, which database/sql discards on its own — removing
+			// this line does not fail the test below. It earns its place for
+			// the case where the commit's answer is lost but the connection
+			// survives, which is a network partition rather than anything a
+			// test can arrange locally.
+			return fmt.Errorf("%w: %w: %w", ErrCommit, err, driver.ErrBadConn)
 		}
 		return nil
 	})

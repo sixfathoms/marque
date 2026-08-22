@@ -287,3 +287,52 @@ func TestARaisedErrorAtCommitIsARefusal(t *testing.T) {
 		t.Errorf("%d rows survived a refused commit", changed)
 	}
 }
+
+// The pool must be clean and usable after an indeterminate commit.
+//
+// It asserts the PROPERTY, not the mechanism: removing RunOne's explicit
+// discard on this path does not fail it, because a terminated connection is
+// already dead and database/sql drops it anyway. The explicit discard is for
+// the case a local server will not produce on request — a lost answer over a
+// connection that survives.
+func TestAConnectionWithAnUnknownTransactionIsDiscarded(t *testing.T) {
+	db := target(t)
+	ctx := t.Context()
+
+	// The deferred trigger kills the backend during COMMIT: no answer arrives,
+	// so whether that connection is still in a transaction is exactly what
+	// nobody knows.
+	if _, err := db.ExecContext(ctx, `
+		CREATE OR REPLACE FUNCTION `+table(t)+`_die() RETURNS trigger
+		LANGUAGE plpgsql AS $$ BEGIN
+			PERFORM pg_terminate_backend(pg_backend_pid());
+			RETURN NULL;
+		END $$;
+		CREATE CONSTRAINT TRIGGER die_at_commit
+			AFTER UPDATE ON `+table(t)+`
+			DEFERRABLE INITIALLY DEFERRED
+			FOR EACH ROW EXECUTE FUNCTION `+table(t)+`_die()`); err != nil {
+		t.Fatalf("creating the deferred trigger: %v", err)
+	}
+
+	got, err := Execute(ctx, db, `UPDATE `+table(t)+` SET tier = 4 WHERE id = 1`,
+		postgres.RunOne, postgres.CommitWasRefused)
+	if err == nil || got.Outcome != OutcomeIndeterminate {
+		t.Fatalf("expected an indeterminate failure, got %s / %v", got.Outcome, err)
+	}
+
+	// Drop the trigger through a NEW connection, then check the pool is usable
+	// and outside any transaction.
+	if _, err := db.ExecContext(ctx,
+		`DROP TRIGGER IF EXISTS die_at_commit ON `+table(t)); err != nil {
+		t.Fatalf("the pool is unusable after an indeterminate commit: %v", err)
+	}
+	var state string
+	if err := db.QueryRowContext(ctx,
+		`SELECT state FROM pg_stat_activity WHERE pid = pg_backend_pid()`).Scan(&state); err != nil {
+		t.Fatalf("reading the connection's state: %v", err)
+	}
+	if strings.HasPrefix(state, "idle in transaction") {
+		t.Errorf("a connection went back to the pool %q", state)
+	}
+}
