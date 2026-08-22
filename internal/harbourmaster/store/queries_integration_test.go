@@ -830,6 +830,21 @@ func TestAReRunUnderTheSameNonceIsRefused(t *testing.T) {
 // and let the statement run a second time. The contradiction guard cannot catch
 // it, because the duplicate agrees with what is stored.
 func TestALateDuplicateDoesNotUnExecuteARequest(t *testing.T) {
+	// Both terminal destinations. Covering `executed` alone let the guard be
+	// narrowed to `state == StateExecuted` with everything green — and an
+	// indeterminate request returned to `approved` is arguably the worse of the
+	// two, since that is the state a human resolves and re-running a statement
+	// whose prior application is unknown is exactly what it exists to prevent.
+	for name, second := range map[string]Execution{
+		"after a committed attempt":  {Nonce: "n2", Outcome: OutcomeCommitted, RowsAffected: ptr(3)},
+		"after an indeterminate one": {Nonce: "n2", Outcome: OutcomeIndeterminate},
+	} {
+		t.Run(name, func(t *testing.T) { lateDuplicate(t, second) })
+	}
+}
+
+func lateDuplicate(t *testing.T, second Execution) {
+	t.Helper()
 	s := migrated(t)
 	ctx := t.Context()
 	ref, err := s.Submit(ctx, devTenant, aRequest("k"))
@@ -845,14 +860,16 @@ func TestALateDuplicateDoesNotUnExecuteARequest(t *testing.T) {
 	if _, err := s.RecordExecution(ctx, devTenant, ref, first); err != nil {
 		t.Fatalf("recording the first attempt: %v", err)
 	}
-	// Attempt two commits.
-	if _, err := s.RecordExecution(ctx, devTenant, ref, Execution{
-		Nonce: "n2", Outcome: OutcomeCommitted, RowsAffected: ptr(3),
-	}); err != nil {
+	// Attempt two reaches a terminal state.
+	if _, err := s.RecordExecution(ctx, devTenant, ref, second); err != nil {
 		t.Fatalf("recording the second attempt: %v", err)
 	}
-	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateExecuted {
-		t.Fatalf("the request is %s after a committed attempt", got.State)
+	terminal := StateExecuted
+	if second.Outcome == OutcomeIndeterminate {
+		terminal = StateIndeterminate
+	}
+	if got, _ := s.Request(ctx, devTenant, ref); got.State != terminal {
+		t.Fatalf("the request is %s after a %s attempt", got.State, second.Outcome)
 	}
 
 	// Now a duplicate of attempt one arrives late, agreeing with itself.
@@ -863,8 +880,8 @@ func TestALateDuplicateDoesNotUnExecuteARequest(t *testing.T) {
 	if again.Outcome != OutcomeAbortedNotApplied {
 		t.Errorf("the acknowledgement returned %s", again.Outcome)
 	}
-	if got, _ := s.Request(ctx, devTenant, ref); got.State != StateExecuted {
-		t.Fatalf("a late duplicate moved the request to %s; it was executed", got.State)
+	if got, _ := s.Request(ctx, devTenant, ref); got.State != terminal {
+		t.Fatalf("a late duplicate moved the request to %s; it was %s", got.State, terminal)
 	}
 
 	// And the request stays closed: a fresh nonce is still refused.

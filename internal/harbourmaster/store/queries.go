@@ -409,11 +409,13 @@ func (s *Store) RecordExecution(ctx context.Context, tenant, reference string, e
 
 // sameRows compares two optional counts.
 //
-// UNPINNED, and unreachable: the nil-mismatch branch would need one report with
-// a count and another without under one nonce, and rows-absent-iff-indeterminate
-// is enforced by the schema's CHECK and by the API. Mutating it to `return true`
-// leaves both suites green. Labelled rather than tested, per the convention in
-// this package.
+// UNPINNED, and unreachable — but not for the reason an earlier version of this
+// comment gave. It said rows-absent-iff-indeterminate makes such a pair
+// impossible; that biconditional constrains each report individually, not the
+// pair, and a reviewer constructed the pair over the API. What actually
+// protects the branch is the `||` above it: differing rows-presence implies
+// differing outcomes, so the outcome comparison is already true and this is
+// never called. Mutating it to `return true` leaves both suites green.
 func sameRows(a, b *int64) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
